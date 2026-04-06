@@ -1322,7 +1322,10 @@ function searchByDate() {
     const level = getAvailabilityLevel(plan, state.searchDate);
     found = true;
     const room = ROOMS.find(r => r.id === plan.rooms[0]);
-    html += '<div class="facility-card" onclick="selectPlanFromSearch(\'' + plan.id + '\')">';
+    const isFull = level === 'none';
+    const clickAttr = isFull ? '' : ' onclick="selectPlanFromSearch(\'' + plan.id + '\')"';
+    const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
+    html += '<div class="facility-card"' + fullStyle + clickAttr + '>';
     html += '  <div class="facility-icon">' + (room ? room.icon : '') + '</div>';
     html += '  <div class="facility-info">';
     html += '    <div><span class="plan-badge" style="background:' + (plan.badgeColor || '#999') + '">' + (plan.badge || '') + '</span></div>';
@@ -1330,7 +1333,7 @@ function searchByDate() {
     html += '    <div class="facility-meta">定員' + maxCap + '名</div>';
     html += '    <div class="facility-price">' + plan.priceDisplay + ' ' + availBadge(level) + '</div>';
     html += '  </div>';
-    html += '  <div class="facility-arrow">&#8250;</div>';
+    html += isFull ? '' : '  <div class="facility-arrow">&#8250;</div>';
     html += '</div>';
   });
 
@@ -1438,7 +1441,10 @@ function showPlanSelect(fgId) {
 
 function renderPlanCard(plan, dateStr) {
   const level = dateStr ? getAvailabilityLevel(plan, dateStr) : 'ok';
-  let html = '<div class="plan-card" onclick="selectPlan(\'' + plan.id + '\')">';
+  const isFull = level === 'none';
+  const clickAttr = isFull ? '' : ' onclick="selectPlan(\'' + plan.id + '\')"';
+  const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
+  let html = '<div class="plan-card"' + fullStyle + clickAttr + '>';
   html += '<div><span class="plan-badge" style="background:' + (plan.badgeColor || '#999') + '">' + (plan.badge || '') + '</span>';
   if (dateStr) html += ' ' + availBadge(level);
   html += '</div>';
@@ -1881,7 +1887,8 @@ function stepBookingGuests(delta) {
 }
 
 function stepNights(delta) {
-  state.selectedNights = Math.max(1, Math.min(14, state.selectedNights + delta));
+  const maxN = getMaxNights();
+  state.selectedNights = Math.max(1, Math.min(maxN, state.selectedNights + delta));
   const el = document.getElementById('nights-count');
   if (el) el.textContent = state.selectedNights;
   checkNightsAvailability();
@@ -1890,29 +1897,44 @@ function stepNights(delta) {
   updateBookingPriceSummary();
 }
 
-function checkNightsAvailability() {
+function getMaxNights() {
   const plan = state.selectedPlan;
   const roomId = state.selectedRoomId;
   const baseDate = state.selectedDate;
-  if (!plan || !roomId || !baseDate) return;
+  if (!plan || !roomId || !baseDate) return 14;
 
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
-  if (slots.length === 0) return;
+  if (slots.length === 0) return 14;
 
-  let unavailableNights = [];
-  for (let n = 0; n < state.selectedNights; n++) {
+  let max = 0;
+  for (let n = 0; n < 14; n++) {
     const checkDate = addDays(baseDate, n);
+    let dayOk = true;
     for (const h of slots) {
       if (!isSlotFree(roomId, checkDate, h)) {
-        unavailableNights.push(n + 1);
+        dayOk = false;
         break;
       }
     }
+    if (!dayOk) break;
+    max = n + 1;
+  }
+  return Math.max(1, max);
+}
+
+function checkNightsAvailability() {
+  const maxN = getMaxNights();
+
+  // 泊数が上限を超えていたら自動で下げる
+  if (state.selectedNights > maxN) {
+    state.selectedNights = maxN;
+    const el = document.getElementById('nights-count');
+    if (el) el.textContent = state.selectedNights;
   }
 
+  // 上限表示
   const warningEl = document.getElementById('nights-warning');
   if (!warningEl) {
-    // 泊数警告エリアがなければ挿入
     const nightsCount = document.getElementById('nights-count');
     if (nightsCount) {
       const parent = nightsCount.closest('.form-group');
@@ -1928,9 +1950,11 @@ function checkNightsAvailability() {
 
   const wEl = document.getElementById('nights-warning');
   if (wEl) {
-    if (unavailableNights.length > 0) {
+    if (maxN < 14) {
       wEl.style.display = 'block';
-      wEl.textContent = unavailableNights.map(n => n + '泊目').join('・') + 'の日程に空きがありません。日付または部屋を変更してください。';
+      wEl.style.color = '#666';
+      wEl.style.background = '#f0f4ff';
+      wEl.textContent = 'この日程は最大 ' + maxN + '泊まで予約可能です';
     } else {
       wEl.style.display = 'none';
     }
