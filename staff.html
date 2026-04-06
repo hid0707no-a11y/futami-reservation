@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ふたみ予約管理">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f3460">
+<title>ふたみ予約管理</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoi44G144Gf44G/5LqI57SE566h55CGIiwic2hvcnRfbmFtZSI6IuS6iOe0hOeuoeeQhiIsInN0YXJ0X3VybCI6Ii4vc3RhZmYuaHRtbCIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiMwZjM0NjAiLCJ0aGVtZV9jb2xvciI6IiMwZjM0NjAifQ==">
+<style>
+/* ===== リセット・ベース ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  background: #f0f2f5;
+  color: #1a1a2e;
+  overflow-x: hidden;
+  min-height: 100vh;
+  padding-bottom: 100px;
+}
+
+/* ===== カラー定数 ===== */
+:root {
+  --navy: #0f3460;
+  --green: #16c79a;
+  --red: #e94560;
+  --yellow: #f5c518;
+  --gray: #d1d5db;
+  --light: #f0f2f5;
+}
+
+/* ===== ヘッダー ===== */
+.header {
+  background: var(--navy);
+  color: #fff;
+  padding: 16px 20px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.header-date {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 6px 0 8px;
+}
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.date-nav button {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 48px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.date-nav button:active { background: rgba(255,255,255,0.3); }
+.date-nav .today-btn {
+  background: rgba(255,255,255,0.25);
+  font-size: 0.9rem;
+  padding: 10px 20px;
+}
+
+/* ===== 統計バー ===== */
+.stats-bar {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  overflow-x: auto;
+}
+.stat-card {
+  flex: 1;
+  min-width: 100px;
+  text-align: center;
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: var(--light);
+}
+.stat-card .stat-num {
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.stat-card .stat-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 2px;
+}
+.stat-card.reservations .stat-num { color: var(--red); }
+.stat-card.checkedin .stat-num { color: var(--yellow); }
+.stat-card.available .stat-num { color: var(--green); }
+
+/* ===== マトリクス ===== */
+.matrix-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 0;
+}
+.matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-size: 0.8rem;
+}
+.matrix th, .matrix td {
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+.matrix thead th {
+  background: var(--navy);
+  color: #fff;
+  font-weight: 600;
+  padding: 10px 6px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  font-size: 0.75rem;
+  min-width: 64px;
+  text-align: center;
+}
+.matrix thead th:first-child {
+  left: 0;
+  z-index: 20;
+  min-width: 120px;
+  text-align: left;
+  padding-left: 12px;
+}
+.matrix tbody th {
+  background: #fff;
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 8px 10px;
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  min-width: 120px;
+  border-right: 2px solid var(--navy);
+}
+.matrix tbody th .facility-cat {
+  font-size: 0.65rem;
+  color: #6b7280;
+  display: block;
+  font-weight: 400;
+}
+
+/* セル */
+.cell {
+  min-width: 64px;
+  min-height: 52px;
+  cursor: pointer;
+  text-align: center;
+  vertical-align: middle;
+  padding: 4px;
+  transition: opacity 0.15s;
+  position: relative;
+}
+.cell:active { opacity: 0.7; }
+.cell.available { background: var(--green); color: #fff; }
+.cell.reserved {
+  background: var(--red);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.cell.checkedin {
+  background: var(--yellow);
+  color: #1a1a2e;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.cell.closed { background: var(--gray); color: #9ca3af; }
+.cell.overnight {
+  min-width: auto;
+  font-size: 0.72rem;
+}
+.cell .cell-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 58px;
+  margin: 0 auto;
+}
+
+/* 宿泊系の幅広セル */
+td[colspan] .cell {
+  min-width: auto;
+}
+
+/* ===== ボトムシート（予約詳細） ===== */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.overlay.show { display: block; opacity: 1; }
+
+.bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  z-index: 210;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 20px 24px 40px;
+}
+.bottom-sheet.show { transform: translateY(0); }
+.bottom-sheet .handle {
+  width: 40px;
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 2px;
+  margin: 0 auto 16px;
+}
+.detail-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 16px;
+}
+.detail-row {
+  display: flex;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 1rem;
+}
+.detail-row .label {
+  width: 90px;
+  color: #6b7280;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.detail-row .value {
+  flex: 1;
+  font-weight: 600;
+}
+.checkin-btn {
+  width: 100%;
+  padding: 16px;
+  margin-top: 20px;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 56px;
+}
+.checkin-btn.do-checkin {
+  background: var(--yellow);
+  color: #1a1a2e;
+}
+.checkin-btn.undo-checkin {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* ===== FAB ===== */
+.fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  z-index: 150;
+  box-shadow: 0 4px 16px rgba(15,52,96,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.fab:active { transform: scale(0.92); }
+
+/* ===== 予約追加モーダル ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 300;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.modal-overlay.show { display: block; opacity: 1; }
+
+.modal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  z-index: 310;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 20px 24px 40px;
+}
+.modal.show { transform: translateY(0); }
+.modal .handle {
+  width: 40px;
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 2px;
+  margin: 0 auto 16px;
+}
+.modal h2 {
+  font-size: 1.2rem;
+  color: var(--navy);
+  margin-bottom: 20px;
+  font-weight: 700;
+}
+.form-group {
+  margin-bottom: 16px;
+}
+.form-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 14px 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #fff;
+  min-height: 48px;
+}
+.form-group select {
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 14px center;
+  padding-right: 36px;
+}
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--navy);
+}
+.form-group textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.form-actions button {
+  flex: 1;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 56px;
+}
+.btn-cancel { background: #e5e7eb; color: #6b7280; }
+.btn-submit { background: var(--navy); color: #fff; }
+
+/* ===== トースト ===== */
+.toast {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: #1a1a2e;
+  color: #fff;
+  padding: 14px 28px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  z-index: 500;
+  opacity: 0;
+  transition: all 0.3s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ===== レスポンシブ ===== */
+@media (min-width: 768px) {
+  .stats-bar { padding: 14px 32px; }
+  .matrix-wrapper { padding: 12px 20px; }
+  .matrix thead th { min-width: 80px; }
+  .cell { min-width: 80px; min-height: 56px; }
+  .cell .cell-name { max-width: 72px; }
+}
+@media (min-width: 1024px) {
+  .bottom-sheet, .modal {
+    left: auto;
+    right: 20px;
+    bottom: 20px;
+    width: 400px;
+    border-radius: 20px;
+    max-height: 80vh;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ヘッダー -->
+<header class="header">
+  <div class="header-title">ふたみ予約管理</div>
+  <div class="header-date" id="headerDate"></div>
+  <div class="date-nav">
+    <button onclick="changeDate(-1)" aria-label="前日">&lt;</button>
+    <button class="today-btn" onclick="goToday()">今日</button>
+    <button onclick="changeDate(1)" aria-label="翌日">&gt;</button>
+  </div>
+</header>
+
+<!-- 統計バー -->
+<div class="stats-bar">
+  <div class="stat-card reservations">
+    <div class="stat-num" id="statReservations">0</div>
+    <div class="stat-label">予約件数</div>
+  </div>
+  <div class="stat-card checkedin">
+    <div class="stat-num" id="statCheckedin">0</div>
+    <div class="stat-label">チェックイン</div>
+  </div>
+  <div class="stat-card available">
+    <div class="stat-num" id="statAvailable">0</div>
+    <div class="stat-label">空き枠</div>
+  </div>
+</div>
+
+<!-- マトリクス -->
+<div class="matrix-wrapper">
+  <table class="matrix" id="matrixTable">
+    <thead id="matrixHead"></thead>
+    <tbody id="matrixBody"></tbody>
+  </table>
+</div>
+
+<!-- 予約詳細ボトムシート -->
+<div class="overlay" id="detailOverlay" onclick="closeDetail()"></div>
+<div class="bottom-sheet" id="detailSheet">
+  <div class="handle"></div>
+  <div class="detail-title" id="detailTitle"></div>
+  <div id="detailContent"></div>
+</div>
+
+<!-- 予約追加モーダル -->
+<div class="modal-overlay" id="addOverlay" onclick="closeAddForm()"></div>
+<div class="modal" id="addModal">
+  <div class="handle"></div>
+  <h2>電話予約の追加</h2>
+  <div class="form-group">
+    <label>施設</label>
+    <select id="addFacility"></select>
+  </div>
+  <div class="form-group">
+    <label>日付</label>
+    <input type="date" id="addDate">
+  </div>
+  <div class="form-group" id="addTimeGroup">
+    <label>時間</label>
+    <select id="addTime"></select>
+  </div>
+  <div class="form-group">
+    <label>お名前</label>
+    <input type="text" id="addName" placeholder="予約者名" x-webkit-speech>
+  </div>
+  <div class="form-group">
+    <label>電話番号</label>
+    <input type="tel" id="addPhone" placeholder="090-xxxx-xxxx">
+  </div>
+  <div class="form-group">
+    <label>人数</label>
+    <input type="number" id="addCount" min="1" max="100" value="1">
+  </div>
+  <div class="form-group">
+    <label>備考</label>
+    <textarea id="addNote" rows="2" placeholder="特記事項があれば"></textarea>
+  </div>
+  <div class="form-actions">
+    <button class="btn-cancel" onclick="closeAddForm()">キャンセル</button>
+    <button class="btn-submit" onclick="submitReservation()">予約登録</button>
+  </div>
+</div>
+
+<!-- FAB -->
+<button class="fab" onclick="openAddForm()" aria-label="予約追加">+</button>
+
+<!-- トースト -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== 施設データ =====
+const FACILITIES = [
+  { id: 'fureai_stay_6', name: '6畳', category: '宿泊）ふれあいの館', overnight: true },
+  { id: 'fureai_stay_27', name: '27畳', category: '宿泊）ふれあいの館', overnight: true },
+  { id: 'fureai_stay_exp', name: '体験学習室', category: '宿泊）ふれあいの館', overnight: true },
+  { id: 'fureai_day_6', name: '6畳', category: '日帰り）ふれあいの館', overnight: false },
+  { id: 'fureai_day_27', name: '27畳', category: '日帰り）ふれあいの館', overnight: false },
+  { id: 'fureai_day_exp', name: '体験学習室', category: '日帰り）ふれあいの館', overnight: false },
+  { id: 'fureai_day_train', name: '研修室', category: '日帰り）ふれあいの館', overnight: false },
+  { id: 'fureai_day_kitchen', name: '厨房食堂', category: '日帰り）ふれあいの館', overnight: false },
+  { id: 'camp', name: 'キャンプ場', category: 'キャンプ場', overnight: true },
+  { id: 'lodge_a', name: 'ロッジA', category: 'ロッジ', overnight: true },
+  { id: 'lodge_b', name: 'ロッジB', category: 'ロッジ', overnight: true },
+  { id: 'tennis_1', name: 'コート1', category: 'テニスコート', overnight: false },
+  { id: 'tennis_2', name: 'コート2', category: 'テニスコート', overnight: false },
+  { id: 'tennis_3', name: 'コート3', category: 'テニスコート', overnight: false },
+  { id: 'tennis_4', name: 'コート4', category: 'テニスコート', overnight: false },
+  { id: 'tennis_5', name: 'コート5', category: 'テニスコート', overnight: false },
+  { id: 'midori', name: 'みどりの広場', category: 'みどりの広場', overnight: false },
+  { id: 'sauna', name: '貸切120分', category: 'ふたみサンセットサウナ', overnight: false },
+];
+
+// 営業時間 8:00-22:00
+const HOURS = [];
+for (let h = 8; h <= 21; h++) HOURS.push(h);
+const HOUR_COUNT = HOURS.length; // 14スロット
+
+// ===== 状態管理 =====
+let currentDate = new Date();
+currentDate.setHours(0,0,0,0);
+const STORAGE_KEY = 'futami_reservations';
+
+// ===== ユーティリティ =====
+function dateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+function weekday(d) {
+  return ['日','月','火','水','木','金','土'][d.getDay()];
+}
+function formatDateDisplay(d) {
+  return `${d.getMonth()+1}月${d.getDate()}日（${weekday(d)}）`;
+}
+
+// ===== LocalStorage =====
+function loadReservations() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    if (data) return JSON.parse(data);
+  } catch(e) {}
+  return [];
+}
+function saveReservations(list) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+function getReservationsForDate(d) {
+  const ds = dateStr(d);
+  return loadReservations().filter(r => r.date === ds);
+}
+
+// ===== ダミーデータ生成 =====
+function generateDummyData() {
+  const existing = loadReservations();
+  const today = dateStr(new Date());
+  // 今日分が既にあればスキップ
+  if (existing.some(r => r.date === today)) return;
+
+  const names = [
+    '田中太郎','佐藤花子','鈴木一郎','高橋美咲','伊藤健太',
+    '渡辺陽子','山本誠','中村友美','小林大輔','加藤明日香',
+    '松本翔太','山田美穂','井上和也','木村恵子','斎藤拓海'
+  ];
+  const phones = [
+    '090-1234-5678','080-2345-6789','070-3456-7890','090-4567-8901',
+    '080-5678-9012','070-6789-0123','090-7890-1234','080-8901-2345',
+    '070-9012-3456','090-0123-4567','080-1111-2222','070-3333-4444',
+    '090-5555-6666','080-7777-8888','070-9999-0000'
+  ];
+  const newReservations = [];
+
+  // 宿泊系に3-4件
+  const overnightIds = FACILITIES.filter(f => f.overnight).map(f => f.id);
+  const shuffledOvernight = overnightIds.sort(() => Math.random() - 0.5);
+  for (let i = 0; i < Math.min(4, shuffledOvernight.length); i++) {
+    const ni = Math.floor(Math.random() * names.length);
+    newReservations.push({
+      id: 'res_' + Date.now() + '_' + i,
+      facilityId: shuffledOvernight[i],
+      date: today,
+      startHour: null, // 宿泊は時間なし
+      endHour: null,
+      name: names[ni],
+      phone: phones[ni],
+      count: Math.floor(Math.random() * 5) + 1,
+      note: '',
+      checkedIn: Math.random() > 0.6,
+    });
+  }
+
+  // 時間帯系に8-10件
+  const hourlyIds = FACILITIES.filter(f => !f.overnight).map(f => f.id);
+  for (let i = 0; i < 10; i++) {
+    const fid = hourlyIds[Math.floor(Math.random() * hourlyIds.length)];
+    const startH = 8 + Math.floor(Math.random() * 12);
+    const duration = Math.floor(Math.random() * 3) + 1;
+    const endH = Math.min(startH + duration, 22);
+    const ni = Math.floor(Math.random() * names.length);
+    newReservations.push({
+      id: 'res_' + Date.now() + '_h' + i,
+      facilityId: fid,
+      date: today,
+      startHour: startH,
+      endHour: endH,
+      name: names[ni],
+      phone: phones[ni],
+      count: Math.floor(Math.random() * 8) + 1,
+      note: i % 4 === 0 ? 'BBQ道具持込' : '',
+      checkedIn: Math.random() > 0.7,
+    });
+  }
+
+  saveReservations([...existing, ...newReservations]);
+}
+
+// ===== 日付ナビゲーション =====
+function changeDate(delta) {
+  currentDate.setDate(currentDate.getDate() + delta);
+  render();
+}
+function goToday() {
+  currentDate = new Date();
+  currentDate.setHours(0,0,0,0);
+  render();
+}
+
+// ===== マトリクス描画 =====
+function render() {
+  document.getElementById('headerDate').textContent = formatDateDisplay(currentDate);
+  const reservations = getReservationsForDate(currentDate);
+
+  // ヘッダー行
+  const thead = document.getElementById('matrixHead');
+  let headHtml = '<tr><th>施設</th>';
+  for (const h of HOURS) {
+    headHtml += `<th>${h}:00</th>`;
+  }
+  headHtml += '</tr>';
+  thead.innerHTML = headHtml;
+
+  // ボディ
+  const tbody = document.getElementById('matrixBody');
+  let bodyHtml = '';
+  let totalReservations = 0;
+  let totalCheckedIn = 0;
+  let totalAvailable = 0;
+
+  for (const facility of FACILITIES) {
+    bodyHtml += '<tr>';
+    bodyHtml += `<th><span class="facility-cat">${facility.category}</span>${facility.name}</th>`;
+
+    if (facility.overnight) {
+      // 宿泊系: 1日1マス（colspanで全時間帯をカバー）
+      const res = reservations.find(r => r.facilityId === facility.id);
+      if (res) {
+        totalReservations++;
+        if (res.checkedIn) totalCheckedIn++;
+        const cls = res.checkedIn ? 'checkedin' : 'reserved';
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span>${res.checkedIn ? '(済)' : '(泊)'}</div></td>`;
+      } else {
+        totalAvailable++;
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight available">空き（泊）</div></td>`;
+      }
+    } else {
+      // 時間帯系: 1時間ずつ
+      const facilityRes = reservations.filter(r => r.facilityId === facility.id);
+      // 施設の予約をカウント（重複なし）
+      const countedIds = new Set();
+
+      for (const h of HOURS) {
+        const res = facilityRes.find(r => r.startHour <= h && r.endHour > h);
+        if (res) {
+          if (!countedIds.has(res.id)) {
+            countedIds.add(res.id);
+            totalReservations++;
+            if (res.checkedIn) totalCheckedIn++;
+          }
+          const cls = res.checkedIn ? 'checkedin' : 'reserved';
+          bodyHtml += `<td><div class="cell ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span></div></td>`;
+        } else {
+          totalAvailable++;
+          bodyHtml += `<td><div class="cell available"></div></td>`;
+        }
+      }
+    }
+    bodyHtml += '</tr>';
+  }
+  tbody.innerHTML = bodyHtml;
+
+  // 統計更新
+  document.getElementById('statReservations').textContent = totalReservations;
+  document.getElementById('statCheckedin').textContent = totalCheckedIn;
+  document.getElementById('statAvailable').textContent = totalAvailable;
+
+  // 日付入力のデフォルト
+  document.getElementById('addDate').value = dateStr(currentDate);
+}
+
+// ===== 予約詳細表示 =====
+function showDetail(resId) {
+  const all = loadReservations();
+  const res = all.find(r => r.id === resId);
+  if (!res) return;
+
+  const facility = FACILITIES.find(f => f.id === res.facilityId);
+  document.getElementById('detailTitle').textContent =
+    `${facility.category} ${facility.name}`;
+
+  let timeText = facility.overnight ? '宿泊' : `${res.startHour}:00 〜 ${res.endHour}:00`;
+
+  let html = `
+    <div class="detail-row"><span class="label">予約者</span><span class="value">${res.name}</span></div>
+    <div class="detail-row"><span class="label">電話番号</span><span class="value"><a href="tel:${res.phone}" style="color:var(--navy)">${res.phone}</a></span></div>
+    <div class="detail-row"><span class="label">時間</span><span class="value">${timeText}</span></div>
+    <div class="detail-row"><span class="label">人数</span><span class="value">${res.count}名</span></div>
+    <div class="detail-row"><span class="label">備考</span><span class="value">${res.note || '---'}</span></div>
+  `;
+
+  if (res.checkedIn) {
+    html += `<button class="checkin-btn undo-checkin" onclick="toggleCheckin('${res.id}')">チェックインを取消</button>`;
+  } else {
+    html += `<button class="checkin-btn do-checkin" onclick="toggleCheckin('${res.id}')">チェックインする</button>`;
+  }
+
+  document.getElementById('detailContent').innerHTML = html;
+  document.getElementById('detailOverlay').classList.add('show');
+  document.getElementById('detailSheet').classList.add('show');
+}
+
+function closeDetail() {
+  document.getElementById('detailOverlay').classList.remove('show');
+  document.getElementById('detailSheet').classList.remove('show');
+}
+
+// ===== チェックイン切り替え =====
+function toggleCheckin(resId) {
+  const all = loadReservations();
+  const res = all.find(r => r.id === resId);
+  if (!res) return;
+  res.checkedIn = !res.checkedIn;
+  saveReservations(all);
+  closeDetail();
+  render();
+  showToast(res.checkedIn ? 'チェックインしました' : 'チェックインを取消しました');
+}
+
+// ===== 予約追加フォーム =====
+function openAddForm() {
+  // 施設プルダウン生成
+  const sel = document.getElementById('addFacility');
+  sel.innerHTML = '';
+  for (const f of FACILITIES) {
+    const opt = document.createElement('option');
+    opt.value = f.id;
+    opt.textContent = `${f.category} / ${f.name}`;
+    sel.appendChild(opt);
+  }
+  sel.onchange = onFacilityChange;
+  onFacilityChange();
+
+  document.getElementById('addDate').value = dateStr(currentDate);
+  document.getElementById('addName').value = '';
+  document.getElementById('addPhone').value = '';
+  document.getElementById('addCount').value = '1';
+  document.getElementById('addNote').value = '';
+
+  document.getElementById('addOverlay').classList.add('show');
+  document.getElementById('addModal').classList.add('show');
+}
+
+function onFacilityChange() {
+  const fid = document.getElementById('addFacility').value;
+  const facility = FACILITIES.find(f => f.id === fid);
+  const timeGroup = document.getElementById('addTimeGroup');
+  if (facility && facility.overnight) {
+    timeGroup.style.display = 'none';
+  } else {
+    timeGroup.style.display = '';
+    const timeSel = document.getElementById('addTime');
+    timeSel.innerHTML = '';
+    for (const h of HOURS) {
+      const opt = document.createElement('option');
+      opt.value = h;
+      opt.textContent = `${h}:00`;
+      timeSel.appendChild(opt);
+    }
+  }
+}
+
+function closeAddForm() {
+  document.getElementById('addOverlay').classList.remove('show');
+  document.getElementById('addModal').classList.remove('show');
+}
+
+function submitReservation() {
+  const fid = document.getElementById('addFacility').value;
+  const facility = FACILITIES.find(f => f.id === fid);
+  const date = document.getElementById('addDate').value;
+  const name = document.getElementById('addName').value.trim();
+  const phone = document.getElementById('addPhone').value.trim();
+  const count = parseInt(document.getElementById('addCount').value) || 1;
+  const note = document.getElementById('addNote').value.trim();
+
+  if (!name) {
+    showToast('お名前を入力してください');
+    return;
+  }
+  if (!date) {
+    showToast('日付を選択してください');
+    return;
+  }
+
+  let startHour = null, endHour = null;
+  if (!facility.overnight) {
+    startHour = parseInt(document.getElementById('addTime').value);
+    endHour = Math.min(startHour + 1, 22); // デフォルト1時間
+  }
+
+  const newRes = {
+    id: 'res_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    facilityId: fid,
+    date: date,
+    startHour: startHour,
+    endHour: endHour,
+    name: name,
+    phone: phone,
+    count: count,
+    note: note,
+    checkedIn: false,
+  };
+
+  const all = loadReservations();
+  all.push(newRes);
+  saveReservations(all);
+
+  closeAddForm();
+  // 追加した日付に移動
+  currentDate = new Date(date + 'T00:00:00');
+  render();
+  showToast(`${name}さんの予約を登録しました`);
+}
+
+// ===== トースト =====
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ===== Service Worker スタブ =====
+if ('serviceWorker' in navigator) {
+  // Service Worker ファイルが存在する場合のみ登録
+  // 本番環境では sw.js を配置すること
+  // navigator.serviceWorker.register('./sw.js');
+}
+
+// ===== 初期化 =====
+generateDummyData();
+render();
+</script>
+</body>
+</html>

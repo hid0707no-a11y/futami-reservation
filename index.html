@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ふたみ潮風ふれあい公園 予約システム</title>
+<style>
+/* ========== RESET & BASE ========== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --main: #7EAEC2;
+  --main-dark: #5a8fa8;
+  --main-light: #b5d4e2;
+  --accent: #D4A047;
+  --accent-dark: #b8872e;
+  --bg: #F5F0EB;
+  --white: #ffffff;
+  --text: #333333;
+  --text-light: #666666;
+  --text-muted: #999999;
+  --border: #e0d8d0;
+  --danger: #e05555;
+  --success: #4caf50;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --shadow-hover: 0 4px 20px rgba(0,0,0,0.12);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --max-width: 480px;
+}
+
+html { font-size: 16px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Segoe UI", Meiryo, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ========== LAYOUT ========== */
+.app {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bg);
+  position: relative;
+}
+
+.screen {
+  display: none;
+  padding: 0 16px 100px;
+  animation: fadeIn 0.3s ease;
+}
+.screen.active { display: block; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========== HEADER ========== */
+.header {
+  background: linear-gradient(135deg, var(--main) 0%, var(--main-dark) 100%);
+  color: var(--white);
+  padding: 20px 16px 16px;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.header-logo {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.header-sub {
+  font-size: 0.8rem;
+  opacity: 0.9;
+  margin-top: 2px;
+}
+
+/* Back button in header */
+.header-back {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--white);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 8px;
+  line-height: 1;
+  border-radius: 8px;
+}
+.header-back:active { background: rgba(255,255,255,0.2); }
+.header-back.hidden { display: none; }
+
+/* ========== BUTTONS ========== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  width: 100%;
+}
+.btn:active { transform: scale(0.98); }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  color: var(--white);
+  box-shadow: 0 3px 12px rgba(212,160,71,0.3);
+}
+.btn-primary:hover { box-shadow: 0 4px 16px rgba(212,160,71,0.4); }
+
+.btn-secondary {
+  background: var(--white);
+  color: var(--main-dark);
+  border: 2px solid var(--main);
+}
+.btn-secondary:hover { background: var(--main-light); color: var(--white); border-color: var(--main-light); }
+
+.btn-outline {
+  background: transparent;
+  color: var(--main-dark);
+  border: 2px solid var(--border);
+}
+.btn-outline:hover { border-color: var(--main); }
+
+/* ========== CARDS ========== */
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.card-clickable { cursor: pointer; }
+.card-clickable:hover { box-shadow: var(--shadow-hover); }
+.card-clickable:active { transform: scale(0.98); }
+
+/* ========== TOP SCREEN ========== */
+.top-hero {
+  text-align: center;
+  padding: 28px 0 20px;
+}
+.top-hero-icon { font-size: 3rem; margin-bottom: 8px; }
+.top-hero-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--main-dark);
+  margin-bottom: 4px;
+}
+.top-hero-desc {
+  font-size: 0.9rem;
+  color: var(--text-light);
+}
+
+.top-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.top-action-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+.top-action-card:hover {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--main);
+}
+.top-action-card:active { transform: scale(0.97); }
+.top-action-icon { font-size: 2.5rem; display: block; margin-bottom: 10px; }
+.top-action-label {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.top-action-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Info section */
+.info-section {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.info-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--main-dark);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--text-light); }
+.info-value { font-weight: 600; }
+
+/* ========== DATE SEARCH SCREEN ========== */
+.section-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 24px 0 12px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+.form-label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.form-input {
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 1.05rem;
+  color: var(--text);
+  background: var(--white);
+  transition: border-color 0.2s;
+  -webkit-appearance: none;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--main);
+}
+.form-input::placeholder { color: var(--text-muted); }
+
+/* Number stepper */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.stepper-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--main);
+  background: var(--white);
+  color: var(--main-dark);
+  font-size: 1.4rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.stepper-btn:active { background: var(--main); color: var(--white); }
+.stepper-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  min-width: 40px;
+  text-align: center;
+}
+.stepper-unit {
+  font-size: 0.9rem;
+  color: var(--text-light);
+}
+
+/* ========== FACILITY LIST ========== */
+.tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 16px 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-radius: 24px;
+  border: 2px solid var(--border);
+  background: var(--white);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.tab.active {
+  background: var(--main);
+  border-color: var(--main);
+  color: var(--white);
+}
+.tab:active { transform: scale(0.96); }
+
+.facility-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.facility-card:hover { box-shadow: var(--shadow-hover); }
+.facility-card:active { transform: scale(0.98); }
+.facility-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-radius: 12px;
+}
+.facility-info { flex: 1; }
+.facility-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.facility-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.facility-price {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent-dark);
+  margin-top: 4px;
+}
+.facility-arrow {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  align-self: center;
+}
+
+/* Room list within facility */
+.room-card {
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 10px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.room-card:hover { border-color: var(--main); }
+.room-card:active { transform: scale(0.98); }
+.room-card.selected { border-color: var(--main); background: #f0f7fa; }
+.room-name { font-weight: 700; font-size: 1rem; }
+.room-detail {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+.room-price {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent-dark);
+  margin-top: 4px;
+}
+
+/* ========== TIME SLOT PICKER ========== */
+.timeslot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+.timeslot {
+  min-height: 48px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border);
+  background: var(--white);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.timeslot:hover { border-color: var(--main); }
+.timeslot.selected {
+  background: var(--main);
+  border-color: var(--main);
+  color: var(--white);
+}
+.timeslot.unavailable {
+  background: #f0eded;
+  color: var(--text-muted);
+  cursor: not-allowed;
+  border-color: transparent;
+  text-decoration: line-through;
+}
+
+/* Night picker for stays */
+.night-info {
+  background: #fdf6e9;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin: 12px 0;
+  border: 1px solid #f0deb8;
+  font-size: 0.95rem;
+}
+
+/* ========== CONFIRM SCREEN ========== */
+.summary-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+.summary-row:last-child { border-bottom: none; }
+.summary-label { color: var(--text-light); }
+.summary-value { font-weight: 600; text-align: right; max-width: 60%; }
+.summary-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 0 0;
+  margin-top: 8px;
+  border-top: 2px solid var(--text);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.summary-total-price { color: var(--danger); }
+
+/* Form inputs in confirm */
+.confirm-form { margin-bottom: 20px; }
+
+/* ========== DONE SCREEN ========== */
+.done-icon {
+  text-align: center;
+  font-size: 4rem;
+  margin: 40px 0 16px;
+}
+.done-title {
+  text-align: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--success);
+  margin-bottom: 8px;
+}
+.done-desc {
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--text-light);
+  margin-bottom: 24px;
+}
+.done-id {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+/* ========== AVAILABILITY BADGE ========== */
+.avail-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.avail-badge.ok { background: #e8f5e9; color: #2e7d32; }
+.avail-badge.few { background: #fff3e0; color: #e65100; }
+.avail-badge.none { background: #fce4ec; color: #c62828; }
+
+/* ========== UTILITY ========== */
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+.mb-16 { margin-bottom: 16px; }
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); font-size: 0.85rem; }
+.gap-8 { gap: 8px; }
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+}
+.empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
+
+/* ========== RESPONSIVE ========== */
+@media (min-width: 481px) {
+  .app {
+    box-shadow: 0 0 40px rgba(0,0,0,0.08);
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ========== HEADER ========== -->
+  <div class="header">
+    <button class="header-back hidden" id="backBtn" onclick="goBack()">&#8592;</button>
+    <div class="header-logo">ふたみ潮風ふれあい公園</div>
+    <div class="header-sub">オンライン予約</div>
+  </div>
+
+  <!-- ========== TOP SCREEN ========== -->
+  <div class="screen active" id="screen-top">
+    <div class="top-hero">
+      <div class="top-hero-icon">🌊</div>
+      <div class="top-hero-title">ご予約はこちら</div>
+      <div class="top-hero-desc">愛媛県伊予市 双海の海辺でリフレッシュ</div>
+    </div>
+
+    <div class="top-actions">
+      <div class="top-action-card" onclick="navigate('screen-date-search')">
+        <span class="top-action-icon">📅</span>
+        <span class="top-action-label">日付から探す</span>
+        <span class="top-action-desc">空いている施設を表示</span>
+      </div>
+      <div class="top-action-card" onclick="navigate('screen-facility-list')">
+        <span class="top-action-icon">🏠</span>
+        <span class="top-action-label">施設から探す</span>
+        <span class="top-action-desc">施設一覧から選択</span>
+      </div>
+    </div>
+
+    <div class="info-section">
+      <div class="info-title">&#9432; 施設情報</div>
+      <div class="info-row">
+        <span class="info-label">営業時間</span>
+        <span class="info-value">8:30 - 22:00</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">定休日</span>
+        <span class="info-value">毎週火曜日</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">住所</span>
+        <span class="info-value">愛媛県伊予市双海町</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">電話</span>
+        <span class="info-value">089-986-0522</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== DATE SEARCH SCREEN ========== -->
+  <div class="screen" id="screen-date-search">
+    <div class="section-title">📅 日付と人数を選択</div>
+
+    <div class="card">
+      <div class="form-group">
+        <label class="form-label" for="search-date">ご利用日</label>
+        <input type="date" class="form-input" id="search-date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">ご利用人数</label>
+        <div class="stepper">
+          <button class="stepper-btn" onclick="stepGuests(-1)">-</button>
+          <span class="stepper-value" id="guest-count">2</span>
+          <span class="stepper-unit">名</span>
+          <button class="stepper-btn" onclick="stepGuests(1)">+</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="searchByDate()">空き施設を検索</button>
+    </div>
+
+    <div id="date-search-results"></div>
+  </div>
+
+  <!-- ========== FACILITY LIST SCREEN ========== -->
+  <div class="screen" id="screen-facility-list">
+    <div class="section-title">🏠 施設一覧</div>
+
+    <div class="tabs" id="facility-tabs">
+      <div class="tab active" data-category="all" onclick="filterFacilities('all', this)">すべて</div>
+      <div class="tab" data-category="stay" onclick="filterFacilities('stay', this)">宿泊</div>
+      <div class="tab" data-category="day" onclick="filterFacilities('day', this)">日帰り</div>
+      <div class="tab" data-category="sport" onclick="filterFacilities('sport', this)">スポーツ</div>
+      <div class="tab" data-category="sauna" onclick="filterFacilities('sauna', this)">サウナ</div>
+    </div>
+
+    <div id="facility-list"></div>
+  </div>
+
+  <!-- ========== FACILITY DETAIL SCREEN ========== -->
+  <div class="screen" id="screen-facility-detail">
+    <div id="facility-detail-content"></div>
+  </div>
+
+  <!-- ========== ROOM BOOKING SCREEN (date/time selection) ========== -->
+  <div class="screen" id="screen-room-booking">
+    <div id="room-booking-content"></div>
+  </div>
+
+  <!-- ========== CONFIRM SCREEN ========== -->
+  <div class="screen" id="screen-confirm">
+    <div class="section-title">確認・お客様情報入力</div>
+
+    <div class="summary-card" id="booking-summary"></div>
+
+    <div class="card confirm-form">
+      <div class="form-group">
+        <label class="form-label" for="confirm-name">お名前 *</label>
+        <input type="text" class="form-input" id="confirm-name" placeholder="山田 太郎">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="confirm-phone">電話番号 *</label>
+        <input type="tel" class="form-input" id="confirm-phone" placeholder="090-1234-5678">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="confirm-email">メールアドレス</label>
+        <input type="email" class="form-input" id="confirm-email" placeholder="example@mail.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="confirm-note">備考</label>
+        <textarea class="form-input" id="confirm-note" rows="3" placeholder="ご要望があればご記入ください"></textarea>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="submitBooking()">予約を確定する</button>
+    <div class="text-center text-muted mt-16">
+      ※ 現在はMVP版です。確定後の変更は電話にてご連絡ください。
+    </div>
+  </div>
+
+  <!-- ========== DONE SCREEN ========== -->
+  <div class="screen" id="screen-done">
+    <div class="done-icon">&#10004;&#65039;</div>
+    <div class="done-title">ご予約ありがとうございます</div>
+    <div class="done-desc">予約内容を確認の上、施設よりご連絡いたします。</div>
+    <div class="done-id" id="done-booking-id"></div>
+
+    <div class="summary-card" id="done-summary"></div>
+
+    <button class="btn btn-secondary mt-24" onclick="navigate('screen-top')">トップに戻る</button>
+  </div>
+
+</div>
+
+<script>
+/* ================================================================
+   DATA
+   ================================================================ */
+const FACILITIES = [
+  {
+    id: 'fureai-stay',
+    name: '宿泊）ふれあいの館',
+    icon: '\u{1F3E0}',
+    category: 'stay',
+    rooms: [
+      { id: 'room-6', name: '宿泊室6畳', capacity: 3, price: 4000, unit: '1名/泊' },
+      { id: 'room-27', name: '宿泊室27畳', capacity: 10, price: 3500, unit: '1名/泊' },
+      { id: 'learning', name: '体験学習室', capacity: 20, price: 3000, unit: '1名/泊' },
+    ]
+  },
+  {
+    id: 'fureai-day',
+    name: '日帰り）ふれあいの館',
+    icon: '\u2600\uFE0F',
+    category: 'day',
+    rooms: [
+      { id: 'day-6', name: '宿泊室6畳', capacity: 3, price: 1000, unit: '1室/時間' },
+      { id: 'day-27', name: '宿泊室27畳', capacity: 10, price: 2000, unit: '1室/時間' },
+      { id: 'day-learning', name: '体験学習室', capacity: 20, price: 1500, unit: '1室/時間' },
+      { id: 'training', name: '研修室', capacity: 30, price: 2000, unit: '1室/時間' },
+      { id: 'kitchen', name: '厨房・食堂', capacity: 20, price: 1500, unit: '1室/時間' },
+    ]
+  },
+  {
+    id: 'camp',
+    name: 'キャンプ場',
+    icon: '\u26FA',
+    category: 'stay',
+    rooms: [
+      { id: 'camp-site', name: 'キャンプサイト', capacity: 6, price: 790, unit: '1区画/泊' },
+    ]
+  },
+  {
+    id: 'lodge',
+    name: 'ロッジ',
+    icon: '\u{1F3D5}\uFE0F',
+    category: 'stay',
+    rooms: [
+      { id: 'lodge-a', name: 'ロッジA', capacity: 6, price: 4720, unit: '1棟/泊' },
+      { id: 'lodge-b', name: 'ロッジB', capacity: 6, price: 4720, unit: '1棟/泊' },
+    ]
+  },
+  {
+    id: 'tennis',
+    name: 'テニスコート',
+    icon: '\u{1F3BE}',
+    category: 'sport',
+    rooms: [
+      { id: 'court-1', name: 'コート1', capacity: 4, price: 630, unit: '1面/時間' },
+      { id: 'court-2', name: 'コート2', capacity: 4, price: 630, unit: '1面/時間' },
+      { id: 'court-3', name: 'コート3', capacity: 4, price: 630, unit: '1面/時間' },
+      { id: 'court-4', name: 'コート4', capacity: 4, price: 630, unit: '1面/時間' },
+      { id: 'court-5', name: 'コート5', capacity: 4, price: 630, unit: '1面/時間' },
+    ]
+  },
+  {
+    id: 'midori',
+    name: 'みどりの広場',
+    icon: '\u26BE',
+    category: 'sport',
+    rooms: [
+      { id: 'ground', name: 'みどりの広場', capacity: 50, price: 1050, unit: '1面/時間' },
+    ]
+  },
+  {
+    id: 'sauna',
+    name: 'ふたみサンセットサウナ',
+    icon: '\u{1F9D6}',
+    category: 'sauna',
+    rooms: [
+      { id: 'sauna-private', name: '貸切サウナ（120分）', capacity: 8, price: 12000, unit: '1グループ/回' },
+    ]
+  }
+];
+
+// Time slots for hourly facilities
+const TIME_SLOTS = [
+  '9:00', '10:00', '11:00', '12:00', '13:00',
+  '14:00', '15:00', '16:00', '17:00', '18:00',
+  '19:00', '20:00', '21:00'
+];
+
+// Sauna time slots (120 min blocks)
+const SAUNA_SLOTS = [
+  '9:00-11:00', '11:30-13:30', '14:00-16:00', '16:30-18:30', '19:00-21:00'
+];
+
+/* ================================================================
+   STATE
+   ================================================================ */
+const state = {
+  screenHistory: ['screen-top'],
+  searchDate: '',
+  searchGuests: 2,
+  selectedFacility: null,
+  selectedRoom: null,
+  selectedDate: '',
+  selectedSlots: [],    // for hourly
+  selectedNights: 1,    // for stay
+  guests: 2,
+  flow: 'date', // 'date' or 'facility'
+};
+
+/* ================================================================
+   NAVIGATION
+   ================================================================ */
+function navigate(screenId) {
+  // Hide all screens
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  // Show target
+  const target = document.getElementById(screenId);
+  if (target) target.classList.add('active');
+
+  // Manage history
+  if (screenId === 'screen-top') {
+    state.screenHistory = ['screen-top'];
+  } else {
+    state.screenHistory.push(screenId);
+  }
+  updateBackButton();
+  window.scrollTo(0, 0);
+}
+
+function goBack() {
+  if (state.screenHistory.length > 1) {
+    state.screenHistory.pop();
+    const prev = state.screenHistory[state.screenHistory.length - 1];
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(prev).classList.add('active');
+    updateBackButton();
+    window.scrollTo(0, 0);
+  }
+}
+
+function updateBackButton() {
+  const btn = document.getElementById('backBtn');
+  if (state.screenHistory.length > 1) {
+    btn.classList.remove('hidden');
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+/* ================================================================
+   DUMMY AVAILABILITY
+   ================================================================ */
+// Seeded random based on date + room id for consistency
+function hashCode(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function isAvailable(roomId, date, slot) {
+  const seed = hashCode(roomId + date + (slot || ''));
+  return (seed % 10) > 2; // ~70% availability
+}
+
+function getAvailabilityLevel(roomId, date) {
+  // Check multiple slots to determine overall availability
+  let available = 0;
+  TIME_SLOTS.forEach(s => { if (isAvailable(roomId, date, s)) available++; });
+  if (available === 0) return 'none';
+  if (available < 5) return 'few';
+  return 'ok';
+}
+
+function availBadge(level) {
+  const labels = { ok: '空きあり', few: '残りわずか', none: '満室' };
+  return '<span class="avail-badge ' + level + '">' + labels[level] + '</span>';
+}
+
+/* ================================================================
+   DATE SEARCH
+   ================================================================ */
+function stepGuests(delta) {
+  state.searchGuests = Math.max(1, Math.min(50, state.searchGuests + delta));
+  document.getElementById('guest-count').textContent = state.searchGuests;
+}
+
+function searchByDate() {
+  const dateInput = document.getElementById('search-date');
+  if (!dateInput.value) {
+    alert('日付を選択してください');
+    return;
+  }
+  state.searchDate = dateInput.value;
+  state.guests = state.searchGuests;
+  state.flow = 'date';
+
+  const resultsEl = document.getElementById('date-search-results');
+  const dateStr = formatDate(state.searchDate);
+  let html = '<div class="section-title">' + dateStr + ' の空き施設</div>';
+
+  let found = false;
+  FACILITIES.forEach(facility => {
+    // Filter rooms by capacity
+    const availableRooms = facility.rooms.filter(r => r.capacity >= state.searchGuests);
+    if (availableRooms.length === 0) return;
+
+    availableRooms.forEach(room => {
+      const level = getAvailabilityLevel(room.id, state.searchDate);
+      found = true;
+      html += '<div class="facility-card" onclick="selectFromDateSearch(\'' + facility.id + '\', \'' + room.id + '\')">';
+      html += '  <div class="facility-icon">' + facility.icon + '</div>';
+      html += '  <div class="facility-info">';
+      html += '    <div class="facility-name">' + room.name + '</div>';
+      html += '    <div class="facility-meta">' + facility.name + ' / 定員' + room.capacity + '名</div>';
+      html += '    <div class="facility-price">' + room.price.toLocaleString() + '円 (' + room.unit + ') ' + availBadge(level) + '</div>';
+      html += '  </div>';
+      html += '  <div class="facility-arrow">&#8250;</div>';
+      html += '</div>';
+    });
+  });
+
+  if (!found) {
+    html += '<div class="empty-state"><div class="empty-state-icon">&#128533;</div><div>' + state.searchGuests + '名でご利用可能な施設が見つかりません</div></div>';
+  }
+
+  resultsEl.innerHTML = html;
+}
+
+function selectFromDateSearch(facilityId, roomId) {
+  const facility = FACILITIES.find(f => f.id === facilityId);
+  const room = facility.rooms.find(r => r.id === roomId);
+  state.selectedFacility = facility;
+  state.selectedRoom = room;
+  state.selectedDate = state.searchDate;
+  state.selectedSlots = [];
+  state.selectedNights = 1;
+  showRoomBooking();
+}
+
+/* ================================================================
+   FACILITY LIST
+   ================================================================ */
+function renderFacilityList(category) {
+  const listEl = document.getElementById('facility-list');
+  const filtered = category === 'all' ? FACILITIES : FACILITIES.filter(f => f.category === category);
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128269;</div><div>該当する施設がありません</div></div>';
+    return;
+  }
+
+  let html = '';
+  filtered.forEach(facility => {
+    const minPrice = Math.min(...facility.rooms.map(r => r.price));
+    html += '<div class="facility-card" onclick="showFacilityDetail(\'' + facility.id + '\')">';
+    html += '  <div class="facility-icon">' + facility.icon + '</div>';
+    html += '  <div class="facility-info">';
+    html += '    <div class="facility-name">' + facility.name + '</div>';
+    html += '    <div class="facility-meta">' + facility.rooms.length + '室・' + facility.rooms.map(r => r.name).join('、') + '</div>';
+    html += '    <div class="facility-price">' + minPrice.toLocaleString() + '円〜</div>';
+    html += '  </div>';
+    html += '  <div class="facility-arrow">&#8250;</div>';
+    html += '</div>';
+  });
+  listEl.innerHTML = html;
+}
+
+function filterFacilities(category, tabEl) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+  renderFacilityList(category);
+}
+
+/* ================================================================
+   FACILITY DETAIL (room selection)
+   ================================================================ */
+function showFacilityDetail(facilityId) {
+  state.flow = 'facility';
+  const facility = FACILITIES.find(f => f.id === facilityId);
+  state.selectedFacility = facility;
+  const el = document.getElementById('facility-detail-content');
+
+  let html = '<div class="section-title">' + facility.icon + ' ' + facility.name + '</div>';
+
+  html += '<div class="card"><div class="form-group">';
+  html += '<label class="form-label" for="detail-date">ご利用日</label>';
+  html += '<input type="date" class="form-input" id="detail-date" onchange="updateRoomAvailability(\'' + facilityId + '\')">';
+  html += '</div></div>';
+
+  html += '<div id="room-list-' + facilityId + '">';
+  facility.rooms.forEach(room => {
+    html += renderRoomCard(room, facilityId, '');
+  });
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  // Set date min to today
+  const dateInput = document.getElementById('detail-date');
+  dateInput.min = getTodayStr();
+  dateInput.value = state.searchDate || getTodayStr();
+
+  navigate('screen-facility-detail');
+}
+
+function renderRoomCard(room, facilityId, dateStr) {
+  const level = dateStr ? getAvailabilityLevel(room.id, dateStr) : 'ok';
+  let html = '<div class="room-card" onclick="selectRoom(\'' + facilityId + '\', \'' + room.id + '\')">';
+  html += '  <div style="display:flex;justify-content:space-between;align-items:flex-start">';
+  html += '    <div>';
+  html += '      <div class="room-name">' + room.name + '</div>';
+  html += '      <div class="room-detail">定員 ' + room.capacity + '名</div>';
+  html += '    </div>';
+  if (dateStr) html += availBadge(level);
+  html += '  </div>';
+  html += '  <div class="room-price">' + room.price.toLocaleString() + '円 (' + room.unit + ')</div>';
+  html += '</div>';
+  return html;
+}
+
+function updateRoomAvailability(facilityId) {
+  const dateInput = document.getElementById('detail-date');
+  const dateStr = dateInput.value;
+  const facility = FACILITIES.find(f => f.id === facilityId);
+  const container = document.getElementById('room-list-' + facilityId);
+  let html = '';
+  facility.rooms.forEach(room => {
+    html += renderRoomCard(room, facilityId, dateStr);
+  });
+  container.innerHTML = html;
+}
+
+function selectRoom(facilityId, roomId) {
+  const facility = FACILITIES.find(f => f.id === facilityId);
+  const room = facility.rooms.find(r => r.id === roomId);
+  state.selectedFacility = facility;
+  state.selectedRoom = room;
+
+  const dateInput = document.getElementById('detail-date');
+  state.selectedDate = dateInput ? dateInput.value : '';
+  state.selectedSlots = [];
+  state.selectedNights = 1;
+
+  showRoomBooking();
+}
+
+/* ================================================================
+   ROOM BOOKING (date/time/guests selection)
+   ================================================================ */
+function showRoomBooking() {
+  const facility = state.selectedFacility;
+  const room = state.selectedRoom;
+  const isStay = facility.category === 'stay';
+  const isSauna = facility.category === 'sauna';
+  const el = document.getElementById('room-booking-content');
+
+  let html = '<div class="section-title">' + facility.icon + ' ' + room.name + '</div>';
+  html += '<div class="text-muted mb-16">' + facility.name + ' / ' + room.price.toLocaleString() + '円 (' + room.unit + ')</div>';
+
+  // Date input (if not already selected)
+  html += '<div class="card">';
+  html += '<div class="form-group">';
+  html += '<label class="form-label">ご利用日</label>';
+  html += '<input type="date" class="form-input" id="booking-date" value="' + (state.selectedDate || '') + '" onchange="onBookingDateChange()">';
+  html += '</div>';
+
+  // Guests
+  if (isStay || isSauna) {
+    html += '<div class="form-group">';
+    html += '<label class="form-label">ご利用人数</label>';
+    html += '<div class="stepper">';
+    html += '<button class="stepper-btn" onclick="stepBookingGuests(-1)">-</button>';
+    html += '<span class="stepper-value" id="booking-guest-count">' + state.guests + '</span>';
+    html += '<span class="stepper-unit">名</span>';
+    html += '<button class="stepper-btn" onclick="stepBookingGuests(1)">+</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+
+  // Stay: nights selector
+  if (isStay) {
+    html += '<div class="form-group">';
+    html += '<label class="form-label">泊数</label>';
+    html += '<div class="stepper">';
+    html += '<button class="stepper-btn" onclick="stepNights(-1)">-</button>';
+    html += '<span class="stepper-value" id="nights-count">' + state.selectedNights + '</span>';
+    html += '<span class="stepper-unit">泊</span>';
+    html += '<button class="stepper-btn" onclick="stepNights(1)">+</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '<div class="night-info" id="stay-price-info"></div>';
+  }
+
+  // Hourly: time slots
+  if (!isStay && !isSauna) {
+    html += '<div class="form-group">';
+    html += '<label class="form-label">時間帯を選択（複数可）</label>';
+    html += '<div class="timeslot-grid" id="timeslot-grid"></div>';
+    html += '</div>';
+  }
+
+  // Sauna: time slots
+  if (isSauna) {
+    html += '<div class="form-group">';
+    html += '<label class="form-label">時間帯を選択</label>';
+    html += '<div class="timeslot-grid" id="sauna-slot-grid"></div>';
+    html += '</div>';
+  }
+
+  html += '</div>'; // .card
+
+  html += '<div id="booking-price-summary" class="card" style="display:none"></div>';
+  html += '<button class="btn btn-primary mt-16" onclick="proceedToConfirm()">予約内容の確認へ</button>';
+
+  el.innerHTML = html;
+
+  // Set date min
+  const dateInput = document.getElementById('booking-date');
+  dateInput.min = getTodayStr();
+
+  navigate('screen-room-booking');
+  onBookingDateChange();
+}
+
+function onBookingDateChange() {
+  const dateInput = document.getElementById('booking-date');
+  state.selectedDate = dateInput.value;
+  state.selectedSlots = [];
+
+  const facility = state.selectedFacility;
+  const room = state.selectedRoom;
+  const isStay = facility.category === 'stay';
+  const isSauna = facility.category === 'sauna';
+
+  if (!isStay && !isSauna && dateInput.value) {
+    renderTimeSlots();
+  }
+  if (isSauna && dateInput.value) {
+    renderSaunaSlots();
+  }
+  if (isStay) {
+    updateStayPriceInfo();
+  }
+  updateBookingPriceSummary();
+}
+
+function renderTimeSlots() {
+  const grid = document.getElementById('timeslot-grid');
+  if (!grid) return;
+  const room = state.selectedRoom;
+  const date = state.selectedDate;
+
+  let html = '';
+  TIME_SLOTS.forEach(slot => {
+    const avail = isAvailable(room.id, date, slot);
+    const cls = avail ? '' : ' unavailable';
+    const sel = state.selectedSlots.includes(slot) ? ' selected' : '';
+    html += '<div class="timeslot' + cls + sel + '" onclick="toggleSlot(\'' + slot + '\', this, ' + avail + ')">' + slot + '</div>';
+  });
+  grid.innerHTML = html;
+}
+
+function renderSaunaSlots() {
+  const grid = document.getElementById('sauna-slot-grid');
+  if (!grid) return;
+  const room = state.selectedRoom;
+  const date = state.selectedDate;
+
+  let html = '';
+  SAUNA_SLOTS.forEach(slot => {
+    const avail = isAvailable(room.id, date, slot);
+    const cls = avail ? '' : ' unavailable';
+    const sel = state.selectedSlots.includes(slot) ? ' selected' : '';
+    html += '<div class="timeslot' + cls + sel + '" onclick="toggleSaunaSlot(\'' + slot + '\', this, ' + avail + ')">' + slot + '</div>';
+  });
+  grid.innerHTML = html;
+}
+
+function toggleSlot(slot, el, avail) {
+  if (!avail) return;
+  const idx = state.selectedSlots.indexOf(slot);
+  if (idx >= 0) {
+    state.selectedSlots.splice(idx, 1);
+    el.classList.remove('selected');
+  } else {
+    state.selectedSlots.push(slot);
+    el.classList.add('selected');
+  }
+  updateBookingPriceSummary();
+}
+
+function toggleSaunaSlot(slot, el, avail) {
+  if (!avail) return;
+  // Single selection for sauna
+  state.selectedSlots = [slot];
+  const grid = document.getElementById('sauna-slot-grid');
+  grid.querySelectorAll('.timeslot').forEach(t => t.classList.remove('selected'));
+  el.classList.add('selected');
+  updateBookingPriceSummary();
+}
+
+function stepBookingGuests(delta) {
+  const max = state.selectedRoom ? state.selectedRoom.capacity : 50;
+  state.guests = Math.max(1, Math.min(max, state.guests + delta));
+  document.getElementById('booking-guest-count').textContent = state.guests;
+  updateStayPriceInfo();
+  updateBookingPriceSummary();
+}
+
+function stepNights(delta) {
+  state.selectedNights = Math.max(1, Math.min(14, state.selectedNights + delta));
+  document.getElementById('nights-count').textContent = state.selectedNights;
+  updateStayPriceInfo();
+  updateBookingPriceSummary();
+}
+
+function updateStayPriceInfo() {
+  const el = document.getElementById('stay-price-info');
+  if (!el) return;
+  const room = state.selectedRoom;
+  const facility = state.selectedFacility;
+  if (!room) return;
+
+  // Per-person pricing (unit contains '名')
+  const isPerPerson = room.unit.includes('名');
+  let total;
+  if (isPerPerson) {
+    total = room.price * state.guests * state.selectedNights;
+    el.innerHTML = room.price.toLocaleString() + '円 x ' + state.guests + '名 x ' + state.selectedNights + '泊 = <strong>' + total.toLocaleString() + '円</strong>';
+  } else {
+    total = room.price * state.selectedNights;
+    el.innerHTML = room.price.toLocaleString() + '円 x ' + state.selectedNights + '泊 = <strong>' + total.toLocaleString() + '円</strong>';
+  }
+}
+
+function calculateTotal() {
+  const room = state.selectedRoom;
+  const facility = state.selectedFacility;
+  if (!room) return 0;
+
+  const isStay = facility.category === 'stay';
+  const isSauna = facility.category === 'sauna';
+  const isPerPerson = room.unit.includes('名');
+
+  if (isStay) {
+    if (isPerPerson) {
+      return room.price * state.guests * state.selectedNights;
+    }
+    return room.price * state.selectedNights;
+  }
+  if (isSauna) {
+    return room.price * state.selectedSlots.length;
+  }
+  // Hourly
+  return room.price * state.selectedSlots.length;
+}
+
+function updateBookingPriceSummary() {
+  const el = document.getElementById('booking-price-summary');
+  if (!el) return;
+  const total = calculateTotal();
+  if (total > 0) {
+    el.style.display = 'block';
+    el.innerHTML = '<div style="display:flex;justify-content:space-between;font-size:1.1rem"><span style="font-weight:600">合計金額</span><span style="font-weight:700;color:var(--danger)">' + total.toLocaleString() + '円</span></div>';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+/* ================================================================
+   CONFIRM SCREEN
+   ================================================================ */
+function proceedToConfirm() {
+  if (!state.selectedDate) {
+    alert('日付を選択してください');
+    return;
+  }
+  const facility = state.selectedFacility;
+  const isStay = facility.category === 'stay';
+  const isSauna = facility.category === 'sauna';
+
+  if (!isStay && state.selectedSlots.length === 0) {
+    alert('時間帯を選択してください');
+    return;
+  }
+
+  const room = state.selectedRoom;
+  const total = calculateTotal();
+  const dateStr = formatDate(state.selectedDate);
+
+  let timeStr = '';
+  if (isStay) {
+    const checkout = addDays(state.selectedDate, state.selectedNights);
+    timeStr = dateStr + ' ~ ' + formatDate(checkout) + '（' + state.selectedNights + '泊）';
+  } else if (isSauna) {
+    timeStr = dateStr + ' ' + state.selectedSlots[0];
+  } else {
+    const sorted = [...state.selectedSlots].sort();
+    timeStr = dateStr + ' ' + sorted.join(', ');
+  }
+
+  const summaryEl = document.getElementById('booking-summary');
+  let html = '';
+  html += '<div class="summary-row"><span class="summary-label">施設</span><span class="summary-value">' + facility.name + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">部屋/区画</span><span class="summary-value">' + room.name + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + timeStr + '</span></div>';
+  if (isStay || isSauna) {
+    html += '<div class="summary-row"><span class="summary-label">人数</span><span class="summary-value">' + state.guests + '名</span></div>';
+  }
+  html += '<div class="summary-row"><span class="summary-label">料金</span><span class="summary-value">' + room.price.toLocaleString() + '円 (' + room.unit + ')</span></div>';
+  html += '<div class="summary-total"><span>合計</span><span class="summary-total-price">' + total.toLocaleString() + '円</span></div>';
+  summaryEl.innerHTML = html;
+
+  // Store for later
+  state.totalPrice = total;
+  state.timeStr = timeStr;
+
+  navigate('screen-confirm');
+}
+
+function submitBooking() {
+  const name = document.getElementById('confirm-name').value.trim();
+  const phone = document.getElementById('confirm-phone').value.trim();
+  const email = document.getElementById('confirm-email').value.trim();
+  const note = document.getElementById('confirm-note').value.trim();
+
+  if (!name) { alert('お名前を入力してください'); return; }
+  if (!phone) { alert('電話番号を入力してください'); return; }
+
+  // Generate booking ID
+  const bookingId = 'FTM-' + Date.now().toString(36).toUpperCase();
+
+  // Build booking object
+  const booking = {
+    id: bookingId,
+    facilityId: state.selectedFacility.id,
+    facilityName: state.selectedFacility.name,
+    roomId: state.selectedRoom.id,
+    roomName: state.selectedRoom.name,
+    date: state.selectedDate,
+    slots: state.selectedSlots,
+    nights: state.selectedNights,
+    guests: state.guests,
+    total: state.totalPrice,
+    timeStr: state.timeStr,
+    name: name,
+    phone: phone,
+    email: email,
+    note: note,
+    createdAt: new Date().toISOString(),
+  };
+
+  // Save to localStorage
+  const bookings = JSON.parse(localStorage.getItem('futami_bookings') || '[]');
+  bookings.push(booking);
+  localStorage.setItem('futami_bookings', JSON.stringify(bookings));
+
+  // Show done screen
+  document.getElementById('done-booking-id').textContent = '予約番号: ' + bookingId;
+
+  const doneSummary = document.getElementById('done-summary');
+  let html = '';
+  html += '<div class="summary-row"><span class="summary-label">施設</span><span class="summary-value">' + booking.facilityName + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">部屋/区画</span><span class="summary-value">' + booking.roomName + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + booking.timeStr + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + booking.name + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + booking.phone + '</span></div>';
+  if (booking.email) {
+    html += '<div class="summary-row"><span class="summary-label">メール</span><span class="summary-value">' + booking.email + '</span></div>';
+  }
+  html += '<div class="summary-total"><span>合計金額</span><span class="summary-total-price">' + booking.total.toLocaleString() + '円</span></div>';
+  doneSummary.innerHTML = html;
+
+  // Reset form
+  document.getElementById('confirm-name').value = '';
+  document.getElementById('confirm-phone').value = '';
+  document.getElementById('confirm-email').value = '';
+  document.getElementById('confirm-note').value = '';
+
+  navigate('screen-done');
+}
+
+/* ================================================================
+   UTILS
+   ================================================================ */
+function getTodayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日(' + days[d.getDay()] + ')';
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/* ================================================================
+   INIT
+   ================================================================ */
+document.addEventListener('DOMContentLoaded', function() {
+  // Set search date min to today
+  const searchDate = document.getElementById('search-date');
+  searchDate.min = getTodayStr();
+  searchDate.value = getTodayStr();
+
+  // Render initial facility list
+  renderFacilityList('all');
+});
+</script>
+</body>
+</html>
