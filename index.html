@@ -1024,7 +1024,9 @@ const PLANS = [
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
     timeRange: '8:30 - 22:00', basePrice: 2310,
     priceDisplay: '2,310円/室/通し',
-    badge: '日帰り通し', badgeColor: '#f59e0b' },
+    badge: '日帰り', badgeColor: '#f59e0b',
+    note: '※宿泊者がいる場合は16:00までのご利用となります。宿泊予約がない場合は最大22:00まで利用可能です。',
+    consent: '厨房・食堂は宿泊者との共用施設です。当日宿泊予約がある場合、16:00までのご利用となります。この条件に同意の上、ご予約ください。' },
 
   // ===== キャンプ =====
   { id: 'camp_stay', name: 'キャンプ泊', planType: 'camp', category: 'outdoor',
@@ -1692,7 +1694,19 @@ function showRoomBooking() {
   }
 
   html += '<div id="booking-price-summary" class="card" style="display:none"></div>';
-  html += '<button class="btn btn-primary mt-16" onclick="proceedToConfirm()">予約内容の確認へ</button>';
+
+  // 同意チェックボックス（consentフィールドがあるプランのみ）
+  if (plan.consent) {
+    html += '<div class="card" style="background:#fff8e1;border:2px solid #f5c518;margin-top:12px">';
+    html += '<div style="font-size:13px;line-height:1.7;margin-bottom:12px">' + plan.consent + '</div>';
+    html += '<label style="display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;cursor:pointer">';
+    html += '<input type="checkbox" id="consent-check" onchange="toggleConsentBtn()" style="width:24px;height:24px;accent-color:#D4A047">';
+    html += '上記に同意します</label>';
+    html += '</div>';
+    html += '<button class="btn btn-primary mt-16" id="confirm-btn" onclick="proceedToConfirm()" disabled style="opacity:0.4;cursor:not-allowed">予約内容の確認へ</button>';
+  } else {
+    html += '<button class="btn btn-primary mt-16" id="confirm-btn" onclick="proceedToConfirm()">予約内容の確認へ</button>';
+  }
 
   el.innerHTML = html;
 
@@ -2165,6 +2179,16 @@ function updateBookingPriceSummary() {
 /* ================================================================
    CONFIRM SCREEN
    ================================================================ */
+function toggleConsentBtn() {
+  const cb = document.getElementById('consent-check');
+  const btn = document.getElementById('confirm-btn');
+  if (cb && btn) {
+    btn.disabled = !cb.checked;
+    btn.style.opacity = cb.checked ? '1' : '0.4';
+    btn.style.cursor = cb.checked ? 'pointer' : 'not-allowed';
+  }
+}
+
 function proceedToConfirm() {
   if (!state.selectedDate) {
     alert('日付を選択してください');
