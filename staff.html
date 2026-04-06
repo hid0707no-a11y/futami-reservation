@@ -43,51 +43,54 @@ body {
   z-index: 100;
 }
 .header-title {
-  font-size: 1.1rem;
+  font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0.05em;
+  margin-bottom: 6px;
 }
-.header-date {
-  font-size: 1.6rem;
-  font-weight: 700;
-  margin: 6px 0 8px;
-}
-.date-nav {
+.header-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
-.date-nav button {
+.header-date {
+  font-size: 1.3rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.header-row button {
   background: rgba(255,255,255,0.15);
   border: none;
   color: #fff;
-  font-size: 1.4rem;
-  padding: 14px 24px;
-  border-radius: 10px;
+  font-size: 1.1rem;
+  padding: 8px 14px;
+  border-radius: 8px;
   cursor: pointer;
-  min-width: 60px;
-  min-height: 60px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
 }
-.date-nav button:active { background: rgba(255,255,255,0.3); }
-.date-nav .today-btn {
+.header-row button:active { background: rgba(255,255,255,0.3); }
+.header-row .today-btn {
   background: rgba(255,255,255,0.25);
-  font-size: 1rem;
-  padding: 14px 28px;
+  font-size: 0.85rem;
+  padding: 8px 14px;
 }
-.date-nav .date-input {
+.header-row .date-input {
   background: rgba(255,255,255,0.15);
-  border: 2px solid rgba(255,255,255,0.3);
+  border: 1px solid rgba(255,255,255,0.3);
   color: #fff;
-  font-size: 1rem;
-  padding: 12px 14px;
-  border-radius: 10px;
-  min-height: 60px;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  min-height: 44px;
   font-weight: 600;
   color-scheme: dark;
+  width: 130px;
 }
 
 /* ===== 統計バー ===== */
@@ -596,9 +599,9 @@ td.block-start-td + td.block-mid { border-left: none; }
 <!-- ヘッダー -->
 <header class="header">
   <div class="header-title">ふたみ予約管理</div>
-  <div class="header-date" id="headerDate"></div>
-  <div class="date-nav">
+  <div class="header-row">
     <button onclick="changeDate(-1)" aria-label="前日">◀</button>
+    <div class="header-date" id="headerDate"></div>
     <input type="date" class="date-input" id="dateJump" onchange="jumpToDate(this.value)">
     <button class="today-btn" onclick="goToday()">今日</button>
     <button onclick="changeDate(1)" aria-label="翌日">▶</button>
