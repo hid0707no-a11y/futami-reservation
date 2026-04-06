@@ -165,6 +165,17 @@ body {
   font-weight: 400;
 }
 
+/* カテゴリヘッダー行 */
+.matrix .category-header td {
+  background: #e8edf3;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 8px 12px;
+  color: var(--navy);
+  border-bottom: 2px solid var(--navy);
+  text-align: left;
+}
+
 /* セル */
 .cell {
   min-width: 64px;
@@ -383,6 +394,36 @@ td[colspan] .cell {
   min-height: 60px;
   resize: vertical;
 }
+/* チェックボックスグループ（3コマ制用） */
+.slot-checkboxes {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.slot-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 10px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color 0.15s, background 0.15s;
+}
+.slot-checkboxes label:has(input:checked) {
+  border-color: var(--navy);
+  background: #eef2f8;
+}
+.slot-checkboxes input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-height: auto;
+  appearance: auto;
+  -webkit-appearance: auto;
+}
 .form-actions {
   display: flex;
   gap: 10px;
@@ -498,10 +539,8 @@ td[colspan] .cell {
     <label>日付</label>
     <input type="date" id="addDate">
   </div>
-  <div class="form-group" id="addTimeGroup">
-    <label>時間</label>
-    <select id="addTime"></select>
-  </div>
+  <!-- 動的に切り替わる時間入力エリア -->
+  <div id="addTimeGroup"></div>
   <div class="form-group">
     <label>お名前</label>
     <input type="text" id="addName" placeholder="予約者名" x-webkit-speech>
@@ -531,37 +570,85 @@ td[colspan] .cell {
 <div class="toast" id="toast"></div>
 
 <script>
+// ===== 予約枠タイプ定義 =====
+// stay: 泊単位 (IN 16:00 / OUT 10:00)
+// slot3: 3コマ制 (午前8:30-12:00 / 午後12:00-17:00 / 夜間17:00-22:00)
+// allday: 通し利用 (8:30-22:00)
+// hourly: 1時間刻み (8:30-22:00)
+// camp: キャンプ泊 (14:00-翌13:00)
+// lodge-stay: ロッジ宿泊 (16:00-翌10:00)
+// sauna: 120分枠
+
 // ===== 施設データ =====
 const FACILITIES = [
-  { id: 'fureai_stay_6', name: '6畳', category: '宿泊）ふれあいの館', overnight: true },
-  { id: 'fureai_stay_27', name: '27畳', category: '宿泊）ふれあいの館', overnight: true },
-  { id: 'fureai_stay_exp', name: '体験学習室', category: '宿泊）ふれあいの館', overnight: true },
-  { id: 'fureai_day_6', name: '6畳', category: '日帰り）ふれあいの館', overnight: false },
-  { id: 'fureai_day_27', name: '27畳', category: '日帰り）ふれあいの館', overnight: false },
-  { id: 'fureai_day_exp', name: '体験学習室', category: '日帰り）ふれあいの館', overnight: false },
-  { id: 'fureai_day_train', name: '研修室', category: '日帰り）ふれあいの館', overnight: false },
-  { id: 'fureai_day_kitchen', name: '厨房食堂', category: '日帰り）ふれあいの館', overnight: false },
-  { id: 'camp', name: 'キャンプ場', category: 'キャンプ場', overnight: true },
-  { id: 'lodge_a', name: 'ロッジA', category: 'ロッジ', overnight: true },
-  { id: 'lodge_b', name: 'ロッジB', category: 'ロッジ', overnight: true },
-  { id: 'tennis_1', name: 'コート1', category: 'テニスコート', overnight: false },
-  { id: 'tennis_2', name: 'コート2', category: 'テニスコート', overnight: false },
-  { id: 'tennis_3', name: 'コート3', category: 'テニスコート', overnight: false },
-  { id: 'tennis_4', name: 'コート4', category: 'テニスコート', overnight: false },
-  { id: 'tennis_5', name: 'コート5', category: 'テニスコート', overnight: false },
-  { id: 'midori', name: 'みどりの広場', category: 'みどりの広場', overnight: false },
-  { id: 'sauna', name: '貸切120分', category: 'ふたみサンセットサウナ', overnight: false },
+  // --- ふれあいの館（宿泊） ---
+  { id: 'stay_6_1', name: '6畳(1)', group: 'stay_fureai', category: 'ふれあいの館（宿泊）', icon: '', bookingType: 'stay', price: '2,310円/名/泊' },
+  { id: 'stay_6_2', name: '6畳(2)', group: 'stay_fureai', category: 'ふれあいの館（宿泊）', icon: '', bookingType: 'stay', price: '2,310円/名/泊' },
+  { id: 'stay_6_3', name: '6畳(3)', group: 'stay_fureai', category: 'ふれあいの館（宿泊）', icon: '', bookingType: 'stay', price: '2,310円/名/泊' },
+  { id: 'stay_6_4', name: '6畳(4)', group: 'stay_fureai', category: 'ふれあいの館（宿泊）', icon: '', bookingType: 'stay', price: '2,310円/名/泊' },
+  { id: 'stay_27', name: '27畳', group: 'stay_fureai', category: 'ふれあいの館（宿泊）', icon: '', bookingType: 'stay', price: '9,430円/室/泊' },
+  { id: 'stay_exp', name: '体験学習室', group: 'stay_fureai', category: 'ふれあいの館（宿泊）', icon: '', bookingType: 'stay', price: '9,430円/室/泊' },
+
+  // --- ふれあいの館（日帰り） ---
+  { id: 'day_6_1', name: '6畳(1)', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'allday', price: '1,680円/室/日' },
+  { id: 'day_6_2', name: '6畳(2)', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'allday', price: '1,680円/室/日' },
+  { id: 'day_6_3', name: '6畳(3)', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'allday', price: '1,680円/室/日' },
+  { id: 'day_6_4', name: '6畳(4)', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'allday', price: '1,680円/室/日' },
+  { id: 'day_27', name: '27畳', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'slot3', price: '午前1,790/午後2,620/夜間2,620/通し6,080' },
+  { id: 'day_exp', name: '体験学習室', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'slot3', price: '午前1,790/午後2,620/夜間2,620/通し6,080' },
+  { id: 'day_train', name: '研修室', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'slot3', price: '午前2,620/午後3,880/夜間3,880/通し8,910' },
+  { id: 'day_kitchen', name: '厨房・食堂', group: 'day_fureai', category: 'ふれあいの館（日帰り）', icon: '', bookingType: 'allday', price: '2,310円/室/日' },
+
+  // --- キャンプ場・ロッジ ---
+  { id: 'camp', name: 'キャンプ場', group: 'camp_lodge', category: 'キャンプ場・ロッジ', icon: '', bookingType: 'camp', price: '790円/区画/泊' },
+  { id: 'lodge', name: 'ロッジ(泊)', group: 'camp_lodge', category: 'キャンプ場・ロッジ', icon: '', bookingType: 'lodge-stay', price: '4,720円/棟/泊' },
+  { id: 'lodge_day', name: 'ロッジ(日帰り)', group: 'camp_lodge', category: 'キャンプ場・ロッジ', icon: '', bookingType: 'hourly', price: '330円/時' },
+
+  // --- スポーツ ---
+  { id: 'tennis_1', name: 'コート1', group: 'sports', category: 'スポーツ', icon: '', bookingType: 'hourly', price: '市民630円/市外760円/面/時' },
+  { id: 'tennis_2', name: 'コート2', group: 'sports', category: 'スポーツ', icon: '', bookingType: 'hourly', price: '市民630円/市外760円/面/時' },
+  { id: 'tennis_3', name: 'コート3', group: 'sports', category: 'スポーツ', icon: '', bookingType: 'hourly', price: '市民630円/市外760円/面/時' },
+  { id: 'tennis_4', name: 'コート4', group: 'sports', category: 'スポーツ', icon: '', bookingType: 'hourly', price: '市民630円/市外760円/面/時' },
+  { id: 'tennis_5', name: 'コート5', group: 'sports', category: 'スポーツ', icon: '', bookingType: 'hourly', price: '市民630円/市外760円/面/時' },
+  { id: 'midori', name: 'みどりの広場', group: 'sports', category: 'スポーツ', icon: '', bookingType: 'slot3', price: '市民: 午前1,890/午後2,730/夜間2,730' },
+
+  // --- サウナ ---
+  { id: 'sauna', name: 'サンセットサウナ', group: 'sauna', category: 'サウナ', icon: '', bookingType: 'sauna', price: '12,000円/グループ/120分(8名まで)' },
 ];
 
-// 営業時間 8:00-22:00
+// カテゴリ表示順とアイコン
+const CATEGORY_ORDER = [
+  { group: 'stay_fureai', label: '\uD83C\uDFE0 ふれあいの館（宿泊）' },
+  { group: 'day_fureai', label: '\u2600\uFE0F ふれあいの館（日帰り）' },
+  { group: 'camp_lodge', label: '\u26FA キャンプ場・ロッジ' },
+  { group: 'sports', label: '\uD83C\uDFBE スポーツ' },
+  { group: 'sauna', label: '\uD83E\uDDD6 サウナ' },
+];
+
+// 3コマ制の時間枠定義
+const SLOT3_DEFS = [
+  { key: 'morning', label: '午前', timeLabel: '8:30-12:00', start: 8.5, end: 12 },
+  { key: 'afternoon', label: '午後', timeLabel: '12:00-17:00', start: 12, end: 17 },
+  { key: 'evening', label: '夜間', timeLabel: '17:00-22:00', start: 17, end: 22 },
+];
+
+// サウナ120分枠定義
+const SAUNA_SLOTS = [
+  { key: 'sauna_1', label: '10:00-12:00', start: 10, end: 12 },
+  { key: 'sauna_2', label: '12:30-14:30', start: 12.5, end: 14.5 },
+  { key: 'sauna_3', label: '15:00-17:00', start: 15, end: 17 },
+  { key: 'sauna_4', label: '17:30-19:30', start: 17.5, end: 19.5 },
+];
+
+// 1時間刻み用の時間帯 8:30-22:00 (表示は8時台から21時台)
 const HOURS = [];
 for (let h = 8; h <= 21; h++) HOURS.push(h);
-const HOUR_COUNT = HOURS.length; // 14スロット
+const HOUR_COUNT = HOURS.length;
 
 // ===== 状態管理 =====
 let currentDate = new Date();
 currentDate.setHours(0,0,0,0);
-const STORAGE_KEY = 'futami_reservations';
+const STORAGE_KEY = 'futami_reservations_v2';
 
 // ===== ユーティリティ =====
 function dateStr(d) {
@@ -597,62 +684,75 @@ function getReservationsForDate(d) {
 function generateDummyData() {
   const existing = loadReservations();
   const today = dateStr(new Date());
-  // 今日分が既にあればスキップ
   if (existing.some(r => r.date === today)) return;
 
-  const names = [
-    '田中太郎','佐藤花子','鈴木一郎','高橋美咲','伊藤健太',
-    '渡辺陽子','山本誠','中村友美','小林大輔','加藤明日香',
-    '松本翔太','山田美穂','井上和也','木村恵子','斎藤拓海'
-  ];
-  const phones = [
-    '090-1234-5678','080-2345-6789','070-3456-7890','090-4567-8901',
-    '080-5678-9012','070-6789-0123','090-7890-1234','080-8901-2345',
-    '070-9012-3456','090-0123-4567','080-1111-2222','070-3333-4444',
-    '090-5555-6666','080-7777-8888','070-9999-0000'
-  ];
   const newReservations = [];
 
-  // 宿泊系に3-4件
-  const overnightIds = FACILITIES.filter(f => f.overnight).map(f => f.id);
-  const shuffledOvernight = overnightIds.sort(() => Math.random() - 0.5);
-  for (let i = 0; i < Math.min(4, shuffledOvernight.length); i++) {
-    const ni = Math.floor(Math.random() * names.length);
-    newReservations.push({
-      id: 'res_' + Date.now() + '_' + i,
-      facilityId: shuffledOvernight[i],
-      date: today,
-      startHour: null, // 宿泊は時間なし
-      endHour: null,
-      name: names[ni],
-      phone: phones[ni],
-      count: Math.floor(Math.random() * 5) + 1,
-      note: '',
-      checkedIn: Math.random() > 0.6,
-    });
-  }
+  // 宿泊6畳: 4部屋中2部屋が予約済み
+  newReservations.push({
+    id: 'res_stay_1', facilityId: 'stay_6_1', date: today,
+    bookingType: 'stay', slots: null, startHour: null, endHour: null, saunaSlot: null,
+    name: '田中太郎', phone: '090-1234-5678', count: 4,
+    note: '家族4名、布団追加希望', checkedIn: true,
+  });
+  newReservations.push({
+    id: 'res_stay_2', facilityId: 'stay_6_3', date: today,
+    bookingType: 'stay', slots: null, startHour: null, endHour: null, saunaSlot: null,
+    name: '佐藤花子', phone: '080-2345-6789', count: 2,
+    note: '', checkedIn: false,
+  });
 
-  // 時間帯系に8-10件
-  const hourlyIds = FACILITIES.filter(f => !f.overnight).map(f => f.id);
-  for (let i = 0; i < 10; i++) {
-    const fid = hourlyIds[Math.floor(Math.random() * hourlyIds.length)];
-    const startH = 8 + Math.floor(Math.random() * 12);
-    const duration = Math.floor(Math.random() * 3) + 1;
-    const endH = Math.min(startH + duration, 22);
-    const ni = Math.floor(Math.random() * names.length);
-    newReservations.push({
-      id: 'res_' + Date.now() + '_h' + i,
-      facilityId: fid,
-      date: today,
-      startHour: startH,
-      endHour: endH,
-      name: names[ni],
-      phone: phones[ni],
-      count: Math.floor(Math.random() * 8) + 1,
-      note: i % 4 === 0 ? 'BBQ道具持込' : '',
-      checkedIn: Math.random() > 0.7,
-    });
-  }
+  // テニスコート: 午前中心に3件
+  newReservations.push({
+    id: 'res_tennis_1', facilityId: 'tennis_1', date: today,
+    bookingType: 'hourly', slots: null, startHour: 9, endHour: 11, saunaSlot: null,
+    name: '鈴木一郎', phone: '070-3456-7890', count: 4,
+    note: '', checkedIn: false,
+  });
+  newReservations.push({
+    id: 'res_tennis_2', facilityId: 'tennis_2', date: today,
+    bookingType: 'hourly', slots: null, startHour: 8, endHour: 10, saunaSlot: null,
+    name: '高橋美咲', phone: '090-4567-8901', count: 2,
+    note: '', checkedIn: true,
+  });
+  newReservations.push({
+    id: 'res_tennis_3', facilityId: 'tennis_3', date: today,
+    bookingType: 'hourly', slots: null, startHour: 10, endHour: 12, saunaSlot: null,
+    name: '伊藤健太', phone: '080-5678-9012', count: 2,
+    note: 'ラケットレンタル希望', checkedIn: false,
+  });
+
+  // サウナ: 午後1枠予約済み
+  newReservations.push({
+    id: 'res_sauna_1', facilityId: 'sauna', date: today,
+    bookingType: 'sauna', slots: null, startHour: null, endHour: null, saunaSlot: 'sauna_3',
+    name: '渡辺陽子', phone: '070-6789-0123', count: 6,
+    note: 'タオル追加希望', checkedIn: false,
+  });
+
+  // みどりの広場: 午前コマ予約済み（少年野球チーム）
+  newReservations.push({
+    id: 'res_midori_1', facilityId: 'midori', date: today,
+    bookingType: 'slot3', slots: ['morning'], startHour: null, endHour: null, saunaSlot: null,
+    name: '山本誠', phone: '090-7890-1234', count: 25,
+    note: '伊予少年野球チーム', checkedIn: true,
+  });
+
+  // キャンプ場: 1区画予約済み
+  newReservations.push({
+    id: 'res_camp_1', facilityId: 'camp', date: today,
+    bookingType: 'camp', slots: null, startHour: null, endHour: null, saunaSlot: null,
+    name: '中村友美', phone: '080-8901-2345', count: 3,
+    note: 'テント持込', checkedIn: false,
+  });
+
+  // 日帰り研修室: 午後コマ予約済み（企業研修）
+  newReservations.push({
+    id: 'res_train_1', facilityId: 'day_train', date: today,
+    bookingType: 'slot3', slots: ['afternoon'], startHour: null, endHour: null, saunaSlot: null,
+    name: '小林大輔', phone: '070-9012-3456', count: 15,
+    note: '株式会社ABC 企業研修 プロジェクター使用', checkedIn: false,
+  });
 
   saveReservations([...existing, ...newReservations]);
 }
@@ -673,7 +773,8 @@ function render() {
   document.getElementById('headerDate').textContent = formatDateDisplay(currentDate);
   const reservations = getReservationsForDate(currentDate);
 
-  // ヘッダー行
+  // ヘッダー行: 施設名 + 時間帯カラム
+  // 共通ヘッダーは hourly基準の14カラム
   const thead = document.getElementById('matrixHead');
   let headHtml = '<tr><th>施設</th>';
   for (const h of HOURS) {
@@ -689,26 +790,122 @@ function render() {
   let totalCheckedIn = 0;
   let totalAvailable = 0;
 
-  for (const facility of FACILITIES) {
-    bodyHtml += '<tr>';
-    bodyHtml += `<th><span class="facility-cat">${facility.category}</span>${facility.name}</th>`;
+  let lastGroup = '';
 
-    if (facility.overnight) {
-      // 宿泊系: 1日1マス（colspanで全時間帯をカバー）
+  for (const facility of FACILITIES) {
+    // カテゴリヘッダー行の挿入
+    if (facility.group !== lastGroup) {
+      lastGroup = facility.group;
+      const catDef = CATEGORY_ORDER.find(c => c.group === facility.group);
+      const catLabel = catDef ? catDef.label : facility.category;
+      bodyHtml += `<tr class="category-header"><td colspan="${HOUR_COUNT + 1}">${catLabel}</td></tr>`;
+    }
+
+    bodyHtml += '<tr>';
+    bodyHtml += `<th><span class="facility-cat">${facility.price}</span>${facility.name}</th>`;
+
+    const bt = facility.bookingType;
+
+    if (bt === 'stay' || bt === 'lodge-stay') {
+      // 泊単位: 1日1セル
       const res = reservations.find(r => r.facilityId === facility.id);
       if (res) {
         totalReservations++;
         if (res.checkedIn) totalCheckedIn++;
         const cls = res.checkedIn ? 'checkedin' : 'reserved';
-        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span>${res.checkedIn ? '(済)' : '(泊)'}</div></td>`;
+        const timeLabel = bt === 'stay' ? 'IN16:00/OUT10:00' : 'IN16:00/OUT10:00';
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span>${res.checkedIn ? '(済)' : '(泊)'}<br><span style="font-size:0.6rem;opacity:0.8">${timeLabel}</span></div></td>`;
       } else {
         totalAvailable++;
-        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight available">空き（泊）</div></td>`;
+        const timeLabel = bt === 'stay' ? 'IN16:00/OUT10:00' : 'IN16:00/OUT10:00';
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight available">空き（泊）<br><span style="font-size:0.6rem;opacity:0.8">${timeLabel}</span></div></td>`;
       }
-    } else {
-      // 時間帯系: 1時間ずつ
+
+    } else if (bt === 'camp') {
+      // キャンプ泊: 1日1セル
+      const res = reservations.find(r => r.facilityId === facility.id);
+      if (res) {
+        totalReservations++;
+        if (res.checkedIn) totalCheckedIn++;
+        const cls = res.checkedIn ? 'checkedin' : 'reserved';
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span>${res.checkedIn ? '(済)' : ''}<br><span style="font-size:0.6rem;opacity:0.8">14:00-翌13:00</span></div></td>`;
+      } else {
+        totalAvailable++;
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight available">空き<br><span style="font-size:0.6rem;opacity:0.8">14:00-翌13:00</span></div></td>`;
+      }
+
+    } else if (bt === 'allday') {
+      // 通し利用: 1日1セル
+      const res = reservations.find(r => r.facilityId === facility.id);
+      if (res) {
+        totalReservations++;
+        if (res.checkedIn) totalCheckedIn++;
+        const cls = res.checkedIn ? 'checkedin' : 'reserved';
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span>${res.checkedIn ? '(済)' : ''}<br><span style="font-size:0.6rem;opacity:0.8">8:30-22:00</span></div></td>`;
+      } else {
+        totalAvailable++;
+        bodyHtml += `<td colspan="${HOUR_COUNT}"><div class="cell overnight available">空き<br><span style="font-size:0.6rem;opacity:0.8">8:30-22:00</span></div></td>`;
+      }
+
+    } else if (bt === 'slot3') {
+      // 3コマ制: 午前(8-12) / 午後(12-17) / 夜間(17-22) → colspan計算
+      // 8,9,10,11 = 4列(午前) | 12,13,14,15,16 = 5列(午後) | 17,18,19,20,21 = 5列(夜間)
       const facilityRes = reservations.filter(r => r.facilityId === facility.id);
-      // 施設の予約をカウント（重複なし）
+      const countedIds = new Set();
+
+      for (const slotDef of SLOT3_DEFS) {
+        const colSpan = slotDef.key === 'morning' ? 4 : 5;
+        // このコマに予約があるか
+        const res = facilityRes.find(r => r.slots && r.slots.includes(slotDef.key));
+        if (res) {
+          if (!countedIds.has(res.id)) {
+            countedIds.add(res.id);
+            totalReservations++;
+            if (res.checkedIn) totalCheckedIn++;
+          }
+          const cls = res.checkedIn ? 'checkedin' : 'reserved';
+          bodyHtml += `<td colspan="${colSpan}"><div class="cell ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span><br><span style="font-size:0.6rem;opacity:0.8">${slotDef.timeLabel}</span></div></td>`;
+        } else {
+          totalAvailable++;
+          bodyHtml += `<td colspan="${colSpan}"><div class="cell available"><span style="font-size:0.65rem">${slotDef.label}</span><br><span style="font-size:0.6rem;opacity:0.8">${slotDef.timeLabel}</span></div></td>`;
+        }
+      }
+
+    } else if (bt === 'sauna') {
+      // サウナ: 120分枠ごとにセル (4枠を14カラムに配置)
+      // 10-12(2列), 12-14(空0.5+2列), 15-17(2列), 17-19(空0.5+2列)
+      // 簡略化: 14カラムを4つの枠+余白で埋める
+      // 8列目=8, 9=9, 10=10, 11=11, 12=12, 13=13, 14=14, 15=15, 16=16, 17=17, 18=18, 19=19, 20=20, 21=21
+      // slot1: 10:00-12:00 → col 10,11 (index2,3) → 前に2列空き(8,9)
+      // slot2: 12:30-14:30 → col 12,13,14 (index4,5,6) → 3列で近似
+      // slot3: 15:00-17:00 → col 15,16 (index7,8)
+      // slot4: 17:30-19:30 → col 17,18,19 (index9,10,11) → 3列で近似
+      // 残り: 20,21 (index12,13) → 2列空き
+      const facilityRes = reservations.filter(r => r.facilityId === facility.id);
+
+      // 営業時間外（8-10）
+      bodyHtml += `<td colspan="2"><div class="cell closed">-</div></td>`;
+
+      for (const ss of SAUNA_SLOTS) {
+        const colSpan = (ss.key === 'sauna_2' || ss.key === 'sauna_4') ? 3 : 2;
+        const res = facilityRes.find(r => r.saunaSlot === ss.key);
+        if (res) {
+          totalReservations++;
+          if (res.checkedIn) totalCheckedIn++;
+          const cls = res.checkedIn ? 'checkedin' : 'reserved';
+          bodyHtml += `<td colspan="${colSpan}"><div class="cell ${cls}" onclick="showDetail('${res.id}')"><span class="cell-name">${res.name}</span><br><span style="font-size:0.6rem">${ss.label}</span></div></td>`;
+        } else {
+          totalAvailable++;
+          bodyHtml += `<td colspan="${colSpan}"><div class="cell available"><span style="font-size:0.65rem">${ss.label}</span></div></td>`;
+        }
+      }
+
+      // 残り（20-22）
+      bodyHtml += `<td colspan="2"><div class="cell closed">-</div></td>`;
+
+    } else if (bt === 'hourly') {
+      // 1時間刻み
+      const facilityRes = reservations.filter(r => r.facilityId === facility.id);
       const countedIds = new Set();
 
       for (const h of HOURS) {
@@ -727,6 +924,7 @@ function render() {
         }
       }
     }
+
     bodyHtml += '</tr>';
   }
   tbody.innerHTML = bodyHtml;
@@ -750,13 +948,40 @@ function showDetail(resId) {
   document.getElementById('detailTitle').textContent =
     `${facility.category} ${facility.name}`;
 
-  let timeText = facility.overnight ? '宿泊' : `${res.startHour}:00 〜 ${res.endHour}:00`;
+  let timeText = '';
+  switch (res.bookingType || facility.bookingType) {
+    case 'stay': timeText = '宿泊 (IN 16:00 / OUT 10:00)'; break;
+    case 'lodge-stay': timeText = 'ロッジ宿泊 (IN 16:00 / OUT 10:00)'; break;
+    case 'camp': timeText = 'キャンプ泊 (14:00 - 翌13:00)'; break;
+    case 'allday': timeText = '通し (8:30 - 22:00)'; break;
+    case 'slot3':
+      if (res.slots && res.slots.length > 0) {
+        const slotLabels = res.slots.map(s => {
+          const def = SLOT3_DEFS.find(d => d.key === s);
+          return def ? `${def.label}(${def.timeLabel})` : s;
+        });
+        timeText = slotLabels.join(' / ');
+      }
+      break;
+    case 'sauna':
+      if (res.saunaSlot) {
+        const ss = SAUNA_SLOTS.find(s => s.key === res.saunaSlot);
+        timeText = ss ? `サウナ ${ss.label}` : 'サウナ';
+      }
+      break;
+    case 'hourly':
+      timeText = `${res.startHour}:00 - ${res.endHour}:00`;
+      break;
+    default:
+      timeText = '-';
+  }
 
   let html = `
     <div class="detail-row"><span class="label">予約者</span><span class="value">${res.name}</span></div>
     <div class="detail-row"><span class="label">電話番号</span><span class="value"><a href="tel:${res.phone}" style="color:var(--navy)">${res.phone}</a></span></div>
     <div class="detail-row"><span class="label">時間</span><span class="value">${timeText}</span></div>
     <div class="detail-row"><span class="label">人数</span><span class="value">${res.count}名</span></div>
+    <div class="detail-row"><span class="label">料金</span><span class="value">${facility.price}</span></div>
     <div class="detail-row"><span class="label">備考</span><span class="value">${res.note || '---'}</span></div>
   `;
 
@@ -790,14 +1015,22 @@ function toggleCheckin(resId) {
 
 // ===== 予約追加フォーム =====
 function openAddForm() {
-  // 施設プルダウン生成
+  // 施設プルダウン生成（グループ付き）
   const sel = document.getElementById('addFacility');
   sel.innerHTML = '';
+  let lastCat = '';
+  let optGroup = null;
   for (const f of FACILITIES) {
+    if (f.category !== lastCat) {
+      lastCat = f.category;
+      optGroup = document.createElement('optgroup');
+      optGroup.label = f.category;
+      sel.appendChild(optGroup);
+    }
     const opt = document.createElement('option');
     opt.value = f.id;
-    opt.textContent = `${f.category} / ${f.name}`;
-    sel.appendChild(opt);
+    opt.textContent = `${f.name} (${f.price.split('/')[0]})`;
+    optGroup.appendChild(opt);
   }
   sel.onchange = onFacilityChange;
   onFacilityChange();
@@ -816,18 +1049,77 @@ function onFacilityChange() {
   const fid = document.getElementById('addFacility').value;
   const facility = FACILITIES.find(f => f.id === fid);
   const timeGroup = document.getElementById('addTimeGroup');
-  if (facility && facility.overnight) {
-    timeGroup.style.display = 'none';
-  } else {
-    timeGroup.style.display = '';
-    const timeSel = document.getElementById('addTime');
-    timeSel.innerHTML = '';
-    for (const h of HOURS) {
-      const opt = document.createElement('option');
-      opt.value = h;
-      opt.textContent = `${h}:00`;
-      timeSel.appendChild(opt);
+  if (!facility) return;
+
+  const bt = facility.bookingType;
+
+  if (bt === 'stay' || bt === 'lodge-stay') {
+    // 泊単位: 泊数入力
+    timeGroup.innerHTML = `
+      <div class="form-group">
+        <label>泊数</label>
+        <input type="number" id="addNights" min="1" max="30" value="1">
+      </div>`;
+
+  } else if (bt === 'camp') {
+    // キャンプ泊: 泊数入力
+    timeGroup.innerHTML = `
+      <div class="form-group">
+        <label>泊数 (14:00-翌13:00)</label>
+        <input type="number" id="addNights" min="1" max="14" value="1">
+      </div>`;
+
+  } else if (bt === 'allday') {
+    // 通し利用: 時間入力なし
+    timeGroup.innerHTML = `
+      <div class="form-group">
+        <label>利用時間</label>
+        <div style="padding:14px 12px;background:#f0f2f5;border-radius:10px;font-size:0.95rem;color:#6b7280;">8:30 - 22:00（通し）</div>
+      </div>`;
+
+  } else if (bt === 'slot3') {
+    // 3コマ制: チェックボックス
+    timeGroup.innerHTML = `
+      <div class="form-group">
+        <label>利用コマ（複数選択可）</label>
+        <div class="slot-checkboxes">
+          <label><input type="checkbox" name="addSlot" value="morning"> 午前 8:30-12:00</label>
+          <label><input type="checkbox" name="addSlot" value="afternoon"> 午後 12:00-17:00</label>
+          <label><input type="checkbox" name="addSlot" value="evening"> 夜間 17:00-22:00</label>
+        </div>
+      </div>`;
+
+  } else if (bt === 'hourly') {
+    // 1時間刻み: 開始/終了select
+    let startOpts = '';
+    let endOpts = '';
+    for (let h = 8; h <= 21; h++) {
+      startOpts += `<option value="${h}">${h}:00</option>`;
     }
+    for (let h = 9; h <= 22; h++) {
+      endOpts += `<option value="${h}">${h}:00</option>`;
+    }
+    timeGroup.innerHTML = `
+      <div class="form-group">
+        <label>開始時間</label>
+        <select id="addStartHour">${startOpts}</select>
+      </div>
+      <div class="form-group">
+        <label>終了時間</label>
+        <select id="addEndHour">${endOpts}</select>
+      </div>`;
+
+  } else if (bt === 'sauna') {
+    // サウナ: 120分枠select
+    let opts = '';
+    for (const ss of SAUNA_SLOTS) {
+      opts += `<option value="${ss.key}">${ss.label}</option>`;
+    }
+    timeGroup.innerHTML = `
+      <div class="form-group">
+        <label>サウナ枠（120分）</label>
+        <select id="addSaunaSlot">${opts}</select>
+      </div>`;
   }
 }
 
@@ -854,18 +1146,48 @@ function submitReservation() {
     return;
   }
 
-  let startHour = null, endHour = null;
-  if (!facility.overnight) {
-    startHour = parseInt(document.getElementById('addTime').value);
-    endHour = Math.min(startHour + 1, 22); // デフォルト1時間
+  const bt = facility.bookingType;
+  let startHour = null, endHour = null, slots = null, saunaSlot = null;
+
+  if (bt === 'stay' || bt === 'lodge-stay' || bt === 'camp') {
+    // 泊数は備考として記録（複数日にまたがるケースは将来対応）
+    const nights = parseInt(document.getElementById('addNights')?.value) || 1;
+    if (nights > 1) {
+      // 泊数分のメモを備考に追加
+    }
+
+  } else if (bt === 'allday') {
+    // 通し利用: 特に追加パラメータなし
+
+  } else if (bt === 'slot3') {
+    const checked = document.querySelectorAll('input[name="addSlot"]:checked');
+    if (checked.length === 0) {
+      showToast('利用コマを選択してください');
+      return;
+    }
+    slots = Array.from(checked).map(cb => cb.value);
+
+  } else if (bt === 'hourly') {
+    startHour = parseInt(document.getElementById('addStartHour').value);
+    endHour = parseInt(document.getElementById('addEndHour').value);
+    if (endHour <= startHour) {
+      showToast('終了時間は開始時間より後にしてください');
+      return;
+    }
+
+  } else if (bt === 'sauna') {
+    saunaSlot = document.getElementById('addSaunaSlot').value;
   }
 
   const newRes = {
     id: 'res_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     facilityId: fid,
     date: date,
+    bookingType: bt,
     startHour: startHour,
     endHour: endHour,
+    slots: slots,
+    saunaSlot: saunaSlot,
     name: name,
     phone: phone,
     count: count,
@@ -878,7 +1200,6 @@ function submitReservation() {
   saveReservations(all);
 
   closeAddForm();
-  // 追加した日付に移動
   currentDate = new Date(date + 'T00:00:00');
   render();
   showToast(`${name}さんの予約を登録しました`);
