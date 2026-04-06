@@ -1884,9 +1884,57 @@ function stepNights(delta) {
   state.selectedNights = Math.max(1, Math.min(14, state.selectedNights + delta));
   const el = document.getElementById('nights-count');
   if (el) el.textContent = state.selectedNights;
+  checkNightsAvailability();
   updateSimplePriceInfo();
   updateStayPriceBreakdown();
   updateBookingPriceSummary();
+}
+
+function checkNightsAvailability() {
+  const plan = state.selectedPlan;
+  const roomId = state.selectedRoomId;
+  const baseDate = state.selectedDate;
+  if (!plan || !roomId || !baseDate) return;
+
+  const slots = Array.isArray(plan.slots) ? plan.slots : [];
+  if (slots.length === 0) return;
+
+  let unavailableNights = [];
+  for (let n = 0; n < state.selectedNights; n++) {
+    const checkDate = addDays(baseDate, n);
+    for (const h of slots) {
+      if (!isSlotFree(roomId, checkDate, h)) {
+        unavailableNights.push(n + 1);
+        break;
+      }
+    }
+  }
+
+  const warningEl = document.getElementById('nights-warning');
+  if (!warningEl) {
+    // 泊数警告エリアがなければ挿入
+    const nightsCount = document.getElementById('nights-count');
+    if (nightsCount) {
+      const parent = nightsCount.closest('.form-group');
+      if (parent && !parent.nextElementSibling?.id?.includes('nights-warning')) {
+        const div = document.createElement('div');
+        div.id = 'nights-warning';
+        div.className = 'warning-msg';
+        div.style.display = 'none';
+        parent.after(div);
+      }
+    }
+  }
+
+  const wEl = document.getElementById('nights-warning');
+  if (wEl) {
+    if (unavailableNights.length > 0) {
+      wEl.style.display = 'block';
+      wEl.textContent = unavailableNights.map(n => n + '泊目').join('・') + 'の日程に空きがありません。日付または部屋を変更してください。';
+    } else {
+      wEl.style.display = 'none';
+    }
+  }
 }
 
 function stepCampSites(delta) {
@@ -1910,7 +1958,10 @@ function onBookingDateChange() {
   const pt = plan.planType;
 
   if (pt === 'hourly' && state.selectedDate) renderHourlyGrid();
-  if (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') updateSimplePriceInfo();
+  if (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') {
+    updateSimplePriceInfo();
+    checkNightsAvailability();
+  }
   if (pt === 'stay') updateStayPriceBreakdown();
   updateBookingPriceSummary();
 }
@@ -2094,6 +2145,20 @@ function proceedToConfirm() {
   if (pt === 'hourly' && state.selectedHours.length === 0) {
     alert('時間帯を選択してください');
     return;
+  }
+
+  // 泊数分の空きチェック（宿泊・ロッジ・キャンプ）
+  if (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') {
+    const slots = Array.isArray(plan.slots) ? plan.slots : [];
+    for (let n = 0; n < state.selectedNights; n++) {
+      const checkDate = addDays(state.selectedDate, n);
+      for (const h of slots) {
+        if (!isSlotFree(state.selectedRoomId, checkDate, h)) {
+          alert((n + 1) + '泊目（' + formatDate(checkDate) + '）に空きがありません。日付または部屋を変更してください。');
+          return;
+        }
+      }
+    }
   }
 
   const room = ROOMS.find(r => r.id === state.selectedRoomId);
