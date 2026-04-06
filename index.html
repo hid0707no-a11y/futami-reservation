@@ -818,13 +818,13 @@ body {
   <div class="screen" id="screen-facility-list">
     <div class="section-title">&#127968; 施設一覧</div>
 
-    <div class="tabs" id="facility-tabs">
-      <div class="tab active" data-category="all" onclick="filterFacilities('all', this)">すべて</div>
-      <div class="tab" data-category="stay" onclick="filterFacilities('stay', this)">宿泊</div>
-      <div class="tab" data-category="day" onclick="filterFacilities('day', this)">日帰り</div>
-      <div class="tab" data-category="outdoor" onclick="filterFacilities('outdoor', this)">アウトドア</div>
-      <div class="tab" data-category="sport" onclick="filterFacilities('sport', this)">スポーツ</div>
-      <div class="tab" data-category="sauna" onclick="filterFacilities('sauna', this)">サウナ</div>
+    <div id="facility-tabs" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;padding:8px 0">
+      <div class="tab active" data-category="all" onclick="filterFacilities('all', this)" style="text-align:center">すべて</div>
+      <div class="tab" data-category="stay" onclick="filterFacilities('stay', this)" style="text-align:center">🌙 宿泊</div>
+      <div class="tab" data-category="day" onclick="filterFacilities('day', this)" style="text-align:center">☀️ 日帰り</div>
+      <div class="tab" data-category="sport" onclick="filterFacilities('sport', this)" style="text-align:center">🎾 スポーツ</div>
+      <div class="tab" data-category="sauna" onclick="filterFacilities('sauna', this)" style="text-align:center">🧖 サウナ</div>
+      <div class="tab" data-category="outdoor" onclick="filterFacilities('outdoor', this)" style="text-align:center">⛺ アウトドア</div>
     </div>
 
     <div id="facility-list"></div>
