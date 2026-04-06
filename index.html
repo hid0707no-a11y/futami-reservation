@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ふたみ潮風ふれあい公園 予約システム</title>
 <style>
 /* ========== RESET & BASE ========== */
@@ -1346,7 +1346,7 @@ function selectPlanFromSearch(planId) {
   state.selectedPlan = plan;
   state.selectedDate = state.searchDate;
   state.selectedNights = 1;
-  state.guestsAdult = 0;
+  state.guestsAdult = 1;
   state.guestsChild = 0;
   state.guestsInfant = 0;
   state.campSites = 1;
@@ -1469,7 +1469,7 @@ function selectPlan(planId) {
   const plan = PLANS.find(p => p.id === planId);
   state.selectedPlan = plan;
   state.selectedNights = 1;
-  state.guestsAdult = 0;
+  state.guestsAdult = 1;
   state.guestsChild = 0;
   state.guestsInfant = 0;
   state.guests = 2;
@@ -1543,8 +1543,6 @@ function showRoomBooking() {
   html += '</div>';
 
   // === planType 別のUI ===
-  console.log('[showRoomBooking] planType =', pt, 'planId =', plan.id);
-
   if (pt === 'stay') {
     // 宿泊: 年齢区分別人数 + 泊数 + リアルタイム料金明細
     html += '<div class="form-group">';
@@ -1756,7 +1754,7 @@ function stepAgeGroup(group, delta) {
   if (warningEl) {
     if (plan.id === 'stay_6' && total > maxCap) {
       warningEl.style.display = 'block';
-      warningEl.textContent = '6畳は' + maxCap + '名までです。合計が' + total + '名になっています。';
+      warningEl.textContent = '6畳は' + maxCap + '名までです（合計' + total + '名）。人数が多い場合は2部屋のご予約をお勧めします。';
     } else {
       warningEl.style.display = 'none';
     }
@@ -2209,15 +2207,16 @@ function submitBooking() {
 
   document.getElementById('done-booking-id').textContent = '予約番号: ' + bookingId;
 
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
   const doneSummary = document.getElementById('done-summary');
   let html = '';
-  html += '<div class="summary-row"><span class="summary-label">プラン</span><span class="summary-value">' + booking.planName + '</span></div>';
-  html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + booking.roomName + '</span></div>';
-  html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + booking.timeStr + '</span></div>';
-  html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + booking.name + '</span></div>';
-  html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + booking.phone + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">プラン</span><span class="summary-value">' + esc(booking.planName) + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + esc(booking.roomName) + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + esc(booking.timeStr) + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + esc(booking.name) + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + esc(booking.phone) + '</span></div>';
   if (booking.email) {
-    html += '<div class="summary-row"><span class="summary-label">メール</span><span class="summary-value">' + booking.email + '</span></div>';
+    html += '<div class="summary-row"><span class="summary-label">メール</span><span class="summary-value">' + esc(booking.email) + '</span></div>';
   }
   html += '<div class="summary-total"><span>合計金額</span><span class="summary-total-price">' + booking.total.toLocaleString() + '円</span></div>';
   doneSummary.innerHTML = html;
