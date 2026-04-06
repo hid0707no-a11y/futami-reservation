@@ -1235,7 +1235,7 @@ function hashCode(str) {
 // 特定の部屋+日付+時間スロットが空いているか
 function isSlotFree(roomId, date, hour) {
   const seed = hashCode(roomId + date + hour);
-  return (seed % 10) > 2; // 約70%空き
+  return (seed % 100) > 5; // 約95%空き（宿泊は多スロット必要なので高めに）
 }
 
 // プランの全スロットが空いているか（指定部屋）
