@@ -156,17 +156,17 @@ body {
 /* ========== TOP SCREEN ========== */
 .top-hero {
   text-align: center;
-  padding: 28px 0 20px;
+  padding: 12px 0 8px;
 }
-.top-hero-icon { font-size: 3rem; margin-bottom: 8px; }
+.top-hero-icon { font-size: 2rem; margin-bottom: 4px; }
 .top-hero-title {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--main-dark);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .top-hero-desc {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   color: var(--text-light);
 }
 
@@ -174,12 +174,12 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 .top-action-card {
   background: var(--white);
   border-radius: var(--radius);
-  padding: 24px 16px;
+  padding: 20px 12px;
   text-align: center;
   cursor: pointer;
   box-shadow: var(--shadow);
@@ -191,30 +191,30 @@ body {
   border-color: var(--main);
 }
 .top-action-card:active { transform: scale(0.97); }
-.top-action-icon { font-size: 2.5rem; display: block; margin-bottom: 10px; }
+.top-action-icon { font-size: 2rem; display: block; margin-bottom: 6px; }
 .top-action-label {
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text);
 }
 .top-action-desc {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 /* Info section */
 .info-section {
   background: var(--white);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 12px 16px;
   box-shadow: var(--shadow);
 }
 .info-title {
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--main-dark);
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -222,9 +222,9 @@ body {
 .info-row {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
+  padding: 4px 0;
   border-bottom: 1px solid var(--border);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
 }
 .info-row:last-child { border-bottom: none; }
 .info-label { color: var(--text-light); }
@@ -770,23 +770,22 @@ body {
       </div>
     </div>
 
-    <div class="info-section">
-      <div class="info-title">&#9432; 施設情報</div>
+    <div class="info-section" style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
       <div class="info-row">
-        <span class="info-label">営業時間</span>
-        <span class="info-value">8:30 - 22:00</span>
+        <span class="info-label">営業</span>
+        <span class="info-value">8:30-22:00</span>
       </div>
       <div class="info-row">
-        <span class="info-label">定休日</span>
-        <span class="info-value">毎週火曜日</span>
+        <span class="info-label">休み</span>
+        <span class="info-value">毎週火曜</span>
       </div>
       <div class="info-row">
         <span class="info-label">住所</span>
-        <span class="info-value">愛媛県伊予市双海町</span>
+        <span class="info-value">伊予市双海町</span>
       </div>
       <div class="info-row">
-        <span class="info-label">電話</span>
-        <span class="info-value">089-986-0522</span>
+        <span class="info-label">TEL</span>
+        <span class="info-value"><a href="tel:0899860522" style="color:var(--main);text-decoration:none">089-986-0522</a></span>
       </div>
     </div>
   </div>
