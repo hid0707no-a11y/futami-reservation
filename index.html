@@ -1391,7 +1391,7 @@ function isSlotFree(roomId, date, hour) {
   if (date === today && hour <= new Date().getHours()) return false;
 
   const seed = hashCode(roomId + date + hour);
-  return (seed % 100) > 5; // 約95%空き（宿泊は多スロット必要なので高めに）
+  return (seed % 1000) > 5; // 約99.5%空き（全室パックは6部屋×18スロット全空きが必要なので高めに）
 }
 
 // プランの全スロットが空いているか（指定部屋）
