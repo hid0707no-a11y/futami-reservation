@@ -1016,7 +1016,8 @@ const ROOMS = [
   { id: 'room_train', name: '研修室', fullName: '1階 研修室', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 30 },
   { id: 'room_kitchen', name: '厨房・食堂', fullName: '1階 厨房・食堂', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 20 },
   { id: 'camp', name: 'キャンプ場', fullName: 'キャンプサイト', building: 'アウトドア', icon: '\u26FA', capacity: 99 },
-  { id: 'lodge', name: 'ロッジ', fullName: 'ロッジ', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
+  { id: 'lodge_a', name: 'ロッジA', fullName: 'ロッジA', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
+  { id: 'lodge_b', name: 'ロッジB', fullName: 'ロッジB', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
   { id: 'court_1', name: 'コート1', fullName: 'テニスコート1', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
   { id: 'court_2', name: 'コート2', fullName: 'テニスコート2', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
   { id: 'court_3', name: 'コート3', fullName: 'テニスコート3', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
@@ -1065,6 +1066,20 @@ const PLANS = [
     priceDisplay: '9,430円/室/泊 +人数加算',
     badge: '宿泊', badgeColor: '#6366f1',
     note: '中学生以上+1,580円, 小学生+1,050円, 小学生未満+790円' },
+
+  // ===== 全室貸切パック（6部屋セット販売） =====
+  // 6畳×4 + 27畳 + 体験学習室 を一括予約。複数の部屋を同時占有する親プラン
+  { id: 'stay_all', name: '全室貸切パック（最大52名）', planType: 'stay', category: 'stay',
+    rooms: ['room_6_1','room_6_2','room_6_3','room_6_4','room_27','room_exp'],
+    requiresAllRooms: true, // 全部屋が空いている必要がある
+    maxCapacity: 52, // 6畳×4(12) + 27畳(20) + 体験学習室(20)
+    slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
+    checkin: '16:00', checkout: '10:00',
+    basePrice: 28100, basePriceLabel: '6部屋一括基本料金/泊',
+    extraAdult: 1580, extraChild: 1050, extraInfant: 790,
+    priceDisplay: '28,100円/泊 +人数加算',
+    badge: '全室貸切', badgeColor: '#dc2626',
+    note: '6畳×4＋27畳＋体験学習室の全6部屋を貸切（最大52名収容）。団体・合宿・スポーツ合宿・社員旅行向け。中学生以上+1,580円, 小学生+1,050円, 小学生未満+790円' },
 
   // ===== ふれあいの館 - 日帰り =====
   { id: 'day_6_all', name: '日帰り通し（6畳）', planType: 'day_all', category: 'day',
@@ -1151,14 +1166,14 @@ const PLANS = [
 
   // ===== ロッジ =====
   { id: 'lodge_stay', name: 'ロッジ宿泊', planType: 'stay_simple', category: 'outdoor',
-    rooms: ['lodge'],
+    rooms: ['lodge_a','lodge_b'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     checkin: '16:00', checkout: '10:00',
     basePrice: 4720, priceDisplay: '4,720円/棟/泊',
     badge: '宿泊', badgeColor: '#6366f1',
     extras: [{ id: 'sheet', name: 'シーツ', price: 340, unit: '1組' }] },
   { id: 'lodge_day', name: 'ロッジ日帰り', planType: 'hourly', category: 'outdoor',
-    rooms: ['lodge'],
+    rooms: ['lodge_a','lodge_b'],
     slots: [10,11,12,13,14,15],
     hourlyRange: { start: 10, end: 16 },
     basePrice: 330, priceDisplay: '330円/時間',
@@ -1233,7 +1248,7 @@ const PLANS = [
 // 施設グルーピング（UI表示用）: 同じ物理部屋を持つプランをまとめて「施設」として見せる
 const FACILITY_GROUPS = [
   { id: 'fg_fureai_stay', name: '宿泊）ふれあいの館', icon: '\u{1F3E0}', category: 'stay',
-    plans: ['stay_6','stay_27','stay_exp'] },
+    plans: ['stay_6','stay_27','stay_exp','stay_all'] },
   { id: 'fg_fureai_day_6', name: '日帰り）宿泊室【6畳】', icon: '\u2600\uFE0F', category: 'day',
     plans: ['day_6_all'] },
   { id: 'fg_fureai_day_27', name: '日帰り）宿泊室【27畳】', icon: '\u2600\uFE0F', category: 'day',
@@ -1401,6 +1416,10 @@ function getAvailableRooms(plan, date) {
 function getAvailabilityLevel(plan, date) {
   if (!date) return 'ok';
   const available = getAvailableRooms(plan, date);
+  // 全室パックは全部屋が空いている必要がある
+  if (plan.requiresAllRooms) {
+    return available.length === plan.rooms.length ? 'ok' : 'none';
+  }
   if (available.length === 0) return 'none';
   if (available.length <= 1) return 'few';
   return 'ok';
@@ -1893,8 +1912,26 @@ function showRoomBooking() {
   let html = '<div class="section-title">' + (room ? room.icon : '') + ' ' + plan.name + '</div>';
   if (room) html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
 
-  // 部屋が複数ある場合は選択UI
-  if (plan.rooms.length > 1) {
+  // 全室パック: 6部屋を一覧表示（選択不可・占有確認のみ）
+  if (plan.requiresAllRooms) {
+    html += '<div class="card" style="background:#fef2f2;border:2px solid #dc2626">';
+    html += '<div style="font-weight:700;color:#dc2626;margin-bottom:4px">🏠 全6部屋を貸切利用（最大' + (plan.maxCapacity || 52) + '名収容）</div>';
+    html += '<div style="font-size:0.8rem;color:#7f1d1d;margin-bottom:10px">団体・合宿・社員旅行向け</div>';
+    plan.rooms.forEach(rid => {
+      const r = ROOMS.find(x => x.id === rid);
+      if (!r) return;
+      const avail = state.selectedDate ? isPlanAvailableForRoom(plan, rid, state.selectedDate) : true;
+      const mark = avail ? '✅' : '❌';
+      const color = avail ? '#333' : '#dc2626';
+      html += '<div style="padding:6px 0;border-bottom:1px solid #fecaca;color:' + color + '">';
+      html += mark + ' ' + r.fullName + '（定員' + r.capacity + '名）';
+      if (state.selectedDate && !avail) html += ' <strong>← この日は予約済み</strong>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  // 部屋が複数ある場合は選択UI（全室パック以外）
+  else if (plan.rooms.length > 1) {
     html += '<div class="card">';
     html += '<div class="form-group"><label class="form-label">部屋を選択</label>';
     plan.rooms.forEach(rid => {
@@ -2618,10 +2655,14 @@ function proceedToConfirm() {
   // 泊数分の空きチェック（宿泊・ロッジ・キャンプ）— 翌朝またがり対応
   if (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') {
     const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights);
-    for (const s of expanded) {
-      if (!isSlotFree(state.selectedRoomId, s.date, s.hour)) {
-        alert('選択した期間（' + formatDate(state.selectedDate) + '〜' + formatDate(addDays(state.selectedDate, state.selectedNights)) + '）に空きがない時間帯があります。日付または部屋を変更してください。');
-        return;
+    // 全室パックは全部屋をチェック、それ以外は選択中の1部屋
+    const checkRooms = plan.requiresAllRooms ? plan.rooms : [state.selectedRoomId];
+    for (const rid of checkRooms) {
+      for (const s of expanded) {
+        if (!isSlotFree(rid, s.date, s.hour)) {
+          alert('選択した期間（' + formatDate(state.selectedDate) + '〜' + formatDate(addDays(state.selectedDate, state.selectedNights)) + '）に空きがない部屋・時間帯があります。日付を変更してください。');
+          return;
+        }
       }
     }
   }
@@ -2651,7 +2692,11 @@ function proceedToConfirm() {
   const summaryEl = document.getElementById('booking-summary');
   let html = '';
   html += '<div class="summary-row"><span class="summary-label">プラン</span><span class="summary-value">' + plan.name + '</span></div>';
-  html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + (room ? room.fullName : '') + '</span></div>';
+  if (plan.requiresAllRooms) {
+    html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">全6部屋（6畳×4＋27畳＋体験学習室）</span></div>';
+  } else {
+    html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + (room ? room.fullName : '') + '</span></div>';
+  }
   html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + timeStr + '</span></div>';
 
   if (pt === 'stay') {
