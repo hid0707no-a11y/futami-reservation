@@ -1294,6 +1294,28 @@ const state = {
 };
 
 /* ================================================================
+   ふたみの日 判定（毎月23日、火曜なら前日22日に振替）
+   ================================================================ */
+function isFutamiDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDate();
+  const dow = d.getDay(); // 0=日, 2=火
+
+  // 23日が火曜 → 22日(月)に振替。dateStrが22日かつ翌23日が火曜ならtrue
+  if (day === 22) {
+    const next = new Date(d);
+    next.setDate(23);
+    return next.getDay() === 2; // 翌23日が火曜→22日がふたみの日
+  }
+  // 23日で火曜以外ならtrue
+  if (day === 23 && dow !== 2) return true;
+  return false;
+}
+
+// ふたみの日料金
+const FUTAMI_DAY_PRICE = 2300; // 税込/人
+
+/* ================================================================
    NAVIGATION
    ================================================================ */
 function navigate(screenId) {
@@ -1496,9 +1518,12 @@ function renderSearchResults() {
       html += '  <div class="facility-icon">' + (room ? room.icon : '') + '</div>';
       html += '  <div class="facility-info">';
       html += '    <div><span class="plan-badge" style="background:' + (item.plan.badgeColor || '#999') + '">' + (item.plan.badge || '') + '</span></div>';
-      html += '    <div class="facility-name">' + item.plan.name + '</div>';
+      const isFutami = item.plan.planType === 'sauna' && isFutamiDay(state.searchDate);
+      const planName = isFutami ? item.plan.name + '（ふたみの日）' : item.plan.name;
+      const priceDisp = isFutami ? '2,300円/人' : item.plan.priceDisplay;
+      html += '    <div class="facility-name">' + planName + '</div>';
       html += '    <div class="facility-meta">定員' + item.maxCap + '名</div>';
-      html += '    <div class="facility-price">' + item.plan.priceDisplay + ' ' + availBadge(item.level) + '</div>';
+      html += '    <div class="facility-price">' + priceDisp + ' ' + availBadge(item.level) + '</div>';
       html += '  </div>';
       html += isFull ? '' : '  <div class="facility-arrow">&#8250;</div>';
       html += '</div>';
@@ -1686,6 +1711,11 @@ function renderMonthlyCalendar() {
     html += '<div class="' + cellClass + '"' + onclick + '>';
     html += '<span class="cal-date">' + day + '</span>';
 
+    // ふたみの日マーク（サウナ施設のみ）
+    if (!isPast && !disabled && fg.category === 'sauna' && isFutamiDay(dateStr)) {
+      html += '<span style="font-size:0.55rem;color:#e65100;font-weight:700;display:block;line-height:1">ふたみ</span>';
+    }
+
     // Status icon
     if (isPast) {
       html += '<span class="cal-status cal-status-closed">-</span>';
@@ -1802,7 +1832,12 @@ function renderPlanCard(plan, dateStr) {
   if (plan.timeRange) html += '<div class="plan-detail">' + plan.timeRange + '</div>';
   if (plan.checkin) html += '<div class="plan-detail">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
   if (plan.note) html += '<div class="plan-detail">' + plan.note + '</div>';
-  html += '<div class="plan-price">' + plan.priceDisplay + '</div>';
+  const isFutami = plan.planType === 'sauna' && dateStr && isFutamiDay(dateStr);
+  if (isFutami) {
+    html += '<div class="plan-price" style="color:#e65100">&#x1F389; ふたみの日 2,300円/人</div>';
+  } else {
+    html += '<div class="plan-price">' + plan.priceDisplay + '</div>';
+  }
   html += '</div>';
   return html;
 }
@@ -2019,6 +2054,15 @@ function showRoomBooking() {
     html += '</div>'; // close .card
 
   } else if (pt === 'sauna') {
+    const futamiDay = isFutamiDay(state.selectedDate);
+
+    if (futamiDay) {
+      html += '<div style="background:#fff3e0;border:2px solid #f5a623;border-radius:12px;padding:12px 14px;margin-bottom:12px;text-align:center">';
+      html += '<div style="font-size:1.1rem;font-weight:700;color:#e65100">&#x1F389; ふたみの日 特別プラン</div>';
+      html += '<div style="font-size:0.85rem;color:#bf360c;margin-top:4px">毎月23日は「ふたみの日」！おひとり様 2,300円でサウナ体験</div>';
+      html += '</div>';
+    }
+
     html += '<div class="form-group">';
     html += '<label class="form-label">ご利用人数（8名まで）</label>';
     html += '<div class="stepper">';
@@ -2030,7 +2074,11 @@ function showRoomBooking() {
 
     html += '<div class="night-info">';
     html += '時間: ' + plan.timeRange + '<br>';
-    html += '料金: <strong>' + plan.basePrice.toLocaleString() + '円</strong>/グループ';
+    if (futamiDay) {
+      html += '料金: <strong>' + FUTAMI_DAY_PRICE.toLocaleString() + '円</strong>/人（ふたみの日）';
+    } else {
+      html += '料金: <strong>' + plan.basePrice.toLocaleString() + '円</strong>/グループ';
+    }
     html += '</div>';
 
     if (plan.extras) { html += renderExtras(plan); }
@@ -2488,7 +2536,12 @@ function calculateTotal() {
   }
 
   if (pt === 'sauna') {
-    let total = plan.basePrice;
+    let total;
+    if (isFutamiDay(state.selectedDate)) {
+      total = FUTAMI_DAY_PRICE * state.guests;
+    } else {
+      total = plan.basePrice;
+    }
     total += state.saunaTowels * 550;
     return total;
   }
@@ -2607,6 +2660,9 @@ function proceedToConfirm() {
   }
   if (pt === 'sauna') {
     html += '<div class="summary-row"><span class="summary-label">人数</span><span class="summary-value">' + state.guests + '名</span></div>';
+    if (isFutamiDay(state.selectedDate)) {
+      html += '<div class="summary-row"><span class="summary-label">プラン種別</span><span class="summary-value" style="color:#e65100;font-weight:700">ふたみの日（2,300円/人）</span></div>';
+    }
   }
   if (pt === 'camp') {
     html += '<div class="summary-row"><span class="summary-label">区画数</span><span class="summary-value">' + state.campSites + '区画</span></div>';
@@ -2666,6 +2722,7 @@ function submitBooking() {
     campTents: state.campTents,
     lodgeSheets: state.lodgeSheets,
     saunaTowels: state.saunaTowels,
+    isFutamiDay: state.selectedPlan && state.selectedPlan.planType === 'sauna' && isFutamiDay(state.selectedDate),
     selectedHours: state.selectedHours,
     isResident: state.isResident,
     isStudent: state.isStudent,
