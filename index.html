@@ -1243,9 +1243,10 @@ function isPlanAvailableForRoom(plan, roomId, date) {
   if (!date) return true;
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
   if (slots.length === 0) return true;
-  // 宿泊は翌日にまたがるスロット(0-9)も考慮
-  for (const h of slots) {
-    if (!isSlotFree(roomId, date, h)) return false;
+  // 宿泊は翌日にまたがるスロット(0-9)をexpandStaySlotsで正しい日付に変換
+  const expanded = expandStaySlots(plan, date, 1);
+  for (const s of expanded) {
+    if (!isSlotFree(roomId, s.date, s.hour)) return false;
   }
   return true;
 }
