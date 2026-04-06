@@ -404,6 +404,40 @@ body {
   margin-top: 4px;
 }
 
+/* ========== PLAN CARD ========== */
+.plan-card {
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 10px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.plan-card:hover { border-color: var(--main); }
+.plan-card:active { transform: scale(0.98); }
+.plan-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--white);
+  margin-bottom: 6px;
+}
+.plan-name { font-weight: 700; font-size: 1rem; }
+.plan-detail {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+.plan-price {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent-dark);
+  margin-top: 4px;
+}
+
 /* ========== TIME SLOT PICKER ========== */
 .timeslot-grid {
   display: grid;
@@ -536,6 +570,70 @@ body {
   margin-left: 8px;
 }
 
+/* ========== PRICE BREAKDOWN CARD (accommodation) ========== */
+.price-breakdown {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  margin: 16px 0;
+  border: 2px solid var(--main-light);
+}
+.price-breakdown-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--main-dark);
+  margin-bottom: 12px;
+}
+.price-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 0.95rem;
+}
+.price-row-label { color: var(--text-light); }
+.price-row-value { font-weight: 600; }
+.price-divider {
+  border: none;
+  border-top: 1px dashed var(--border);
+  margin: 8px 0;
+}
+.price-subtotal {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.price-nights-multiply {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-light);
+  padding: 4px 0;
+}
+.price-grand-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0 0;
+  margin-top: 8px;
+  border-top: 2px solid var(--text);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.price-grand-total-value { color: var(--danger); }
+
+/* Warning message */
+.warning-msg {
+  background: #fff3e0;
+  border: 1px solid #ffcc80;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  color: #e65100;
+  font-weight: 600;
+  margin: 8px 0;
+}
+
 /* ========== CONFIRM SCREEN ========== */
 .summary-card {
   background: var(--white);
@@ -665,7 +763,7 @@ body {
         <span class="top-action-label">日付から探す</span>
         <span class="top-action-desc">空いている施設を表示</span>
       </div>
-      <div class="top-action-card" onclick="navigate('screen-facility-list')">
+      <div class="top-action-card" onclick="showFacilityList()">
         <span class="top-action-icon">&#127968;</span>
         <span class="top-action-label">施設から探す</span>
         <span class="top-action-desc">施設一覧から選択</span>
@@ -733,12 +831,12 @@ body {
     <div id="facility-list"></div>
   </div>
 
-  <!-- ========== FACILITY DETAIL SCREEN ========== -->
-  <div class="screen" id="screen-facility-detail">
-    <div id="facility-detail-content"></div>
+  <!-- ========== PLAN SELECT SCREEN (after facility) ========== -->
+  <div class="screen" id="screen-plan-select">
+    <div id="plan-select-content"></div>
   </div>
 
-  <!-- ========== ROOM BOOKING SCREEN (date/time selection) ========== -->
+  <!-- ========== ROOM BOOKING SCREEN (date/time/guests selection) ========== -->
   <div class="screen" id="screen-room-booking">
     <div id="room-booking-content"></div>
   </div>
@@ -790,271 +888,258 @@ body {
 
 <script>
 /* ================================================================
-   DATA - 令和8年4月1日〜 料金表準拠
+   ROOMS + PLANS データ構造（staff.html と統一）
+   - ROOMS = 物理リソース（親SKU）
+   - PLANS = 予約プラン（子SKU）
+   - 同じ部屋の宿泊/日帰りの在庫はスロットベースで連動
    ================================================================ */
 
+const ROOMS = [
+  { id: 'room_6_1', name: '6畳(1)', fullName: '2階 宿泊室【6畳】(1)', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 3 },
+  { id: 'room_6_2', name: '6畳(2)', fullName: '2階 宿泊室【6畳】(2)', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 3 },
+  { id: 'room_6_3', name: '6畳(3)', fullName: '2階 宿泊室【6畳】(3)', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 3 },
+  { id: 'room_6_4', name: '6畳(4)', fullName: '2階 宿泊室【6畳】(4)', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 3 },
+  { id: 'room_27', name: '27畳', fullName: '2階 宿泊室【27畳】', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 20 },
+  { id: 'room_exp', name: '体験学習室', fullName: '1階 体験学習室【25畳】', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 20 },
+  { id: 'room_train', name: '研修室', fullName: '1階 研修室', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 30 },
+  { id: 'room_kitchen', name: '厨房・食堂', fullName: '1階 厨房・食堂', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 20 },
+  { id: 'camp', name: 'キャンプ場', fullName: 'キャンプサイト', building: 'アウトドア', icon: '\u26FA', capacity: 99 },
+  { id: 'lodge', name: 'ロッジ', fullName: 'ロッジ', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
+  { id: 'court_1', name: 'コート1', fullName: 'テニスコート1', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_2', name: 'コート2', fullName: 'テニスコート2', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_3', name: 'コート3', fullName: 'テニスコート3', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_4', name: 'コート4', fullName: 'テニスコート4', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_5', name: 'コート5', fullName: 'テニスコート5', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'midori', name: 'みどりの広場', fullName: 'みどりの広場', building: 'グラウンド', icon: '\u26BE', capacity: 50 },
+  { id: 'sauna', name: 'サンセットサウナ', fullName: '貸切サウナ（120分/8名まで）', building: 'サウナ', icon: '\u{1F9D6}', capacity: 8 },
+];
+
 /*
-  bookingType:
-    'stay'    - 泊単位（チェックイン/アウト固定）
-    'slot3'   - 3コマ制（午前/午後/夜間/通し）
-    'allday'  - 通し利用のみ
+  planType:
+    'stay'    - 宿泊（年齢区分料金あり）
+    'day_all' - 日帰り通し
+    'day_slot'- 日帰りコマ制
+    'camp'    - キャンプ泊
     'hourly'  - 1時間刻み
-    'camp'    - キャンプ泊（14:00-翌13:00）
     'sauna'   - 120分枠
 */
+const PLANS = [
+  // ===== ふれあいの館 - 宿泊 =====
+  { id: 'stay_6', name: '宿泊（6畳）', planType: 'stay', category: 'stay',
+    rooms: ['room_6_1','room_6_2','room_6_3','room_6_4'],
+    slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
+    checkin: '16:00', checkout: '10:00',
+    // 宿泊料金体系
+    basePrice: 2310, basePriceLabel: '基本料金/室/泊',
+    extraAdult: 1580, extraChild: 1050, extraInfant: 790,
+    priceDisplay: '2,310円/室/泊 +人数加算',
+    badge: '宿泊', badgeColor: '#6366f1',
+    note: '3名まで / 中学生以上+1,580円, 小学生+1,050円, 小学生未満+790円' },
+  { id: 'stay_27', name: '宿泊（27畳）', planType: 'stay', category: 'stay',
+    rooms: ['room_27'],
+    slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
+    checkin: '16:00', checkout: '10:00',
+    basePrice: 9430, basePriceLabel: '基本料金/室/泊',
+    extraAdult: 1580, extraChild: 1050, extraInfant: 790,
+    priceDisplay: '9,430円/室/泊 +人数加算',
+    badge: '宿泊', badgeColor: '#6366f1',
+    note: '中学生以上+1,580円, 小学生+1,050円, 小学生未満+790円' },
+  { id: 'stay_exp', name: '宿泊（体験学習室）', planType: 'stay', category: 'stay',
+    rooms: ['room_exp'],
+    slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
+    checkin: '16:00', checkout: '10:00',
+    basePrice: 9430, basePriceLabel: '基本料金/室/泊',
+    extraAdult: 1580, extraChild: 1050, extraInfant: 790,
+    priceDisplay: '9,430円/室/泊 +人数加算',
+    badge: '宿泊', badgeColor: '#6366f1',
+    note: '中学生以上+1,580円, 小学生+1,050円, 小学生未満+790円' },
 
-const FACILITIES = [
-  // ===== ふれあいの館（宿泊） =====
-  {
-    id: 'fureai-stay',
-    name: '宿泊）ふれあいの館',
-    icon: '\u{1F3E0}',
-    category: 'stay',
-    bookingType: 'stay',
-    checkin: '16:00',
-    checkout: '10:00',
-    rooms: [
-      {
-        id: 'stay-6-1', name: '2階 宿泊室【6畳】(1)', capacity: 3,
-        basePrice: 2310, unit: '1名/泊',
-        extraAdult: 1580, extraChild: 1050, extraInfant: 790,
-        note: '超過料金: 中学生以上1,580円/小学生1,050円/小学生未満790円'
-      },
-      {
-        id: 'stay-6-2', name: '2階 宿泊室【6畳】(2)', capacity: 3,
-        basePrice: 2310, unit: '1名/泊',
-        extraAdult: 1580, extraChild: 1050, extraInfant: 790,
-        note: '超過料金: 中学生以上1,580円/小学生1,050円/小学生未満790円'
-      },
-      {
-        id: 'stay-6-3', name: '2階 宿泊室【6畳】(3)', capacity: 3,
-        basePrice: 2310, unit: '1名/泊',
-        extraAdult: 1580, extraChild: 1050, extraInfant: 790,
-        note: '超過料金: 中学生以上1,580円/小学生1,050円/小学生未満790円'
-      },
-      {
-        id: 'stay-6-4', name: '2階 宿泊室【6畳】(4)', capacity: 3,
-        basePrice: 2310, unit: '1名/泊',
-        extraAdult: 1580, extraChild: 1050, extraInfant: 790,
-        note: '超過料金: 中学生以上1,580円/小学生1,050円/小学生未満790円'
-      },
-      {
-        id: 'stay-27', name: '2階 宿泊室【27畳】', capacity: 20,
-        basePrice: 9430, unit: '1室/泊（基本料金）',
-        extraAdult: 1580, extraChild: 1050, extraInfant: 790,
-        note: '基本料金9,430円 + 超過: 中学生以上1,580円/小学生1,050円/小学生未満790円'
-      },
-      {
-        id: 'stay-learning', name: '1階 体験学習室【25畳】', capacity: 20,
-        basePrice: 9430, unit: '1室/泊（基本料金）',
-        extraAdult: 1580, extraChild: 1050, extraInfant: 790,
-        note: '基本料金9,430円 + 超過: 中学生以上1,580円/小学生1,050円/小学生未満790円'
-      }
-    ]
-  },
+  // ===== ふれあいの館 - 日帰り =====
+  { id: 'day_6_all', name: '日帰り通し（6畳）', planType: 'day_all', category: 'day',
+    rooms: ['room_6_1','room_6_2','room_6_3','room_6_4'],
+    slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+    timeRange: '8:30 - 22:00', basePrice: 1680,
+    priceDisplay: '1,680円/室/通し',
+    badge: '日帰り通し', badgeColor: '#f59e0b' },
 
-  // ===== ふれあいの館（日帰り） =====
-  {
-    id: 'fureai-day-6',
-    name: '日帰り）宿泊室【6畳】',
-    icon: '\u2600\uFE0F',
-    category: 'day',
-    bookingType: 'allday',
-    timeRange: '8:30 - 22:00（通し）',
-    rooms: [
-      { id: 'day-6-1', name: '2階 宿泊室【6畳】(1)', capacity: 3, basePrice: 1680, unit: '1室/通し' },
-      { id: 'day-6-2', name: '2階 宿泊室【6畳】(2)', capacity: 3, basePrice: 1680, unit: '1室/通し' },
-      { id: 'day-6-3', name: '2階 宿泊室【6畳】(3)', capacity: 3, basePrice: 1680, unit: '1室/通し' },
-      { id: 'day-6-4', name: '2階 宿泊室【6畳】(4)', capacity: 3, basePrice: 1680, unit: '1室/通し' }
-    ]
-  },
-  {
-    id: 'fureai-day-27',
-    name: '日帰り）宿泊室【27畳】',
-    icon: '\u2600\uFE0F',
-    category: 'day',
-    bookingType: 'slot3',
-    slots: [
-      { id: 'am',    label: '午前',  time: '8:30-12:00',  price: 1790 },
-      { id: 'pm',    label: '午後',  time: '12:00-17:00', price: 2620 },
-      { id: 'night', label: '夜間',  time: '17:00-22:00', price: 2620 },
-      { id: 'all',   label: '通し',  time: '8:30-22:00',  price: 6080 }
-    ],
-    rooms: [
-      { id: 'day-27', name: '2階 宿泊室【27畳】', capacity: 20, basePrice: 1790, unit: '1室/コマ〜' }
-    ]
-  },
-  {
-    id: 'fureai-day-learning',
-    name: '日帰り）体験学習室【25畳】',
-    icon: '\u2600\uFE0F',
-    category: 'day',
-    bookingType: 'slot3',
-    slots: [
-      { id: 'am',    label: '午前',  time: '8:30-12:00',  price: 1790 },
-      { id: 'pm',    label: '午後',  time: '12:00-17:00', price: 2620 },
-      { id: 'night', label: '夜間',  time: '17:00-22:00', price: 2620 },
-      { id: 'all',   label: '通し',  time: '8:30-22:00',  price: 6080 }
-    ],
-    rooms: [
-      { id: 'day-learning', name: '1階 体験学習室【25畳】', capacity: 20, basePrice: 1790, unit: '1室/コマ〜' }
-    ]
-  },
-  {
-    id: 'fureai-day-27-allday',
-    name: '日帰り）宿泊室【27畳】通し',
-    icon: '\u2600\uFE0F',
-    category: 'day',
-    bookingType: 'allday',
-    timeRange: '8:30 - 22:00（通し）',
-    // 通し専用の8,300円枠
-    rooms: [
-      { id: 'day-27-allday', name: '2階 宿泊室【27畳】通し', capacity: 20, basePrice: 8300, unit: '1室/通し' }
-    ]
-  },
-  {
-    id: 'fureai-day-training',
-    name: '日帰り）研修室',
-    icon: '\u{1F4DA}',
-    category: 'day',
-    bookingType: 'slot3',
-    slots: [
-      { id: 'am',    label: '午前',  time: '8:30-12:00',  price: 2620 },
-      { id: 'pm',    label: '午後',  time: '12:00-17:00', price: 3880 },
-      { id: 'night', label: '夜間',  time: '17:00-22:00', price: 3880 },
-      { id: 'all',   label: '通し',  time: '8:30-22:00',  price: 8910 }
-    ],
-    rooms: [
-      { id: 'day-training', name: '1階 研修室', capacity: 30, basePrice: 2620, unit: '1室/コマ〜' }
-    ]
-  },
-  {
-    id: 'fureai-day-kitchen',
-    name: '日帰り）厨房・食堂',
-    icon: '\u{1F373}',
-    category: 'day',
-    bookingType: 'allday',
-    timeRange: '8:30 - 22:00（通し）',
-    rooms: [
-      { id: 'day-kitchen', name: '1階 厨房・食堂', capacity: 20, basePrice: 2310, unit: '1室/通し' }
-    ]
-  },
+  { id: 'day_27_am', name: '日帰り午前（27畳）', planType: 'day_slot', category: 'day',
+    rooms: ['room_27'],
+    slots: [8,9,10,11], timeRange: '8:30-12:00', basePrice: 1790,
+    priceDisplay: '1,790円', badge: '午前', badgeColor: '#f97316' },
+  { id: 'day_27_pm', name: '日帰り午後（27畳）', planType: 'day_slot', category: 'day',
+    rooms: ['room_27'],
+    slots: [12,13,14,15,16], timeRange: '12:00-17:00', basePrice: 2620,
+    priceDisplay: '2,620円', badge: '午後', badgeColor: '#f59e0b' },
+  { id: 'day_27_eve', name: '日帰り夜間（27畳）', planType: 'day_slot', category: 'day',
+    rooms: ['room_27'],
+    slots: [17,18,19,20,21], timeRange: '17:00-22:00', basePrice: 2620,
+    priceDisplay: '2,620円', badge: '夜間', badgeColor: '#8b5cf6' },
+  { id: 'day_27_all', name: '日帰り通し（27畳）', planType: 'day_all', category: 'day',
+    rooms: ['room_27'],
+    slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+    timeRange: '8:30 - 22:00', basePrice: 6080,
+    priceDisplay: '6,080円/室/通し',
+    badge: '日帰り通し', badgeColor: '#f59e0b' },
 
-  // ===== キャンプ場 =====
-  {
-    id: 'camp',
-    name: 'キャンプ場',
-    icon: '\u26FA',
-    category: 'outdoor',
-    bookingType: 'camp',
-    checkin: '14:00',
-    checkout: '翌13:00',
-    rooms: [
-      { id: 'camp-site', name: 'キャンプサイト', capacity: 99, basePrice: 790, unit: '1区画/泊' }
-    ],
-    extras: [
-      { id: 'tent', name: 'テント追加', price: 50, unit: '1張' }
-    ]
-  },
+  { id: 'day_exp_am', name: '日帰り午前（体験学習室）', planType: 'day_slot', category: 'day',
+    rooms: ['room_exp'],
+    slots: [8,9,10,11], timeRange: '8:30-12:00', basePrice: 1790,
+    priceDisplay: '1,790円', badge: '午前', badgeColor: '#f97316' },
+  { id: 'day_exp_pm', name: '日帰り午後（体験学習室）', planType: 'day_slot', category: 'day',
+    rooms: ['room_exp'],
+    slots: [12,13,14,15,16], timeRange: '12:00-17:00', basePrice: 2620,
+    priceDisplay: '2,620円', badge: '午後', badgeColor: '#f59e0b' },
+  { id: 'day_exp_eve', name: '日帰り夜間（体験学習室）', planType: 'day_slot', category: 'day',
+    rooms: ['room_exp'],
+    slots: [17,18,19,20,21], timeRange: '17:00-22:00', basePrice: 2620,
+    priceDisplay: '2,620円', badge: '夜間', badgeColor: '#8b5cf6' },
+  { id: 'day_exp_all', name: '日帰り通し（体験学習室）', planType: 'day_all', category: 'day',
+    rooms: ['room_exp'],
+    slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+    timeRange: '8:30 - 22:00', basePrice: 6080,
+    priceDisplay: '6,080円/室/通し',
+    badge: '日帰り通し', badgeColor: '#f59e0b' },
 
-  // ===== ロッジ（宿泊） =====
-  {
-    id: 'lodge-stay',
-    name: 'ロッジ（宿泊）',
-    icon: '\u{1F3D5}\uFE0F',
-    category: 'outdoor',
-    bookingType: 'stay',
-    checkin: '16:00',
-    checkout: '10:00',
-    rooms: [
-      { id: 'lodge-stay-1', name: 'ロッジ', capacity: 6, basePrice: 4720, unit: '1棟/泊' }
-    ],
-    extras: [
-      { id: 'sheet', name: 'シーツ', price: 340, unit: '1組' }
-    ]
-  },
+  { id: 'day_train_am', name: '日帰り午前（研修室）', planType: 'day_slot', category: 'day',
+    rooms: ['room_train'],
+    slots: [8,9,10,11], timeRange: '8:30-12:00', basePrice: 2620,
+    priceDisplay: '2,620円', badge: '午前', badgeColor: '#f97316' },
+  { id: 'day_train_pm', name: '日帰り午後（研修室）', planType: 'day_slot', category: 'day',
+    rooms: ['room_train'],
+    slots: [12,13,14,15,16], timeRange: '12:00-17:00', basePrice: 3880,
+    priceDisplay: '3,880円', badge: '午後', badgeColor: '#f59e0b' },
+  { id: 'day_train_eve', name: '日帰り夜間（研修室）', planType: 'day_slot', category: 'day',
+    rooms: ['room_train'],
+    slots: [17,18,19,20,21], timeRange: '17:00-22:00', basePrice: 3880,
+    priceDisplay: '3,880円', badge: '夜間', badgeColor: '#8b5cf6' },
+  { id: 'day_train_all', name: '日帰り通し（研修室）', planType: 'day_all', category: 'day',
+    rooms: ['room_train'],
+    slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+    timeRange: '8:30 - 22:00', basePrice: 8910,
+    priceDisplay: '8,910円/室/通し',
+    badge: '日帰り通し', badgeColor: '#f59e0b' },
 
-  // ===== ロッジ（日帰り） =====
-  {
-    id: 'lodge-day',
-    name: 'ロッジ（日帰り）',
-    icon: '\u{1F3D5}\uFE0F',
-    category: 'outdoor',
-    bookingType: 'hourly',
+  { id: 'day_kitchen', name: '日帰り通し（厨房・食堂）', planType: 'day_all', category: 'day',
+    rooms: ['room_kitchen'],
+    slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+    timeRange: '8:30 - 22:00', basePrice: 2310,
+    priceDisplay: '2,310円/室/通し',
+    badge: '日帰り通し', badgeColor: '#f59e0b' },
+
+  // ===== キャンプ =====
+  { id: 'camp_stay', name: 'キャンプ泊', planType: 'camp', category: 'outdoor',
+    rooms: ['camp'],
+    slots: [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12],
+    checkin: '14:00', checkout: '翌13:00',
+    basePrice: 790, priceDisplay: '790円/区画/泊',
+    badge: 'キャンプ', badgeColor: '#059669',
+    extras: [{ id: 'tent', name: 'テント追加', price: 50, unit: '1張' }] },
+
+  // ===== ロッジ =====
+  { id: 'lodge_stay', name: 'ロッジ宿泊', planType: 'stay_simple', category: 'outdoor',
+    rooms: ['lodge'],
+    slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
+    checkin: '16:00', checkout: '10:00',
+    basePrice: 4720, priceDisplay: '4,720円/棟/泊',
+    badge: '宿泊', badgeColor: '#6366f1',
+    extras: [{ id: 'sheet', name: 'シーツ', price: 340, unit: '1組' }] },
+  { id: 'lodge_day', name: 'ロッジ日帰り', planType: 'hourly', category: 'outdoor',
+    rooms: ['lodge'],
+    slots: [10,11,12,13,14,15],
     hourlyRange: { start: 10, end: 16 },
-    rooms: [
-      { id: 'lodge-day-1', name: 'ロッジ（日帰り）', capacity: 6, basePrice: 330, unit: '1時間' }
-    ]
-  },
+    basePrice: 330, priceDisplay: '330円/時間',
+    badge: '日帰り', badgeColor: '#f59e0b' },
 
-  // ===== テニスコート =====
-  {
-    id: 'tennis',
-    name: 'テニスコート',
-    icon: '\u{1F3BE}',
-    category: 'sport',
-    bookingType: 'hourly',
+  // ===== テニス =====
+  { id: 'tennis', name: 'テニスコート', planType: 'hourly', category: 'sport',
+    rooms: ['court_1','court_2','court_3','court_4','court_5'],
+    slots: 'hourly',
     hourlyRange: { start: 8, end: 22 },
-    residentPrice: 630,
-    nonResidentPrice: 760,
-    lightResident: 240,
-    lightNonResident: 280,
-    rooms: [
-      { id: 'court-1', name: 'コート1', capacity: 4, basePrice: 630, unit: '1面/時間' },
-      { id: 'court-2', name: 'コート2', capacity: 4, basePrice: 630, unit: '1面/時間' },
-      { id: 'court-3', name: 'コート3', capacity: 4, basePrice: 630, unit: '1面/時間' },
-      { id: 'court-4', name: 'コート4', capacity: 4, basePrice: 630, unit: '1面/時間' },
-      { id: 'court-5', name: 'コート5', capacity: 4, basePrice: 630, unit: '1面/時間' }
-    ]
-  },
+    basePrice: 630,
+    residentPrice: 630, nonResidentPrice: 760,
+    lightResident: 240, lightNonResident: 280,
+    priceDisplay: '市民630円/市外760円/面/時',
+    badge: 'テニス', badgeColor: '#0ea5e9',
+    note: '17時以降は照明料金が加算されます（伊予市民240円/市外280円・1面1時間）' },
 
   // ===== みどりの広場 =====
-  {
-    id: 'midori',
-    name: 'みどりの広場',
-    icon: '\u26BE',
-    category: 'sport',
-    bookingType: 'slot3',
-    // 市民/市外 x 一般/学生 の4パターン
-    slots: [
-      { id: 'am',    label: '午前',  time: '8:30-12:00',  price: 1890, nonResidentPrice: 2200, studentPrice: 1050, studentNonResidentPrice: 1260 },
-      { id: 'pm',    label: '午後',  time: '12:00-17:00', price: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890 },
-      { id: 'night', label: '夜間',  time: '17:00-22:00', price: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890 }
-    ],
-    rooms: [
-      { id: 'ground', name: 'みどりの広場', capacity: 50, basePrice: 1890, unit: '1面/コマ〜' }
-    ],
-    note: '専用利用の場合は予約金額の半額'
-  },
+  { id: 'midori_am', name: 'みどりの広場 午前', planType: 'day_slot', category: 'sport',
+    rooms: ['midori'],
+    slots: [8,9,10,11], timeRange: '8:30-12:00',
+    basePrice: 1890, nonResidentPrice: 2200, studentPrice: 1050, studentNonResidentPrice: 1260,
+    priceDisplay: '市民1,890円/市外2,200円',
+    badge: '午前', badgeColor: '#f97316',
+    note: '専用利用の場合は予約金額の半額' },
+  { id: 'midori_pm', name: 'みどりの広場 午後', planType: 'day_slot', category: 'sport',
+    rooms: ['midori'],
+    slots: [12,13,14,15,16], timeRange: '12:00-17:00',
+    basePrice: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890,
+    priceDisplay: '市民2,730円/市外3,250円',
+    badge: '午後', badgeColor: '#f59e0b' },
+  { id: 'midori_eve', name: 'みどりの広場 夜間', planType: 'day_slot', category: 'sport',
+    rooms: ['midori'],
+    slots: [17,18,19,20,21], timeRange: '17:00-22:00',
+    basePrice: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890,
+    priceDisplay: '市民2,730円/市外3,250円',
+    badge: '夜間', badgeColor: '#8b5cf6' },
 
   // ===== サウナ =====
-  {
-    id: 'sauna',
-    name: 'ふたみサンセットサウナ',
-    icon: '\u{1F9D6}',
-    category: 'sauna',
-    bookingType: 'sauna',
-    rooms: [
-      { id: 'sauna-private', name: '貸切サウナ（120分/8名まで）', capacity: 8, basePrice: 13200, unit: '1グループ/回', note: '12,000円(税別)' }
-    ],
-    extras: [
-      { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット', note: '500円(税別)' }
-    ],
-    specialDay: { day: 23, price: 2300, unit: '1名', label: '毎月23日特別料金 2,300円/人(税込)' }
-  }
+  { id: 'sauna_1', name: 'サウナ 9:00-11:00', planType: 'sauna', category: 'sauna',
+    rooms: ['sauna'], slots: [9,10],
+    timeRange: '9:00-11:00', basePrice: 13200,
+    priceDisplay: '13,200円/グループ',
+    badge: 'サウナ', badgeColor: '#ec4899',
+    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+  { id: 'sauna_2', name: 'サウナ 11:30-13:30', planType: 'sauna', category: 'sauna',
+    rooms: ['sauna'], slots: [11,12,13],
+    timeRange: '11:30-13:30', basePrice: 13200,
+    priceDisplay: '13,200円/グループ',
+    badge: 'サウナ', badgeColor: '#ec4899',
+    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+  { id: 'sauna_3', name: 'サウナ 14:00-16:00', planType: 'sauna', category: 'sauna',
+    rooms: ['sauna'], slots: [14,15],
+    timeRange: '14:00-16:00', basePrice: 13200,
+    priceDisplay: '13,200円/グループ',
+    badge: 'サウナ', badgeColor: '#ec4899',
+    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+  { id: 'sauna_4', name: 'サウナ 16:30-18:30', planType: 'sauna', category: 'sauna',
+    rooms: ['sauna'], slots: [16,17,18],
+    timeRange: '16:30-18:30', basePrice: 13200,
+    priceDisplay: '13,200円/グループ',
+    badge: 'サウナ', badgeColor: '#ec4899',
+    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+  { id: 'sauna_5', name: 'サウナ 19:00-21:00', planType: 'sauna', category: 'sauna',
+    rooms: ['sauna'], slots: [19,20],
+    timeRange: '19:00-21:00', basePrice: 13200,
+    priceDisplay: '13,200円/グループ',
+    badge: 'サウナ', badgeColor: '#ec4899',
+    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
 ];
 
-// 3コマ制のコマ定義（slot3用デフォルト）
-const DEFAULT_SLOT3 = [
-  { id: 'am',    label: '午前',  time: '8:30-12:00' },
-  { id: 'pm',    label: '午後',  time: '12:00-17:00' },
-  { id: 'night', label: '夜間',  time: '17:00-22:00' },
-  { id: 'all',   label: '通し',  time: '8:30-22:00' }
-];
-
-// サウナ時間枠（120分刻み）
-const SAUNA_SLOTS = [
-  '9:00-11:00', '11:30-13:30', '14:00-16:00', '16:30-18:30', '19:00-21:00'
+// 施設グルーピング（UI表示用）: 同じ物理部屋を持つプランをまとめて「施設」として見せる
+const FACILITY_GROUPS = [
+  { id: 'fg_fureai_stay', name: '宿泊）ふれあいの館', icon: '\u{1F3E0}', category: 'stay',
+    plans: ['stay_6','stay_27','stay_exp'] },
+  { id: 'fg_fureai_day_6', name: '日帰り）宿泊室【6畳】', icon: '\u2600\uFE0F', category: 'day',
+    plans: ['day_6_all'] },
+  { id: 'fg_fureai_day_27', name: '日帰り）宿泊室【27畳】', icon: '\u2600\uFE0F', category: 'day',
+    plans: ['day_27_am','day_27_pm','day_27_eve','day_27_all'] },
+  { id: 'fg_fureai_day_exp', name: '日帰り）体験学習室', icon: '\u2600\uFE0F', category: 'day',
+    plans: ['day_exp_am','day_exp_pm','day_exp_eve','day_exp_all'] },
+  { id: 'fg_fureai_day_train', name: '日帰り）研修室', icon: '\u{1F4DA}', category: 'day',
+    plans: ['day_train_am','day_train_pm','day_train_eve','day_train_all'] },
+  { id: 'fg_fureai_day_kitchen', name: '日帰り）厨房・食堂', icon: '\u{1F373}', category: 'day',
+    plans: ['day_kitchen'] },
+  { id: 'fg_camp', name: 'キャンプ場', icon: '\u26FA', category: 'outdoor',
+    plans: ['camp_stay'] },
+  { id: 'fg_lodge', name: 'ロッジ', icon: '\u{1F3D5}\uFE0F', category: 'outdoor',
+    plans: ['lodge_stay','lodge_day'] },
+  { id: 'fg_tennis', name: 'テニスコート', icon: '\u{1F3BE}', category: 'sport',
+    plans: ['tennis'] },
+  { id: 'fg_midori', name: 'みどりの広場', icon: '\u26BE', category: 'sport',
+    plans: ['midori_am','midori_pm','midori_eve'] },
+  { id: 'fg_sauna', name: 'ふたみサンセットサウナ', icon: '\u{1F9D6}', category: 'sauna',
+    plans: ['sauna_1','sauna_2','sauna_3','sauna_4','sauna_5'] },
 ];
 
 /* ================================================================
@@ -1064,22 +1149,34 @@ const state = {
   screenHistory: ['screen-top'],
   searchDate: '',
   searchGuests: 2,
-  selectedFacility: null,
-  selectedRoom: null,
+  // 選択中の予約情報
+  selectedPlan: null,
+  selectedRoomId: null,
   selectedDate: '',
-  selectedSlots: [],
   selectedNights: 1,
-  selectedHours: [],
+  // 宿泊用: 年齢区分別人数
+  guestsAdult: 0,   // 中学生以上
+  guestsChild: 0,   // 小学生
+  guestsInfant: 0,  // 小学生未満
+  // 非宿泊用: 単純人数
   guests: 2,
+  // キャンプ
   campSites: 1,
   campTents: 0,
+  // ロッジシーツ
   lodgeSheets: 0,
+  // サウナタオル
   saunaTowels: 0,
+  // テニス/みどり
   isResident: true,
   isStudent: false,
-  flow: 'date',
+  selectedHours: [],
+  // テニスコマ選択（みどり等複数コマ選択）
+  selectedSlotPlans: [],
+  // 計算結果
   totalPrice: 0,
   timeStr: '',
+  flow: 'facility',
 };
 
 /* ================================================================
@@ -1120,8 +1217,12 @@ function updateBackButton() {
 }
 
 /* ================================================================
-   DUMMY AVAILABILITY
+   SLOT-BASED AVAILABILITY
+   同じ部屋の宿泊/日帰りがスロットを共有するため、
+   あるプランが使うスロットが全て空いているかを判定する
    ================================================================ */
+
+// ダミー: ハッシュベースで空き/埋まりを生成
 function hashCode(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -1131,45 +1232,35 @@ function hashCode(str) {
   return Math.abs(hash);
 }
 
-function isAvailable(roomId, date, slot) {
-  const seed = hashCode(roomId + date + (slot || ''));
+// 特定の部屋+日付+時間スロットが空いているか
+function isSlotFree(roomId, date, hour) {
+  const seed = hashCode(roomId + date + hour);
   return (seed % 10) > 2; // 約70%空き
 }
 
-// bookingTypeに合わせた空き状況レベル判定
-function getAvailabilityLevel(facility, room, date) {
-  if (!date) return 'ok';
-  const bt = facility.bookingType;
+// プランの全スロットが空いているか（指定部屋）
+function isPlanAvailableForRoom(plan, roomId, date) {
+  if (!date) return true;
+  const slots = Array.isArray(plan.slots) ? plan.slots : [];
+  if (slots.length === 0) return true;
+  // 宿泊は翌日にまたがるスロット(0-9)も考慮
+  for (const h of slots) {
+    if (!isSlotFree(roomId, date, h)) return false;
+  }
+  return true;
+}
 
-  if (bt === 'stay' || bt === 'allday' || bt === 'camp') {
-    // 日単位: 空き or 満室
-    return isAvailable(room.id, date, '') ? 'ok' : 'none';
-  }
-  if (bt === 'slot3') {
-    const slots = facility.slots || DEFAULT_SLOT3;
-    let avail = 0;
-    slots.forEach(s => { if (isAvailable(room.id, date, s.id)) avail++; });
-    if (avail === 0) return 'none';
-    if (avail <= 1) return 'few';
-    return 'ok';
-  }
-  if (bt === 'hourly') {
-    const range = facility.hourlyRange || { start: 8, end: 22 };
-    let avail = 0;
-    for (let h = range.start; h < range.end; h++) {
-      if (isAvailable(room.id, date, h + ':00')) avail++;
-    }
-    if (avail === 0) return 'none';
-    if (avail < 3) return 'few';
-    return 'ok';
-  }
-  if (bt === 'sauna') {
-    let avail = 0;
-    SAUNA_SLOTS.forEach(s => { if (isAvailable(room.id, date, s)) avail++; });
-    if (avail === 0) return 'none';
-    if (avail <= 1) return 'few';
-    return 'ok';
-  }
+// プランに使える部屋のうち、空いている部屋IDリストを返す
+function getAvailableRooms(plan, date) {
+  if (!date) return plan.rooms;
+  return plan.rooms.filter(rid => isPlanAvailableForRoom(plan, rid, date));
+}
+
+function getAvailabilityLevel(plan, date) {
+  if (!date) return 'ok';
+  const available = getAvailableRooms(plan, date);
+  if (available.length === 0) return 'none';
+  if (available.length <= 1) return 'few';
   return 'ok';
 }
 
@@ -1181,39 +1272,30 @@ function availBadge(level) {
 /* ================================================================
    PRICE HELPERS
    ================================================================ */
-function getDisplayPrice(facility, room) {
-  // 市民/市外の切り替えに対応した表示用料金
-  if (facility.id === 'tennis') {
-    return state.isResident ? facility.residentPrice : facility.nonResidentPrice;
+function getPlanDisplayPrice(plan) {
+  if (plan.id === 'tennis') {
+    return state.isResident ? plan.residentPrice : plan.nonResidentPrice;
   }
-  if (facility.id === 'midori' && facility.slots) {
-    const slot = facility.slots[0]; // 最安のスロットを表示
+  if (plan.id.startsWith('midori')) {
     if (state.isStudent) {
-      return state.isResident ? slot.studentPrice : slot.studentNonResidentPrice;
+      return state.isResident ? (plan.studentPrice || plan.basePrice) : (plan.studentNonResidentPrice || plan.nonResidentPrice || plan.basePrice);
     }
-    return state.isResident ? slot.price : slot.nonResidentPrice;
+    return state.isResident ? plan.basePrice : (plan.nonResidentPrice || plan.basePrice);
   }
-  return room.basePrice;
-}
-
-function getSlotPrice(facility, slot) {
-  if (facility.id === 'midori') {
-    if (state.isStudent) {
-      return state.isResident ? (slot.studentPrice || slot.price) : (slot.studentNonResidentPrice || slot.nonResidentPrice || slot.price);
-    }
-    return state.isResident ? slot.price : (slot.nonResidentPrice || slot.price);
-  }
-  return slot.price;
+  return plan.basePrice;
 }
 
 /* ================================================================
-   DATE SEARCH
+   GUEST STEPPER (date search)
    ================================================================ */
 function stepGuests(delta) {
   state.searchGuests = Math.max(1, Math.min(50, state.searchGuests + delta));
   document.getElementById('guest-count').textContent = state.searchGuests;
 }
 
+/* ================================================================
+   DATE SEARCH
+   ================================================================ */
 function searchByDate() {
   const dateInput = document.getElementById('search-date');
   if (!dateInput.value) {
@@ -1226,56 +1308,71 @@ function searchByDate() {
 
   const resultsEl = document.getElementById('date-search-results');
   const dateStr = formatDate(state.searchDate);
-  let html = '<div class="section-title">' + dateStr + ' の空き施設</div>';
+  let html = '<div class="section-title">' + dateStr + ' の空きプラン</div>';
 
   let found = false;
-  FACILITIES.forEach(facility => {
-    facility.rooms.forEach(room => {
-      if (room.capacity < state.searchGuests) return;
-      const level = getAvailabilityLevel(facility, room, state.searchDate);
-      found = true;
-      const price = getDisplayPrice(facility, room);
-      html += '<div class="facility-card" onclick="selectFromDateSearch(\'' + facility.id + '\', \'' + room.id + '\')">';
-      html += '  <div class="facility-icon">' + facility.icon + '</div>';
-      html += '  <div class="facility-info">';
-      html += '    <div class="facility-name">' + room.name + '</div>';
-      html += '    <div class="facility-meta">' + facility.name + ' / 定員' + room.capacity + '名</div>';
-      html += '    <div class="facility-price">' + price.toLocaleString() + '円 (' + room.unit + ') ' + availBadge(level) + '</div>';
-      html += '  </div>';
-      html += '  <div class="facility-arrow">&#8250;</div>';
-      html += '</div>';
-    });
+  PLANS.forEach(plan => {
+    // 人数チェック: プランに紐づく部屋の最大定員
+    const maxCap = Math.max(...plan.rooms.map(rid => {
+      const r = ROOMS.find(x => x.id === rid);
+      return r ? r.capacity : 0;
+    }));
+    if (maxCap < state.searchGuests) return;
+
+    const level = getAvailabilityLevel(plan, state.searchDate);
+    found = true;
+    const room = ROOMS.find(r => r.id === plan.rooms[0]);
+    html += '<div class="facility-card" onclick="selectPlanFromSearch(\'' + plan.id + '\')">';
+    html += '  <div class="facility-icon">' + (room ? room.icon : '') + '</div>';
+    html += '  <div class="facility-info">';
+    html += '    <div><span class="plan-badge" style="background:' + (plan.badgeColor || '#999') + '">' + (plan.badge || '') + '</span></div>';
+    html += '    <div class="facility-name">' + plan.name + '</div>';
+    html += '    <div class="facility-meta">定員' + maxCap + '名</div>';
+    html += '    <div class="facility-price">' + plan.priceDisplay + ' ' + availBadge(level) + '</div>';
+    html += '  </div>';
+    html += '  <div class="facility-arrow">&#8250;</div>';
+    html += '</div>';
   });
 
   if (!found) {
-    html += '<div class="empty-state"><div class="empty-state-icon">&#128533;</div><div>' + state.searchGuests + '名でご利用可能な施設が見つかりません</div></div>';
+    html += '<div class="empty-state"><div class="empty-state-icon">&#128533;</div><div>' + state.searchGuests + '名でご利用可能なプランが見つかりません</div></div>';
   }
 
   resultsEl.innerHTML = html;
 }
 
-function selectFromDateSearch(facilityId, roomId) {
-  const facility = FACILITIES.find(f => f.id === facilityId);
-  const room = facility.rooms.find(r => r.id === roomId);
-  state.selectedFacility = facility;
-  state.selectedRoom = room;
+function selectPlanFromSearch(planId) {
+  const plan = PLANS.find(p => p.id === planId);
+  state.selectedPlan = plan;
   state.selectedDate = state.searchDate;
-  state.selectedSlots = [];
-  state.selectedHours = [];
   state.selectedNights = 1;
+  state.guestsAdult = 0;
+  state.guestsChild = 0;
+  state.guestsInfant = 0;
   state.campSites = 1;
   state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
+  state.selectedHours = [];
+
+  // 空いている部屋を自動選択
+  const available = getAvailableRooms(plan, state.selectedDate);
+  state.selectedRoomId = available.length > 0 ? available[0] : plan.rooms[0];
+
   showRoomBooking();
 }
 
 /* ================================================================
    FACILITY LIST
    ================================================================ */
+function showFacilityList() {
+  renderFacilityList('all');
+  navigate('screen-facility-list');
+}
+
 function renderFacilityList(category) {
   const listEl = document.getElementById('facility-list');
-  const filtered = category === 'all' ? FACILITIES : FACILITIES.filter(f => f.category === category);
+  const filtered = category === 'all' ? FACILITY_GROUPS : FACILITY_GROUPS.filter(fg => fg.category === category);
 
   if (filtered.length === 0) {
     listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128269;</div><div>該当する施設がありません</div></div>';
@@ -1283,17 +1380,15 @@ function renderFacilityList(category) {
   }
 
   let html = '';
-  filtered.forEach(facility => {
-    const minPrice = Math.min(...facility.rooms.map(r => getDisplayPrice(facility, r)));
-    const roomNames = facility.rooms.length <= 3
-      ? facility.rooms.map(r => r.name).join('、')
-      : facility.rooms.slice(0, 2).map(r => r.name).join('、') + ' 他' + (facility.rooms.length - 2) + '室';
-    html += '<div class="facility-card" onclick="showFacilityDetail(\'' + facility.id + '\')">';
-    html += '  <div class="facility-icon">' + facility.icon + '</div>';
+  filtered.forEach(fg => {
+    const plans = fg.plans.map(pid => PLANS.find(p => p.id === pid)).filter(Boolean);
+    const minPrice = Math.min(...plans.map(p => p.basePrice));
+    html += '<div class="facility-card" onclick="showPlanSelect(\'' + fg.id + '\')">';
+    html += '  <div class="facility-icon">' + fg.icon + '</div>';
     html += '  <div class="facility-info">';
-    html += '    <div class="facility-name">' + facility.name + '</div>';
-    html += '    <div class="facility-meta">' + facility.rooms.length + '室・' + roomNames + '</div>';
-    html += '    <div class="facility-price">' + minPrice.toLocaleString() + '円〜</div>';
+    html += '    <div class="facility-name">' + fg.name + '</div>';
+    html += '    <div class="facility-meta">' + plans.length + 'プラン</div>';
+    html += '    <div class="facility-price">' + minPrice.toLocaleString() + '円~</div>';
     html += '  </div>';
     html += '  <div class="facility-arrow">&#8250;</div>';
     html += '</div>';
@@ -1308,144 +1403,128 @@ function filterFacilities(category, tabEl) {
 }
 
 /* ================================================================
-   FACILITY DETAIL (room selection)
+   PLAN SELECT (after picking a facility group)
    ================================================================ */
-function showFacilityDetail(facilityId) {
+function showPlanSelect(fgId) {
   state.flow = 'facility';
-  const facility = FACILITIES.find(f => f.id === facilityId);
-  state.selectedFacility = facility;
-  const el = document.getElementById('facility-detail-content');
+  const fg = FACILITY_GROUPS.find(g => g.id === fgId);
+  const el = document.getElementById('plan-select-content');
 
-  let html = '<div class="section-title">' + facility.icon + ' ' + facility.name + '</div>';
+  let html = '<div class="section-title">' + fg.icon + ' ' + fg.name + '</div>';
 
-  // 市民トグル（テニス・みどりの広場）
-  if (facility.id === 'tennis' || facility.id === 'midori') {
-    html += renderResidentToggle();
-  }
-
+  // 日付選択
   html += '<div class="card"><div class="form-group">';
-  html += '<label class="form-label" for="detail-date">ご利用日</label>';
-  html += '<input type="date" class="form-input" id="detail-date" onchange="updateRoomAvailability(\'' + facilityId + '\')">';
+  html += '<label class="form-label">ご利用日（任意）</label>';
+  html += '<input type="date" class="form-input" id="plan-select-date" onchange="updatePlanAvailability(\'' + fgId + '\')">';
   html += '</div></div>';
 
-  html += '<div id="room-list-' + facilityId + '">';
-  facility.rooms.forEach(room => {
-    html += renderRoomCard(facility, room, '');
+  html += '<div class="section-title">プランを選択</div>';
+  html += '<div id="plan-list-' + fgId + '">';
+  fg.plans.forEach(pid => {
+    const plan = PLANS.find(p => p.id === pid);
+    if (!plan) return;
+    html += renderPlanCard(plan, '');
   });
   html += '</div>';
 
-  // 備考
-  if (facility.note) {
-    html += '<div class="text-muted mt-8">※ ' + facility.note + '</div>';
-  }
-
   el.innerHTML = html;
 
-  const dateInput = document.getElementById('detail-date');
+  const dateInput = document.getElementById('plan-select-date');
   dateInput.min = getTodayStr();
-  dateInput.value = state.searchDate || getTodayStr();
+  dateInput.value = state.searchDate || '';
 
-  navigate('screen-facility-detail');
+  navigate('screen-plan-select');
 }
 
-function renderRoomCard(facility, room, dateStr) {
-  const level = dateStr ? getAvailabilityLevel(facility, room, dateStr) : 'ok';
-  const price = getDisplayPrice(facility, room);
-  let html = '<div class="room-card" onclick="selectRoom(\'' + facility.id + '\', \'' + room.id + '\')">';
-  html += '  <div style="display:flex;justify-content:space-between;align-items:flex-start">';
-  html += '    <div>';
-  html += '      <div class="room-name">' + room.name + '</div>';
-  html += '      <div class="room-detail">定員 ' + room.capacity + '名</div>';
-  if (room.note) html += '<div class="room-detail">' + room.note + '</div>';
-  html += '    </div>';
-  if (dateStr) html += availBadge(level);
-  html += '  </div>';
-  html += '  <div class="room-price">' + price.toLocaleString() + '円 (' + room.unit + ')</div>';
+function renderPlanCard(plan, dateStr) {
+  const level = dateStr ? getAvailabilityLevel(plan, dateStr) : 'ok';
+  let html = '<div class="plan-card" onclick="selectPlan(\'' + plan.id + '\')">';
+  html += '<div><span class="plan-badge" style="background:' + (plan.badgeColor || '#999') + '">' + (plan.badge || '') + '</span>';
+  if (dateStr) html += ' ' + availBadge(level);
+  html += '</div>';
+  html += '<div class="plan-name">' + plan.name + '</div>';
+  if (plan.timeRange) html += '<div class="plan-detail">' + plan.timeRange + '</div>';
+  if (plan.checkin) html += '<div class="plan-detail">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
+  if (plan.note) html += '<div class="plan-detail">' + plan.note + '</div>';
+  html += '<div class="plan-price">' + plan.priceDisplay + '</div>';
   html += '</div>';
   return html;
 }
 
-function updateRoomAvailability(facilityId) {
-  const dateInput = document.getElementById('detail-date');
+function updatePlanAvailability(fgId) {
+  const dateInput = document.getElementById('plan-select-date');
   const dateStr = dateInput.value;
-  const facility = FACILITIES.find(f => f.id === facilityId);
-  const container = document.getElementById('room-list-' + facilityId);
+  const fg = FACILITY_GROUPS.find(g => g.id === fgId);
+  const container = document.getElementById('plan-list-' + fgId);
   let html = '';
-  facility.rooms.forEach(room => {
-    html += renderRoomCard(facility, room, dateStr);
+  fg.plans.forEach(pid => {
+    const plan = PLANS.find(p => p.id === pid);
+    if (!plan) return;
+    html += renderPlanCard(plan, dateStr);
   });
   container.innerHTML = html;
 }
 
-function selectRoom(facilityId, roomId) {
-  const facility = FACILITIES.find(f => f.id === facilityId);
-  const room = facility.rooms.find(r => r.id === roomId);
-  state.selectedFacility = facility;
-  state.selectedRoom = room;
-
-  const dateInput = document.getElementById('detail-date');
-  state.selectedDate = dateInput ? dateInput.value : '';
-  state.selectedSlots = [];
-  state.selectedHours = [];
+function selectPlan(planId) {
+  const plan = PLANS.find(p => p.id === planId);
+  state.selectedPlan = plan;
   state.selectedNights = 1;
+  state.guestsAdult = 0;
+  state.guestsChild = 0;
+  state.guestsInfant = 0;
+  state.guests = 2;
   state.campSites = 1;
   state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
+  state.selectedHours = [];
+  state.selectedSlotPlans = [];
+
+  const dateInput = document.getElementById('plan-select-date');
+  state.selectedDate = dateInput ? dateInput.value : '';
+
+  // 空いている部屋を自動選択
+  const available = getAvailableRooms(plan, state.selectedDate);
+  state.selectedRoomId = available.length > 0 ? available[0] : plan.rooms[0];
 
   showRoomBooking();
 }
 
 /* ================================================================
-   ROOM BOOKING (adaptive to bookingType)
+   ROOM BOOKING SCREEN
    ================================================================ */
-function renderResidentToggle() {
-  let html = '<div class="card">';
-  html += '<div class="toggle-row">';
-  html += '<span class="toggle-label">伊予市民ですか？</span>';
-  html += '<div style="display:flex;align-items:center">';
-  html += '<label class="toggle-switch"><input type="checkbox" ' + (state.isResident ? 'checked' : '') + ' onchange="toggleResident(this.checked)"><span class="toggle-slider"></span></label>';
-  html += '<span class="toggle-status" id="resident-status">' + (state.isResident ? '伊予市民' : '市外') + '</span>';
-  html += '</div></div>';
-  html += '</div>';
-  return html;
-}
-
-function toggleResident(checked) {
-  state.isResident = checked;
-  const statusEl = document.getElementById('resident-status');
-  if (statusEl) statusEl.textContent = checked ? '伊予市民' : '市外';
-  updateBookingPriceSummary();
-  // みどりの広場のスロット料金も再レンダリング
-  if (state.selectedFacility && state.selectedFacility.bookingType === 'slot3') {
-    renderSlot3Grid();
-  }
-}
-
-function toggleStudent(checked) {
-  state.isStudent = checked;
-  const statusEl = document.getElementById('student-status');
-  if (statusEl) statusEl.textContent = checked ? '学生' : '一般';
-  updateBookingPriceSummary();
-  if (state.selectedFacility && state.selectedFacility.bookingType === 'slot3') {
-    renderSlot3Grid();
-  }
-}
-
 function showRoomBooking() {
-  const facility = state.selectedFacility;
-  const room = state.selectedRoom;
-  const bt = facility.bookingType;
+  const plan = state.selectedPlan;
+  const room = ROOMS.find(r => r.id === state.selectedRoomId);
+  const pt = plan.planType;
   const el = document.getElementById('room-booking-content');
 
-  let html = '<div class="section-title">' + facility.icon + ' ' + room.name + '</div>';
-  html += '<div class="text-muted mb-16">' + facility.name + '</div>';
+  let html = '<div class="section-title">' + (room ? room.icon : '') + ' ' + plan.name + '</div>';
+  if (room) html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
 
-  // 市民トグル（テニス・みどりの広場）
-  if (facility.id === 'tennis' || facility.id === 'midori') {
+  // 部屋が複数ある場合は選択UI
+  if (plan.rooms.length > 1) {
+    html += '<div class="card">';
+    html += '<div class="form-group"><label class="form-label">部屋を選択</label>';
+    plan.rooms.forEach(rid => {
+      const r = ROOMS.find(x => x.id === rid);
+      if (!r) return;
+      const selected = rid === state.selectedRoomId ? ' selected' : '';
+      const avail = state.selectedDate ? isPlanAvailableForRoom(plan, rid, state.selectedDate) : true;
+      const cls = avail ? '' : ' style="opacity:0.5"';
+      html += '<div class="room-card' + selected + '"' + cls + ' onclick="changeRoom(\'' + rid + '\')">';
+      html += '<div class="room-name">' + r.fullName + '</div>';
+      html += '<div class="room-detail">定員 ' + r.capacity + '名</div>';
+      if (state.selectedDate && !avail) html += '<div class="room-detail" style="color:var(--danger)">この日は予約済み</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // 市民トグル（テニス・みどり）
+  if (plan.id === 'tennis' || plan.id.startsWith('midori')) {
     html += renderResidentToggle();
-    // みどりの広場は学生トグルも
-    if (facility.id === 'midori') {
+    if (plan.id.startsWith('midori')) {
       html += '<div class="card"><div class="toggle-row">';
       html += '<span class="toggle-label">学生利用ですか？</span>';
       html += '<div style="display:flex;align-items:center">';
@@ -1463,18 +1542,39 @@ function showRoomBooking() {
   html += '<input type="date" class="form-input" id="booking-date" value="' + (state.selectedDate || '') + '" onchange="onBookingDateChange()">';
   html += '</div>';
 
-  // === bookingType 別のUI ===
+  // === planType 別のUI ===
 
-  if (bt === 'stay') {
-    // 泊単位: 人数 + 泊数
+  if (pt === 'stay') {
+    // 宿泊: 年齢区分別人数 + 泊数 + リアルタイム料金明細
     html += '<div class="form-group">';
-    html += '<label class="form-label">ご利用人数</label>';
+    html += '<label class="form-label">中学生以上</label>';
     html += '<div class="stepper">';
-    html += '<button class="stepper-btn" onclick="stepBookingGuests(-1)">-</button>';
-    html += '<span class="stepper-value" id="booking-guest-count">' + state.guests + '</span>';
+    html += '<button class="stepper-btn" onclick="stepAgeGroup(\'adult\',-1)">-</button>';
+    html += '<span class="stepper-value" id="guests-adult">' + state.guestsAdult + '</span>';
     html += '<span class="stepper-unit">名</span>';
-    html += '<button class="stepper-btn" onclick="stepBookingGuests(1)">+</button>';
+    html += '<button class="stepper-btn" onclick="stepAgeGroup(\'adult\',1)">+</button>';
     html += '</div></div>';
+
+    html += '<div class="form-group">';
+    html += '<label class="form-label">小学生</label>';
+    html += '<div class="stepper">';
+    html += '<button class="stepper-btn" onclick="stepAgeGroup(\'child\',-1)">-</button>';
+    html += '<span class="stepper-value" id="guests-child">' + state.guestsChild + '</span>';
+    html += '<span class="stepper-unit">名</span>';
+    html += '<button class="stepper-btn" onclick="stepAgeGroup(\'child\',1)">+</button>';
+    html += '</div></div>';
+
+    html += '<div class="form-group">';
+    html += '<label class="form-label">小学生未満</label>';
+    html += '<div class="stepper">';
+    html += '<button class="stepper-btn" onclick="stepAgeGroup(\'infant\',-1)">-</button>';
+    html += '<span class="stepper-value" id="guests-infant">' + state.guestsInfant + '</span>';
+    html += '<span class="stepper-unit">名</span>';
+    html += '<button class="stepper-btn" onclick="stepAgeGroup(\'infant\',1)">+</button>';
+    html += '</div></div>';
+
+    // 6畳は3名上限の警告
+    html += '<div id="capacity-warning" class="warning-msg" style="display:none"></div>';
 
     html += '<div class="form-group">';
     html += '<label class="form-label">泊数</label>';
@@ -1485,49 +1585,33 @@ function showRoomBooking() {
     html += '<button class="stepper-btn" onclick="stepNights(1)">+</button>';
     html += '</div></div>';
 
-    if (facility.checkin) {
-      html += '<div class="text-muted">チェックイン ' + facility.checkin + ' / チェックアウト ' + facility.checkout + '</div>';
-    }
+    html += '<div class="text-muted">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
+
+    html += '</div>'; // close .card
+
+    // 料金明細カード（宿泊専用）
+    html += '<div id="price-breakdown-container"></div>';
+
+  } else if (pt === 'stay_simple') {
+    // ロッジ宿泊等: シンプルな泊数のみ
+    html += '<div class="form-group">';
+    html += '<label class="form-label">泊数</label>';
+    html += '<div class="stepper">';
+    html += '<button class="stepper-btn" onclick="stepNights(-1)">-</button>';
+    html += '<span class="stepper-value" id="nights-count">' + state.selectedNights + '</span>';
+    html += '<span class="stepper-unit">泊</span>';
+    html += '<button class="stepper-btn" onclick="stepNights(1)">+</button>';
+    html += '</div></div>';
+
+    html += '<div class="text-muted">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
+
+    // オプション
+    if (plan.extras) { html += renderExtras(plan); }
 
     html += '<div class="night-info" id="stay-price-info"></div>';
+    html += '</div>'; // close .card
 
-    // ロッジのシーツオプション
-    if (facility.extras) {
-      html += renderExtras(facility);
-    }
-  }
-
-  if (bt === 'slot3') {
-    // 3コマ制
-    html += '<div class="form-group">';
-    html += '<label class="form-label">時間帯を選択（複数選択可 / 通しは単独選択）</label>';
-    html += '<div class="timeslot-grid" id="slot3-grid"></div>';
-    html += '</div>';
-  }
-
-  if (bt === 'allday') {
-    // 通し利用のみ
-    html += '<div class="night-info">';
-    html += '利用時間: ' + (facility.timeRange || '8:30 - 22:00') + '<br>';
-    html += '料金: <strong>' + room.basePrice.toLocaleString() + '円</strong>';
-    html += '</div>';
-  }
-
-  if (bt === 'hourly') {
-    // 1時間刻み
-    html += '<div class="form-group">';
-    html += '<label class="form-label">時間帯を選択（複数選択可）</label>';
-    html += '<div class="hourly-grid" id="hourly-grid"></div>';
-    html += '</div>';
-
-    // テニスの照明料金注釈
-    if (facility.id === 'tennis') {
-      html += '<div class="text-muted mt-8">※ 17時以降は照明料金が加算されます（伊予市民240円/市外280円・1面1時間）</div>';
-    }
-  }
-
-  if (bt === 'camp') {
-    // キャンプ: 泊数 + 区画数 + テント数
+  } else if (pt === 'camp') {
     html += '<div class="form-group">';
     html += '<label class="form-label">泊数</label>';
     html += '<div class="stepper">';
@@ -1546,19 +1630,40 @@ function showRoomBooking() {
     html += '<button class="stepper-btn" onclick="stepCampSites(1)">+</button>';
     html += '</div></div>';
 
-    if (facility.checkin) {
-      html += '<div class="text-muted">チェックイン ' + facility.checkin + ' / チェックアウト ' + facility.checkout + '</div>';
-    }
+    html += '<div class="text-muted">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
 
-    if (facility.extras) {
-      html += renderExtras(facility);
-    }
+    if (plan.extras) { html += renderExtras(plan); }
 
     html += '<div class="night-info" id="stay-price-info"></div>';
-  }
+    html += '</div>'; // close .card
 
-  if (bt === 'sauna') {
-    // サウナ: 人数 + 120分枠 + タオル
+  } else if (pt === 'day_all') {
+    html += '<div class="night-info">';
+    html += '利用時間: ' + (plan.timeRange || '8:30 - 22:00') + '<br>';
+    html += '料金: <strong>' + plan.basePrice.toLocaleString() + '円</strong>';
+    html += '</div>';
+    html += '</div>'; // close .card
+
+  } else if (pt === 'day_slot') {
+    html += '<div class="night-info">';
+    html += '利用時間: ' + (plan.timeRange || '') + '<br>';
+    html += '料金: <strong>' + getPlanDisplayPrice(plan).toLocaleString() + '円</strong>';
+    html += '</div>';
+    html += '</div>'; // close .card
+
+  } else if (pt === 'hourly') {
+    html += '<div class="form-group">';
+    html += '<label class="form-label">時間帯を選択（複数選択可）</label>';
+    html += '<div class="hourly-grid" id="hourly-grid"></div>';
+    html += '</div>';
+
+    if (plan.note) {
+      html += '<div class="text-muted mt-8">※ ' + plan.note + '</div>';
+    }
+
+    html += '</div>'; // close .card
+
+  } else if (pt === 'sauna') {
     html += '<div class="form-group">';
     html += '<label class="form-label">ご利用人数（8名まで）</label>';
     html += '<div class="stepper">';
@@ -1568,28 +1673,24 @@ function showRoomBooking() {
     html += '<button class="stepper-btn" onclick="stepBookingGuests(1)">+</button>';
     html += '</div></div>';
 
-    html += '<div class="form-group">';
-    html += '<label class="form-label">時間帯を選択</label>';
-    html += '<div class="timeslot-grid" id="sauna-slot-grid"></div>';
+    html += '<div class="night-info">';
+    html += '時間: ' + plan.timeRange + '<br>';
+    html += '料金: <strong>' + plan.basePrice.toLocaleString() + '円</strong>/グループ';
     html += '</div>';
 
-    if (facility.extras) {
-      html += renderExtras(facility);
-    }
+    if (plan.extras) { html += renderExtras(plan); }
 
-    if (facility.specialDay) {
-      html += '<div class="text-muted mt-8">※ ' + facility.specialDay.label + '</div>';
-    }
+    html += '</div>'; // close .card
+  } else {
+    html += '</div>'; // close .card
   }
-
-  html += '</div>'; // .card
 
   html += '<div id="booking-price-summary" class="card" style="display:none"></div>';
   html += '<button class="btn btn-primary mt-16" onclick="proceedToConfirm()">予約内容の確認へ</button>';
 
   el.innerHTML = html;
 
-  // 日付のmin設定
+  // 日付min設定
   const dateInput = document.getElementById('booking-date');
   if (dateInput) dateInput.min = getTodayStr();
 
@@ -1597,9 +1698,138 @@ function showRoomBooking() {
   onBookingDateChange();
 }
 
-function renderExtras(facility) {
+function changeRoom(roomId) {
+  state.selectedRoomId = roomId;
+  showRoomBooking();
+}
+
+/* ================================================================
+   RESIDENT / STUDENT TOGGLES
+   ================================================================ */
+function renderResidentToggle() {
+  let html = '<div class="card">';
+  html += '<div class="toggle-row">';
+  html += '<span class="toggle-label">伊予市民ですか？</span>';
+  html += '<div style="display:flex;align-items:center">';
+  html += '<label class="toggle-switch"><input type="checkbox" ' + (state.isResident ? 'checked' : '') + ' onchange="toggleResident(this.checked)"><span class="toggle-slider"></span></label>';
+  html += '<span class="toggle-status" id="resident-status">' + (state.isResident ? '伊予市民' : '市外') + '</span>';
+  html += '</div></div>';
+  html += '</div>';
+  return html;
+}
+
+function toggleResident(checked) {
+  state.isResident = checked;
+  const statusEl = document.getElementById('resident-status');
+  if (statusEl) statusEl.textContent = checked ? '伊予市民' : '市外';
+  updateBookingPriceSummary();
+}
+
+function toggleStudent(checked) {
+  state.isStudent = checked;
+  const statusEl = document.getElementById('student-status');
+  if (statusEl) statusEl.textContent = checked ? '学生' : '一般';
+  updateBookingPriceSummary();
+}
+
+/* ================================================================
+   AGE GROUP STEPPERS (accommodation plans only)
+   ================================================================ */
+function stepAgeGroup(group, delta) {
+  const plan = state.selectedPlan;
+  const room = ROOMS.find(r => r.id === state.selectedRoomId);
+  const maxCap = room ? room.capacity : 50;
+
+  if (group === 'adult') {
+    state.guestsAdult = Math.max(0, state.guestsAdult + delta);
+  } else if (group === 'child') {
+    state.guestsChild = Math.max(0, state.guestsChild + delta);
+  } else if (group === 'infant') {
+    state.guestsInfant = Math.max(0, state.guestsInfant + delta);
+  }
+
+  const total = state.guestsAdult + state.guestsChild + state.guestsInfant;
+
+  // 6畳の3名制限チェック
+  const warningEl = document.getElementById('capacity-warning');
+  if (warningEl) {
+    if (plan.id === 'stay_6' && total > maxCap) {
+      warningEl.style.display = 'block';
+      warningEl.textContent = '6畳は' + maxCap + '名までです。合計が' + total + '名になっています。';
+    } else {
+      warningEl.style.display = 'none';
+    }
+  }
+
+  // UI更新
+  const adultEl = document.getElementById('guests-adult');
+  const childEl = document.getElementById('guests-child');
+  const infantEl = document.getElementById('guests-infant');
+  if (adultEl) adultEl.textContent = state.guestsAdult;
+  if (childEl) childEl.textContent = state.guestsChild;
+  if (infantEl) infantEl.textContent = state.guestsInfant;
+
+  updateStayPriceBreakdown();
+  updateBookingPriceSummary();
+}
+
+/* ================================================================
+   STAY PRICE BREAKDOWN (accommodation plans only)
+   Real-time pricing breakdown card
+   ================================================================ */
+function updateStayPriceBreakdown() {
+  const container = document.getElementById('price-breakdown-container');
+  if (!container) return;
+  const plan = state.selectedPlan;
+  if (!plan || plan.planType !== 'stay') { container.innerHTML = ''; return; }
+
+  const totalGuests = state.guestsAdult + state.guestsChild + state.guestsInfant;
+  if (totalGuests === 0 && state.selectedNights > 0) {
+    container.innerHTML = '<div class="text-muted mt-8">人数を入力すると料金明細が表示されます</div>';
+    return;
+  }
+
+  const room = ROOMS.find(r => r.id === state.selectedRoomId);
+  const roomLabel = room ? room.name : '';
+
+  const baseCost = plan.basePrice;
+  const adultCost = plan.extraAdult * state.guestsAdult;
+  const childCost = plan.extraChild * state.guestsChild;
+  const infantCost = plan.extraInfant * state.guestsInfant;
+  const perNight = baseCost + adultCost + childCost + infantCost;
+  const grandTotal = perNight * state.selectedNights;
+
+  let html = '<div class="price-breakdown">';
+  html += '<div class="price-breakdown-title">料金明細</div>';
+
+  // 基本料金
+  html += '<div class="price-row"><span class="price-row-label">基本料金（' + roomLabel + ' x 1泊）</span><span class="price-row-value">' + baseCost.toLocaleString() + '円</span></div>';
+
+  // 年齢区分
+  html += '<div class="price-row"><span class="price-row-label">中学生以上 x ' + state.guestsAdult + '人</span><span class="price-row-value">' + adultCost.toLocaleString() + '円</span></div>';
+  html += '<div class="price-row"><span class="price-row-label">小学生 x ' + state.guestsChild + '人</span><span class="price-row-value">' + childCost.toLocaleString() + '円</span></div>';
+  html += '<div class="price-row"><span class="price-row-label">小学生未満 x ' + state.guestsInfant + '人</span><span class="price-row-value">' + infantCost.toLocaleString() + '円</span></div>';
+
+  html += '<hr class="price-divider">';
+  html += '<div class="price-subtotal"><span>合計（1泊）</span><span>' + perNight.toLocaleString() + '円</span></div>';
+
+  if (state.selectedNights > 1) {
+    html += '<div class="price-nights-multiply">x ' + state.selectedNights + '泊</div>';
+    html += '<hr class="price-divider">';
+  }
+
+  html += '<div class="price-grand-total"><span>総合計</span><span class="price-grand-total-value">' + grandTotal.toLocaleString() + '円</span></div>';
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+/* ================================================================
+   EXTRAS RENDERING
+   ================================================================ */
+function renderExtras(plan) {
   let html = '';
-  facility.extras.forEach(extra => {
+  plan.extras.forEach(extra => {
     html += '<div class="form-group">';
     html += '<label class="form-label">' + extra.name + ' (' + extra.price.toLocaleString() + '円/' + extra.unit + ')</label>';
     html += '<div class="stepper">';
@@ -1622,94 +1852,84 @@ function getExtraCount(extraId) {
 function stepExtra(extraId, delta) {
   if (extraId === 'tent') {
     state.campTents = Math.max(0, Math.min(20, state.campTents + delta));
-    document.getElementById('extra-tent-count').textContent = state.campTents;
+    const el = document.getElementById('extra-tent-count');
+    if (el) el.textContent = state.campTents;
   }
   if (extraId === 'sheet') {
     state.lodgeSheets = Math.max(0, Math.min(10, state.lodgeSheets + delta));
-    document.getElementById('extra-sheet-count').textContent = state.lodgeSheets;
+    const el = document.getElementById('extra-sheet-count');
+    if (el) el.textContent = state.lodgeSheets;
   }
   if (extraId === 'towel') {
     state.saunaTowels = Math.max(0, Math.min(8, state.saunaTowels + delta));
-    document.getElementById('extra-towel-count').textContent = state.saunaTowels;
+    const el = document.getElementById('extra-towel-count');
+    if (el) el.textContent = state.saunaTowels;
   }
-  updateStayPriceInfo();
+  updateSimplePriceInfo();
   updateBookingPriceSummary();
 }
 
+/* ================================================================
+   COMMON STEPPERS
+   ================================================================ */
+function stepBookingGuests(delta) {
+  const room = ROOMS.find(r => r.id === state.selectedRoomId);
+  const max = room ? room.capacity : 50;
+  state.guests = Math.max(1, Math.min(max, state.guests + delta));
+  const el = document.getElementById('booking-guest-count');
+  if (el) el.textContent = state.guests;
+  updateBookingPriceSummary();
+}
+
+function stepNights(delta) {
+  state.selectedNights = Math.max(1, Math.min(14, state.selectedNights + delta));
+  const el = document.getElementById('nights-count');
+  if (el) el.textContent = state.selectedNights;
+  updateSimplePriceInfo();
+  updateStayPriceBreakdown();
+  updateBookingPriceSummary();
+}
+
+function stepCampSites(delta) {
+  state.campSites = Math.max(1, Math.min(10, state.campSites + delta));
+  const el = document.getElementById('camp-sites-count');
+  if (el) el.textContent = state.campSites;
+  updateSimplePriceInfo();
+  updateBookingPriceSummary();
+}
+
+/* ================================================================
+   BOOKING DATE CHANGE
+   ================================================================ */
 function onBookingDateChange() {
   const dateInput = document.getElementById('booking-date');
   state.selectedDate = dateInput ? dateInput.value : '';
-  state.selectedSlots = [];
   state.selectedHours = [];
 
-  const facility = state.selectedFacility;
-  if (!facility) return;
-  const bt = facility.bookingType;
+  const plan = state.selectedPlan;
+  if (!plan) return;
+  const pt = plan.planType;
 
-  if (bt === 'slot3' && state.selectedDate) renderSlot3Grid();
-  if (bt === 'hourly' && state.selectedDate) renderHourlyGrid();
-  if (bt === 'sauna' && state.selectedDate) renderSaunaSlots();
-  if (bt === 'stay' || bt === 'camp') updateStayPriceInfo();
+  if (pt === 'hourly' && state.selectedDate) renderHourlyGrid();
+  if (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') updateSimplePriceInfo();
+  if (pt === 'stay') updateStayPriceBreakdown();
   updateBookingPriceSummary();
 }
 
-/* ----- 3コマ制グリッド ----- */
-function renderSlot3Grid() {
-  const grid = document.getElementById('slot3-grid');
-  if (!grid) return;
-  const facility = state.selectedFacility;
-  const room = state.selectedRoom;
-  const date = state.selectedDate;
-  const slots = facility.slots || DEFAULT_SLOT3;
-
-  let html = '';
-  slots.forEach(slot => {
-    const avail = isAvailable(room.id, date, slot.id);
-    const cls = avail ? '' : ' unavailable';
-    const sel = state.selectedSlots.includes(slot.id) ? ' selected' : '';
-    const price = getSlotPrice(facility, slot);
-    html += '<div class="timeslot' + cls + sel + '" onclick="toggleSlot3(\'' + slot.id + '\', this, ' + avail + ')">';
-    html += slot.label + '<br><span style="font-size:0.75rem">' + slot.time + '</span>';
-    html += '<span class="timeslot-price">' + price.toLocaleString() + '円</span>';
-    html += '</div>';
-  });
-  grid.innerHTML = html;
-}
-
-function toggleSlot3(slotId, el, avail) {
-  if (!avail) return;
-  const facility = state.selectedFacility;
-  const slots = facility.slots || DEFAULT_SLOT3;
-
-  // 「通し」選択時は他を解除、他選択時は「通し」を解除
-  if (slotId === 'all') {
-    state.selectedSlots = ['all'];
-  } else {
-    state.selectedSlots = state.selectedSlots.filter(s => s !== 'all');
-    const idx = state.selectedSlots.indexOf(slotId);
-    if (idx >= 0) {
-      state.selectedSlots.splice(idx, 1);
-    } else {
-      state.selectedSlots.push(slotId);
-    }
-  }
-  renderSlot3Grid(); // 再レンダリングで選択状態を反映
-  updateBookingPriceSummary();
-}
-
-/* ----- 1時間刻みグリッド ----- */
+/* ================================================================
+   HOURLY GRID (tennis, lodge day)
+   ================================================================ */
 function renderHourlyGrid() {
   const grid = document.getElementById('hourly-grid');
   if (!grid) return;
-  const facility = state.selectedFacility;
-  const room = state.selectedRoom;
+  const plan = state.selectedPlan;
+  const roomId = state.selectedRoomId;
   const date = state.selectedDate;
-  const range = facility.hourlyRange || { start: 8, end: 22 };
+  const range = plan.hourlyRange || { start: 8, end: 22 };
 
   let html = '';
   for (let h = range.start; h < range.end; h++) {
-    const slot = h + ':00';
-    const avail = isAvailable(room.id, date, slot);
+    const avail = isSlotFree(roomId, date, h);
     const cls = avail ? '' : ' unavailable';
     const sel = state.selectedHours.includes(h) ? ' selected' : '';
     const label = (h < 10 ? '0' : '') + h + ':00';
@@ -1731,157 +1951,89 @@ function toggleHour(hour, el, avail) {
   updateBookingPriceSummary();
 }
 
-/* ----- サウナスロット ----- */
-function renderSaunaSlots() {
-  const grid = document.getElementById('sauna-slot-grid');
-  if (!grid) return;
-  const room = state.selectedRoom;
-  const date = state.selectedDate;
-
-  let html = '';
-  SAUNA_SLOTS.forEach(slot => {
-    const avail = isAvailable(room.id, date, slot);
-    const cls = avail ? '' : ' unavailable';
-    const sel = state.selectedSlots.includes(slot) ? ' selected' : '';
-    html += '<div class="timeslot' + cls + sel + '" onclick="toggleSaunaSlot(\'' + slot + '\', this, ' + avail + ')">' + slot + '</div>';
-  });
-  grid.innerHTML = html;
-}
-
-function toggleSaunaSlot(slot, el, avail) {
-  if (!avail) return;
-  state.selectedSlots = [slot];
-  renderSaunaSlots();
-  updateBookingPriceSummary();
-}
-
-/* ----- 共通ステッパー ----- */
-function stepBookingGuests(delta) {
-  const max = state.selectedRoom ? state.selectedRoom.capacity : 50;
-  state.guests = Math.max(1, Math.min(max, state.guests + delta));
-  const el = document.getElementById('booking-guest-count');
-  if (el) el.textContent = state.guests;
-  updateStayPriceInfo();
-  updateBookingPriceSummary();
-}
-
-function stepNights(delta) {
-  state.selectedNights = Math.max(1, Math.min(14, state.selectedNights + delta));
-  const el = document.getElementById('nights-count');
-  if (el) el.textContent = state.selectedNights;
-  updateStayPriceInfo();
-  updateBookingPriceSummary();
-}
-
-function stepCampSites(delta) {
-  state.campSites = Math.max(1, Math.min(10, state.campSites + delta));
-  const el = document.getElementById('camp-sites-count');
-  if (el) el.textContent = state.campSites;
-  updateStayPriceInfo();
-  updateBookingPriceSummary();
-}
-
-/* ----- 宿泊料金表示 ----- */
-function updateStayPriceInfo() {
+/* ================================================================
+   SIMPLE PRICE INFO (non-accommodation)
+   ================================================================ */
+function updateSimplePriceInfo() {
   const el = document.getElementById('stay-price-info');
   if (!el) return;
-  const room = state.selectedRoom;
-  const facility = state.selectedFacility;
-  if (!room || !facility) return;
-  const bt = facility.bookingType;
+  const plan = state.selectedPlan;
+  if (!plan) return;
+  const pt = plan.planType;
 
-  if (bt === 'stay') {
-    // 6畳は1名/泊、27畳・体験学習室は基本料金+超過
-    const isPerPerson = room.unit.includes('1名');
-    let total;
-    if (isPerPerson) {
-      total = room.basePrice * state.guests * state.selectedNights;
-      el.innerHTML = room.basePrice.toLocaleString() + '円 x ' + state.guests + '名 x ' + state.selectedNights + '泊 = <strong>' + total.toLocaleString() + '円</strong>';
-    } else {
-      total = room.basePrice * state.selectedNights;
-      el.innerHTML = '基本料金 ' + room.basePrice.toLocaleString() + '円 x ' + state.selectedNights + '泊 = <strong>' + total.toLocaleString() + '円</strong>';
-      if (room.extraAdult) {
-        el.innerHTML += '<br><span style="font-size:0.85rem;color:var(--text-light)">超過料金は確認画面で加算されません（施設にてお支払い）</span>';
-      }
-    }
-    // ロッジシーツ
-    if (facility.extras) {
+  if (pt === 'stay_simple') {
+    let total = plan.basePrice * state.selectedNights;
+    let info = plan.basePrice.toLocaleString() + '円 x ' + state.selectedNights + '泊 = <strong>' + total.toLocaleString() + '円</strong>';
+    if (plan.extras) {
       let extTotal = 0;
-      facility.extras.forEach(ex => { extTotal += ex.price * getExtraCount(ex.id); });
-      if (extTotal > 0) {
-        el.innerHTML += '<br>オプション: +' + extTotal.toLocaleString() + '円';
-      }
+      plan.extras.forEach(ex => { extTotal += ex.price * getExtraCount(ex.id); });
+      if (extTotal > 0) info += '<br>オプション: +' + extTotal.toLocaleString() + '円';
     }
+    el.innerHTML = info;
   }
 
-  if (bt === 'camp') {
-    const siteTotal = room.basePrice * state.campSites * state.selectedNights;
+  if (pt === 'camp') {
+    const siteTotal = plan.basePrice * state.campSites * state.selectedNights;
     const tentTotal = state.campTents * 50;
     const total = siteTotal + tentTotal;
-    let info = room.basePrice.toLocaleString() + '円 x ' + state.campSites + '区画 x ' + state.selectedNights + '泊 = ' + siteTotal.toLocaleString() + '円';
-    if (tentTotal > 0) {
-      info += '<br>テント追加: 50円 x ' + state.campTents + '張 = ' + tentTotal.toLocaleString() + '円';
-    }
+    let info = plan.basePrice.toLocaleString() + '円 x ' + state.campSites + '区画 x ' + state.selectedNights + '泊 = ' + siteTotal.toLocaleString() + '円';
+    if (tentTotal > 0) info += '<br>テント追加: 50円 x ' + state.campTents + '張 = ' + tentTotal.toLocaleString() + '円';
     info += '<br><strong>合計: ' + total.toLocaleString() + '円</strong>';
     el.innerHTML = info;
   }
 }
 
-/* ----- 合計金額計算 ----- */
+/* ================================================================
+   TOTAL PRICE CALCULATION
+   ================================================================ */
 function calculateTotal() {
-  const room = state.selectedRoom;
-  const facility = state.selectedFacility;
-  if (!room || !facility) return 0;
-  const bt = facility.bookingType;
+  const plan = state.selectedPlan;
+  if (!plan) return 0;
+  const pt = plan.planType;
 
-  if (bt === 'stay') {
-    const isPerPerson = room.unit.includes('1名');
-    let total = isPerPerson
-      ? room.basePrice * state.guests * state.selectedNights
-      : room.basePrice * state.selectedNights;
-    // ロッジシーツ等
-    if (facility.extras) {
-      facility.extras.forEach(ex => { total += ex.price * getExtraCount(ex.id); });
+  if (pt === 'stay') {
+    // 宿泊: 基本料金 + 年齢区分加算 x 泊数
+    const baseCost = plan.basePrice;
+    const adultCost = plan.extraAdult * state.guestsAdult;
+    const childCost = plan.extraChild * state.guestsChild;
+    const infantCost = plan.extraInfant * state.guestsInfant;
+    return (baseCost + adultCost + childCost + infantCost) * state.selectedNights;
+  }
+
+  if (pt === 'stay_simple') {
+    let total = plan.basePrice * state.selectedNights;
+    if (plan.extras) {
+      plan.extras.forEach(ex => { total += ex.price * getExtraCount(ex.id); });
     }
     return total;
   }
 
-  if (bt === 'camp') {
-    let total = room.basePrice * state.campSites * state.selectedNights;
+  if (pt === 'camp') {
+    let total = plan.basePrice * state.campSites * state.selectedNights;
     total += state.campTents * 50;
     return total;
   }
 
-  if (bt === 'slot3') {
-    const slots = facility.slots || [];
-    let total = 0;
-    state.selectedSlots.forEach(sid => {
-      const slot = slots.find(s => s.id === sid);
-      if (slot) total += getSlotPrice(facility, slot);
-    });
-    return total;
+  if (pt === 'day_all' || pt === 'day_slot') {
+    return getPlanDisplayPrice(plan);
   }
 
-  if (bt === 'allday') {
-    return room.basePrice;
-  }
-
-  if (bt === 'hourly') {
-    if (facility.id === 'tennis') {
-      const courtPrice = state.isResident ? facility.residentPrice : facility.nonResidentPrice;
-      const lightPrice = state.isResident ? facility.lightResident : facility.lightNonResident;
+  if (pt === 'hourly') {
+    if (plan.id === 'tennis') {
+      const courtPrice = state.isResident ? plan.residentPrice : plan.nonResidentPrice;
+      const lightPrice = state.isResident ? plan.lightResident : plan.lightNonResident;
       let total = 0;
       state.selectedHours.forEach(h => {
         total += courtPrice;
-        if (h >= 17) total += lightPrice; // 夜間照明
+        if (h >= 17) total += lightPrice;
       });
       return total;
     }
-    return room.basePrice * state.selectedHours.length;
+    return plan.basePrice * state.selectedHours.length;
   }
 
-  if (bt === 'sauna') {
-    let total = room.basePrice * state.selectedSlots.length;
+  if (pt === 'sauna') {
+    let total = plan.basePrice;
     total += state.saunaTowels * 550;
     return total;
   }
@@ -1892,6 +2044,21 @@ function calculateTotal() {
 function updateBookingPriceSummary() {
   const el = document.getElementById('booking-price-summary');
   if (!el) return;
+  const plan = state.selectedPlan;
+  if (!plan) return;
+
+  // 宿泊プランは独自の料金明細カードで表示するので、サマリーバーは非表示
+  if (plan.planType === 'stay') {
+    const total = calculateTotal();
+    if (total > 0) {
+      el.style.display = 'block';
+      el.innerHTML = '<div style="display:flex;justify-content:space-between;font-size:1.1rem"><span style="font-weight:600">総合計</span><span style="font-weight:700;color:var(--danger)">' + total.toLocaleString() + '円</span></div>';
+    } else {
+      el.style.display = 'none';
+    }
+    return;
+  }
+
   const total = calculateTotal();
   if (total > 0) {
     el.style.display = 'block';
@@ -1909,74 +2076,75 @@ function proceedToConfirm() {
     alert('日付を選択してください');
     return;
   }
-  const facility = state.selectedFacility;
-  const bt = facility.bookingType;
+  const plan = state.selectedPlan;
+  const pt = plan.planType;
 
   // バリデーション
-  if (bt === 'slot3' && state.selectedSlots.length === 0) {
-    alert('時間帯を選択してください');
-    return;
+  if (pt === 'stay') {
+    const total = state.guestsAdult + state.guestsChild + state.guestsInfant;
+    if (total === 0) {
+      alert('人数を入力してください');
+      return;
+    }
+    const room = ROOMS.find(r => r.id === state.selectedRoomId);
+    if (plan.id === 'stay_6' && room && total > room.capacity) {
+      alert('6畳は' + room.capacity + '名までです。');
+      return;
+    }
   }
-  if (bt === 'hourly' && state.selectedHours.length === 0) {
-    alert('時間帯を選択してください');
-    return;
-  }
-  if (bt === 'sauna' && state.selectedSlots.length === 0) {
+  if (pt === 'hourly' && state.selectedHours.length === 0) {
     alert('時間帯を選択してください');
     return;
   }
 
-  const room = state.selectedRoom;
+  const room = ROOMS.find(r => r.id === state.selectedRoomId);
   const total = calculateTotal();
   const dateStr = formatDate(state.selectedDate);
 
-  // 時間帯文字列の生成
+  // 時間帯文字列
   let timeStr = '';
-  if (bt === 'stay') {
+  if (pt === 'stay' || pt === 'stay_simple') {
     const checkout = addDays(state.selectedDate, state.selectedNights);
-    timeStr = dateStr + ' ' + facility.checkin + ' ~ ' + formatDate(checkout) + ' ' + facility.checkout + '（' + state.selectedNights + '泊）';
-  } else if (bt === 'camp') {
+    timeStr = dateStr + ' ' + plan.checkin + ' ~ ' + formatDate(checkout) + ' ' + plan.checkout + '（' + state.selectedNights + '泊）';
+  } else if (pt === 'camp') {
     const checkout = addDays(state.selectedDate, state.selectedNights);
-    timeStr = dateStr + ' ' + facility.checkin + ' ~ ' + formatDate(checkout) + ' ' + facility.checkout + '（' + state.selectedNights + '泊）';
-  } else if (bt === 'slot3') {
-    const slots = facility.slots || DEFAULT_SLOT3;
-    const labels = state.selectedSlots.map(sid => {
-      const s = slots.find(x => x.id === sid);
-      return s ? s.label + '(' + s.time + ')' : sid;
-    });
-    timeStr = dateStr + ' ' + labels.join(', ');
-  } else if (bt === 'allday') {
-    timeStr = dateStr + ' ' + (facility.timeRange || '8:30-22:00');
-  } else if (bt === 'hourly') {
+    timeStr = dateStr + ' ' + plan.checkin + ' ~ ' + formatDate(checkout) + ' ' + plan.checkout + '（' + state.selectedNights + '泊）';
+  } else if (pt === 'day_all' || pt === 'day_slot') {
+    timeStr = dateStr + ' ' + (plan.timeRange || '');
+  } else if (pt === 'hourly') {
     const sorted = [...state.selectedHours].sort((a, b) => a - b);
     const labels = sorted.map(h => (h < 10 ? '0' : '') + h + ':00');
     timeStr = dateStr + ' ' + labels.join(', ');
-  } else if (bt === 'sauna') {
-    timeStr = dateStr + ' ' + state.selectedSlots[0];
+  } else if (pt === 'sauna') {
+    timeStr = dateStr + ' ' + plan.timeRange;
   }
 
   const summaryEl = document.getElementById('booking-summary');
   let html = '';
-  html += '<div class="summary-row"><span class="summary-label">施設</span><span class="summary-value">' + facility.name + '</span></div>';
-  html += '<div class="summary-row"><span class="summary-label">部屋/区画</span><span class="summary-value">' + room.name + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">プラン</span><span class="summary-value">' + plan.name + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + (room ? room.fullName : '') + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + timeStr + '</span></div>';
 
-  if (bt === 'stay' || bt === 'sauna') {
+  if (pt === 'stay') {
+    const totalGuests = state.guestsAdult + state.guestsChild + state.guestsInfant;
+    html += '<div class="summary-row"><span class="summary-label">人数</span><span class="summary-value">' + totalGuests + '名（中学生以上' + state.guestsAdult + ', 小学生' + state.guestsChild + ', 小学生未満' + state.guestsInfant + '）</span></div>';
+  }
+  if (pt === 'sauna') {
     html += '<div class="summary-row"><span class="summary-label">人数</span><span class="summary-value">' + state.guests + '名</span></div>';
   }
-  if (bt === 'camp') {
+  if (pt === 'camp') {
     html += '<div class="summary-row"><span class="summary-label">区画数</span><span class="summary-value">' + state.campSites + '区画</span></div>';
     if (state.campTents > 0) {
       html += '<div class="summary-row"><span class="summary-label">テント追加</span><span class="summary-value">' + state.campTents + '張</span></div>';
     }
   }
-  if (facility.id === 'tennis' || facility.id === 'midori') {
+  if (plan.id === 'tennis' || plan.id.startsWith('midori')) {
     html += '<div class="summary-row"><span class="summary-label">利用者区分</span><span class="summary-value">' + (state.isResident ? '伊予市民' : '市外') + (state.isStudent ? '（学生）' : '') + '</span></div>';
   }
 
-  // オプション表示
-  if (facility.extras) {
-    facility.extras.forEach(ex => {
+  // オプション
+  if (plan.extras) {
+    plan.extras.forEach(ex => {
       const cnt = getExtraCount(ex.id);
       if (cnt > 0) {
         html += '<div class="summary-row"><span class="summary-label">' + ex.name + '</span><span class="summary-value">' + cnt + ex.unit + ' (' + (ex.price * cnt).toLocaleString() + '円)</span></div>';
@@ -2003,23 +2171,26 @@ function submitBooking() {
   if (!phone) { alert('電話番号を入力してください'); return; }
 
   const bookingId = 'FTM-' + Date.now().toString(36).toUpperCase();
+  const plan = state.selectedPlan;
 
   const booking = {
     id: bookingId,
-    facilityId: state.selectedFacility.id,
-    facilityName: state.selectedFacility.name,
-    roomId: state.selectedRoom.id,
-    roomName: state.selectedRoom.name,
-    bookingType: state.selectedFacility.bookingType,
+    planId: plan.id,
+    planName: plan.name,
+    planType: plan.planType,
+    roomId: state.selectedRoomId,
+    roomName: (ROOMS.find(r => r.id === state.selectedRoomId) || {}).fullName || '',
     date: state.selectedDate,
-    slots: state.selectedSlots,
-    hours: state.selectedHours,
     nights: state.selectedNights,
+    guestsAdult: state.guestsAdult,
+    guestsChild: state.guestsChild,
+    guestsInfant: state.guestsInfant,
     guests: state.guests,
     campSites: state.campSites,
     campTents: state.campTents,
     lodgeSheets: state.lodgeSheets,
     saunaTowels: state.saunaTowels,
+    selectedHours: state.selectedHours,
     isResident: state.isResident,
     isStudent: state.isStudent,
     total: state.totalPrice,
@@ -2039,8 +2210,8 @@ function submitBooking() {
 
   const doneSummary = document.getElementById('done-summary');
   let html = '';
-  html += '<div class="summary-row"><span class="summary-label">施設</span><span class="summary-value">' + booking.facilityName + '</span></div>';
-  html += '<div class="summary-row"><span class="summary-label">部屋/区画</span><span class="summary-value">' + booking.roomName + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">プラン</span><span class="summary-value">' + booking.planName + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + booking.roomName + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + booking.timeStr + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + booking.name + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + booking.phone + '</span></div>';
@@ -2086,8 +2257,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const searchDate = document.getElementById('search-date');
   searchDate.min = getTodayStr();
   searchDate.value = getTodayStr();
-
-  renderFacilityList('all');
 });
 </script>
 </body>
