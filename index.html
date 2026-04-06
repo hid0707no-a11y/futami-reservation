@@ -1897,6 +1897,25 @@ function stepNights(delta) {
   updateBookingPriceSummary();
 }
 
+// 宿泊N泊目が確保するスロットを展開する
+// 例: 2泊（4/1開始）→ [{date:'2026-04-01',hour:16},...,{date:'2026-04-02',hour:9},{date:'2026-04-02',hour:16},...,{date:'2026-04-03',hour:9}]
+function expandStaySlots(plan, baseDate, nights) {
+  const slots = Array.isArray(plan.slots) ? plan.slots : [];
+  if (slots.length === 0) return [];
+
+  const result = [];
+  for (let n = 0; n < nights; n++) {
+    const checkinDate = addDays(baseDate, n);
+    const nextDate = addDays(baseDate, n + 1);
+    for (const h of slots) {
+      // 0-9時（翌朝）は翌日の日付でチェック
+      const date = h < 10 ? nextDate : checkinDate;
+      result.push({ date, hour: h });
+    }
+  }
+  return result;
+}
+
 function getMaxNights() {
   const plan = state.selectedPlan;
   const roomId = state.selectedRoomId;
@@ -1908,15 +1927,15 @@ function getMaxNights() {
 
   let max = 0;
   for (let n = 0; n < 14; n++) {
-    const checkDate = addDays(baseDate, n);
-    let dayOk = true;
-    for (const h of slots) {
-      if (!isSlotFree(roomId, checkDate, h)) {
-        dayOk = false;
+    const expanded = expandStaySlots(plan, baseDate, n + 1);
+    let allFree = true;
+    for (const s of expanded) {
+      if (!isSlotFree(roomId, s.date, s.hour)) {
+        allFree = false;
         break;
       }
     }
-    if (!dayOk) break;
+    if (!allFree) break;
     max = n + 1;
   }
   return Math.max(1, max);
@@ -2171,16 +2190,13 @@ function proceedToConfirm() {
     return;
   }
 
-  // 泊数分の空きチェック（宿泊・ロッジ・キャンプ）
+  // 泊数分の空きチェック（宿泊・ロッジ・キャンプ）— 翌朝またがり対応
   if (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') {
-    const slots = Array.isArray(plan.slots) ? plan.slots : [];
-    for (let n = 0; n < state.selectedNights; n++) {
-      const checkDate = addDays(state.selectedDate, n);
-      for (const h of slots) {
-        if (!isSlotFree(state.selectedRoomId, checkDate, h)) {
-          alert((n + 1) + '泊目（' + formatDate(checkDate) + '）に空きがありません。日付または部屋を変更してください。');
-          return;
-        }
+    const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights);
+    for (const s of expanded) {
+      if (!isSlotFree(state.selectedRoomId, s.date, s.hour)) {
+        alert('選択した期間（' + formatDate(state.selectedDate) + '〜' + formatDate(addDays(state.selectedDate, state.selectedNights)) + '）に空きがない時間帯があります。日付または部屋を変更してください。');
+        return;
       }
     }
   }
