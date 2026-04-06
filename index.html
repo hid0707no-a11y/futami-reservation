@@ -1373,14 +1373,26 @@ function updateBackButton() {
    あるプランが使うスロットが全て空いているかを判定する
    ================================================================ */
 
-// ダミー: ハッシュベースで空き/埋まりを生成
-function hashCode(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
+// data.json から読み込む占有スロット集合（カレンダー実データ）
+const OCCUPIED_SLOTS = new Set();
+let DATA_LOADED = false;
+
+async function loadAvailabilityData() {
+  try {
+    const res = await fetch('data.json?t=' + Date.now());
+    if (!res.ok) throw new Error('data.json fetch failed');
+    const data = await res.json();
+    (data.occupiedSlots || []).forEach(s => OCCUPIED_SLOTS.add(s));
+    DATA_LOADED = true;
+    console.log('[data] loaded', OCCUPIED_SLOTS.size, 'occupied slots from', data.bookingCount, 'bookings');
+    // 既に表示中の画面があれば再描画
+    if (typeof renderSearchResults === 'function' && state.flow === 'date' && state.searchDate) {
+      renderSearchResults();
+    }
+  } catch (e) {
+    console.warn('[data] load failed, falling back to empty:', e);
+    DATA_LOADED = true; // フォールバック: 全部空き
   }
-  return Math.abs(hash);
 }
 
 // 特定の部屋+日付+時間スロットが空いているか
@@ -1390,8 +1402,8 @@ function isSlotFree(roomId, date, hour) {
   if (date < today) return false;
   if (date === today && hour <= new Date().getHours()) return false;
 
-  const seed = hashCode(roomId + date + hour);
-  return (seed % 1000) > 5; // 約99.5%空き（全室パックは6部屋×18スロット全空きが必要なので高めに）
+  // カレンダー実データの占有スロットをチェック
+  return !OCCUPIED_SLOTS.has(roomId + '|' + date + '|' + hour);
 }
 
 // プランの全スロットが空いているか（指定部屋）
@@ -2836,6 +2848,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const searchDate = document.getElementById('search-date');
   searchDate.min = getTodayStr();
   searchDate.value = getTodayStr();
+  loadAvailabilityData();
 });
 </script>
 </body>

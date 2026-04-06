@@ -798,6 +798,8 @@ const PLANS = [
   { id: 'sauna_2', name: 'サウナ 12:30-14:30', rooms: ['sauna'], slots: [12,13], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
   { id: 'sauna_3', name: 'サウナ 15:00-17:00', rooms: ['sauna'], slots: [15,16], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
   { id: 'sauna_4', name: 'サウナ 17:30-19:30', rooms: ['sauna'], slots: [17,18], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
+  // Googleカレンダー由来の予約（slotsOverrideで時間帯を渡す）
+  { id: '__gcal__', name: 'Googleカレンダー', rooms: [], slots: [], price: '-', badge: '\uD83D\uDCC5 GCal', color: '#64748b' },
 ];
 
 // マトリクスに表示する時間列（8:00〜22:00 = 15列だが、表示は8〜21の14列）
@@ -828,13 +830,36 @@ function formatDateDisplay(d) {
   return `${d.getMonth()+1}\u6708${d.getDate()}\u65E5\uFF08${weekday(d)}\uFF09`;
 }
 
+// ===== Googleカレンダー由来データ =====
+let GCAL_BOOKINGS = [];
+
+async function loadGcalData() {
+  try {
+    const res = await fetch('data.json?t=' + Date.now());
+    if (!res.ok) throw new Error('data.json fetch failed');
+    const data = await res.json();
+    GCAL_BOOKINGS = data.staffBookings || [];
+    console.log('[gcal] loaded', GCAL_BOOKINGS.length, 'bookings');
+    if (typeof render === 'function') render();
+  } catch (e) {
+    console.warn('[gcal] load failed:', e);
+  }
+}
+
 // ===== LocalStorage =====
 function loadReservations() {
+  let local = [];
   try {
     const data = localStorage.getItem(STORAGE_KEY);
-    if (data) return JSON.parse(data);
+    if (data) local = JSON.parse(data);
   } catch(e) {}
-  return [];
+  // GCalデータをマージ（IDで重複排除）
+  const seen = new Set(local.map(r => r.id));
+  const merged = [...local];
+  for (const r of GCAL_BOOKINGS) {
+    if (!seen.has(r.id)) merged.push(r);
+  }
+  return merged;
 }
 function saveReservations(list) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
@@ -1512,6 +1537,7 @@ if ('serviceWorker' in navigator) {
 // ===== 初期化 =====
 generateDummyData();
 render();
+loadGcalData();
 </script>
 </body>
 </html>
