@@ -730,6 +730,114 @@ body {
 }
 .empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
 
+/* ========== MONTHLY CALENDAR ========== */
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.cal-header-month {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.cal-nav-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--white);
+  color: var(--main-dark);
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.cal-nav-btn:hover { border-color: var(--main); }
+.cal-nav-btn:active { background: var(--main); color: var(--white); }
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.cal-dow {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.cal-dow:first-child { color: #e05555; }
+.cal-dow:last-child { color: #3b82f6; }
+
+.cal-cell {
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: var(--white);
+  border: 2px solid transparent;
+  position: relative;
+}
+.cal-cell:hover { border-color: var(--main-light); }
+.cal-cell:active { transform: scale(0.95); }
+.cal-cell.today { border-color: var(--main); }
+.cal-cell.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: #f5f3f0;
+}
+.cal-cell.disabled:hover { border-color: transparent; }
+.cal-cell.disabled:active { transform: none; }
+.cal-cell-empty {
+  min-height: 52px;
+}
+
+.cal-date {
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.cal-cell.cal-sun .cal-date { color: #e05555; }
+.cal-cell.cal-sat .cal-date { color: #3b82f6; }
+.cal-cell.disabled .cal-date { color: var(--text-muted); }
+
+.cal-status {
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.cal-status-ok { color: #16c79a; }
+.cal-status-few { color: #f5c518; }
+.cal-status-some { color: #f97316; }
+.cal-status-full { color: #e94560; }
+.cal-status-closed { color: #d1d5db; }
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 0.72rem;
+  color: var(--text-light);
+}
+.cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 /* ========== RESPONSIVE ========== */
 @media (min-width: 481px) {
   .app {
@@ -828,6 +936,11 @@ body {
     </div>
 
     <div id="facility-list"></div>
+  </div>
+
+  <!-- ========== MONTHLY CALENDAR SCREEN (after facility, before plan) ========== -->
+  <div class="screen" id="screen-monthly-calendar">
+    <div id="monthly-calendar-content"></div>
   </div>
 
   <!-- ========== PLAN SELECT SCREEN (after facility) ========== -->
@@ -1441,7 +1554,7 @@ function renderFacilityList(category) {
   filtered.forEach(fg => {
     const plans = fg.plans.map(pid => PLANS.find(p => p.id === pid)).filter(Boolean);
     const minPrice = Math.min(...plans.map(p => p.basePrice));
-    html += '<div class="facility-card" onclick="showPlanSelect(\'' + fg.id + '\')">';
+    html += '<div class="facility-card" onclick="showMonthlyCalendar(\'' + fg.id + '\')">';
     html += '  <div class="facility-icon">' + fg.icon + '</div>';
     html += '  <div class="facility-info">';
     html += '    <div class="facility-name">' + fg.name + '</div>';
@@ -1458,6 +1571,188 @@ function filterFacilities(category, tabEl) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   tabEl.classList.add('active');
   renderFacilityList(category);
+}
+
+/* ================================================================
+   MONTHLY CALENDAR (facility flow: between facility list and plan select)
+   ================================================================ */
+
+// Calendar state
+const calState = {
+  fgId: null,
+  year: new Date().getFullYear(),
+  month: new Date().getMonth(), // 0-indexed
+};
+
+function showMonthlyCalendar(fgId) {
+  state.flow = 'facility';
+  calState.fgId = fgId;
+  // Reset to current month
+  const now = new Date();
+  calState.year = now.getFullYear();
+  calState.month = now.getMonth();
+  renderMonthlyCalendar();
+  navigate('screen-monthly-calendar');
+}
+
+function calNavMonth(delta) {
+  calState.month += delta;
+  if (calState.month > 11) { calState.month = 0; calState.year++; }
+  if (calState.month < 0) { calState.month = 11; calState.year--; }
+  renderMonthlyCalendar();
+}
+
+// Determine day-level availability for a facility group on a given date
+// Returns: 'closed', 'full', 'some', 'few', 'ok'
+function getDayAvailability(fg, dateStr) {
+  // Tuesday = closed (day of week 2)
+  const d = new Date(dateStr + 'T00:00:00');
+  if (d.getDay() === 2) return 'closed';
+
+  const plans = fg.plans.map(pid => PLANS.find(p => p.id === pid)).filter(Boolean);
+  if (plans.length === 0) return 'full';
+
+  let okCount = 0;
+  plans.forEach(plan => {
+    const level = getAvailabilityLevel(plan, dateStr);
+    if (level === 'ok' || level === 'few') okCount++;
+  });
+
+  const total = plans.length;
+  if (okCount === 0) return 'full';
+  if (okCount >= total * 0.5) return 'ok';
+  if (okCount >= 2) return 'few';
+  return 'some'; // 1 plan available
+}
+
+function renderMonthlyCalendar() {
+  const fg = FACILITY_GROUPS.find(g => g.id === calState.fgId);
+  if (!fg) return;
+  const el = document.getElementById('monthly-calendar-content');
+
+  const year = calState.year;
+  const month = calState.month;
+  const todayStr = getTodayStr();
+
+  // Disable prev button if current month is this month
+  const now = new Date();
+  const isPrevDisabled = (year === now.getFullYear() && month === now.getMonth());
+  // Limit forward to 6 months
+  const maxDate = new Date(now.getFullYear(), now.getMonth() + 6, 1);
+  const isNextDisabled = (year > maxDate.getFullYear() || (year === maxDate.getFullYear() && month >= maxDate.getMonth()));
+
+  let html = '<div class="section-title">' + fg.icon + ' ' + fg.name + '</div>';
+
+  // Calendar header
+  html += '<div class="card" style="padding:16px">';
+  html += '<div class="cal-header">';
+  html += '<button class="cal-nav-btn" onclick="calNavMonth(-1)"' + (isPrevDisabled ? ' disabled style="opacity:0.3;cursor:not-allowed"' : '') + '>&lt;</button>';
+  html += '<span class="cal-header-month">' + year + '年' + (month + 1) + '月</span>';
+  html += '<button class="cal-nav-btn" onclick="calNavMonth(1)"' + (isNextDisabled ? ' disabled style="opacity:0.3;cursor:not-allowed"' : '') + '>&gt;</button>';
+  html += '</div>';
+
+  // Day-of-week headers
+  html += '<div class="cal-grid">';
+  const dows = ['日', '月', '火', '水', '木', '金', '土'];
+  dows.forEach(d => { html += '<div class="cal-dow">' + d + '</div>'; });
+
+  // First day of month
+  const firstDay = new Date(year, month, 1);
+  const startDow = firstDay.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Empty cells for days before the 1st
+  for (let i = 0; i < startDow; i++) {
+    html += '<div class="cal-cell-empty"></div>';
+  }
+
+  // Day cells
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    const dayOfWeek = new Date(year, month, day).getDay();
+    const isPast = dateStr < todayStr;
+    const isToday = dateStr === todayStr;
+    const avail = isPast ? 'past' : getDayAvailability(fg, dateStr);
+    const disabled = isPast || avail === 'closed';
+
+    let cellClass = 'cal-cell';
+    if (dayOfWeek === 0) cellClass += ' cal-sun';
+    if (dayOfWeek === 6) cellClass += ' cal-sat';
+    if (isToday) cellClass += ' today';
+    if (disabled) cellClass += ' disabled';
+
+    const onclick = disabled ? '' : ' onclick="selectDateFromCalendar(\'' + dateStr + '\')"';
+
+    html += '<div class="' + cellClass + '"' + onclick + '>';
+    html += '<span class="cal-date">' + day + '</span>';
+
+    // Status icon
+    if (isPast) {
+      html += '<span class="cal-status cal-status-closed">-</span>';
+    } else if (avail === 'closed') {
+      html += '<span class="cal-status cal-status-closed">休</span>';
+    } else if (avail === 'ok') {
+      html += '<span class="cal-status cal-status-ok">\u25CE</span>';
+    } else if (avail === 'few') {
+      html += '<span class="cal-status cal-status-few">\u25CB</span>';
+    } else if (avail === 'some') {
+      html += '<span class="cal-status cal-status-some">\u25B3</span>';
+    } else if (avail === 'full') {
+      html += '<span class="cal-status cal-status-full">\u00D7</span>';
+    }
+
+    html += '</div>';
+  }
+
+  html += '</div>'; // cal-grid
+
+  // Legend
+  html += '<div class="cal-legend">';
+  html += '<span><span class="cal-status cal-status-ok">\u25CE</span>空きあり</span>';
+  html += '<span><span class="cal-status cal-status-few">\u25CB</span>残りわずか</span>';
+  html += '<span><span class="cal-status cal-status-some">\u25B3</span>一部のみ</span>';
+  html += '<span><span class="cal-status cal-status-full">\u00D7</span>満室</span>';
+  html += '<span><span class="cal-status cal-status-closed">休</span>定休日</span>';
+  html += '</div>';
+
+  html += '</div>'; // card
+
+  // Hint text
+  html += '<div class="text-center text-muted mt-16">日付をタップしてプランを選択</div>';
+
+  el.innerHTML = html;
+}
+
+function selectDateFromCalendar(dateStr) {
+  state.searchDate = dateStr;
+  state.selectedDate = dateStr;
+  // Open plan select with the date pre-filled
+  showPlanSelectWithDate(calState.fgId, dateStr);
+}
+
+// Plan select with a pre-selected date (from calendar)
+function showPlanSelectWithDate(fgId, dateStr) {
+  state.flow = 'facility';
+  const fg = FACILITY_GROUPS.find(g => g.id === fgId);
+  const el = document.getElementById('plan-select-content');
+
+  let html = '<div class="section-title">' + fg.icon + ' ' + fg.name + '</div>';
+  html += '<div class="text-muted mb-16">' + formatDate(dateStr) + ' のプラン</div>';
+
+  // Hidden date field so selectPlan() can read it
+  html += '<input type="hidden" id="plan-select-date" value="' + dateStr + '">';
+
+  html += '<div class="section-title">プランを選択</div>';
+  html += '<div id="plan-list-' + fgId + '">';
+  fg.plans.forEach(pid => {
+    const plan = PLANS.find(p => p.id === pid);
+    if (!plan) return;
+    html += renderPlanCard(plan, dateStr);
+  });
+  html += '</div>';
+
+  el.innerHTML = html;
+  navigate('screen-plan-select');
 }
 
 /* ================================================================
