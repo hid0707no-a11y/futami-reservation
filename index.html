@@ -1298,6 +1298,15 @@ function stepGuests(delta) {
 /* ================================================================
    DATE SEARCH
    ================================================================ */
+const SEARCH_CATEGORIES = [
+  { id: 'all', label: 'すべて', icon: '' },
+  { id: 'stay', label: '宿泊', icon: '🌙' },
+  { id: 'day', label: '日帰り', icon: '☀️' },
+  { id: 'sport', label: 'スポーツ', icon: '🎾' },
+  { id: 'outdoor', label: 'アウトドア', icon: '⛺' },
+  { id: 'sauna', label: 'サウナ', icon: '🧖' },
+];
+
 function searchByDate() {
   const dateInput = document.getElementById('search-date');
   if (!dateInput.value) {
@@ -1307,36 +1316,75 @@ function searchByDate() {
   state.searchDate = dateInput.value;
   state.guests = state.searchGuests;
   state.flow = 'date';
+  state.searchCategory = 'all';
 
+  renderSearchResults();
+}
+
+function filterSearchResults(cat, el) {
+  state.searchCategory = cat;
+  document.querySelectorAll('#search-tabs .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderSearchResults();
+}
+
+function renderSearchResults() {
   const resultsEl = document.getElementById('date-search-results');
   const dateStr = formatDate(state.searchDate);
-  let html = '<div class="section-title">' + dateStr + ' の空きプラン</div>';
+  const cat = state.searchCategory || 'all';
 
-  let found = false;
+  // タブ
+  let html = '<div class="tabs" id="search-tabs" style="margin-bottom:12px">';
+  SEARCH_CATEGORIES.forEach(c => {
+    const active = c.id === cat ? ' active' : '';
+    html += '<div class="tab' + active + '" onclick="filterSearchResults(\'' + c.id + '\', this)">' + c.icon + ' ' + c.label + '</div>';
+  });
+  html += '</div>';
+
+  html += '<div class="section-title" style="font-size:0.9rem;margin-bottom:8px">' + dateStr + ' の空きプラン</div>';
+
+  // カテゴリ別にグルーピング
+  const groups = {};
   PLANS.forEach(plan => {
-    // 人数チェック: プランに紐づく部屋の最大定員
     const maxCap = Math.max(...plan.rooms.map(rid => {
       const r = ROOMS.find(x => x.id === rid);
       return r ? r.capacity : 0;
     }));
     if (maxCap < state.searchGuests) return;
+    if (cat !== 'all' && plan.category !== cat) return;
 
     const level = getAvailabilityLevel(plan, state.searchDate);
+    const catLabel = plan.category;
+    if (!groups[catLabel]) groups[catLabel] = [];
+    groups[catLabel].push({ plan, maxCap, level });
+  });
+
+  const catNames = { stay: '🌙 宿泊施設', day: '☀️ 日帰り施設', sport: '🎾 スポーツ施設', outdoor: '⛺ アウトドア', sauna: '🧖 サウナ' };
+  const catOrder = ['stay', 'day', 'outdoor', 'sport', 'sauna'];
+
+  let found = false;
+  catOrder.forEach(catKey => {
+    if (!groups[catKey]) return;
     found = true;
-    const room = ROOMS.find(r => r.id === plan.rooms[0]);
-    const isFull = level === 'none';
-    const clickAttr = isFull ? '' : ' onclick="selectPlanFromSearch(\'' + plan.id + '\')"';
-    const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
-    html += '<div class="facility-card"' + fullStyle + clickAttr + '>';
-    html += '  <div class="facility-icon">' + (room ? room.icon : '') + '</div>';
-    html += '  <div class="facility-info">';
-    html += '    <div><span class="plan-badge" style="background:' + (plan.badgeColor || '#999') + '">' + (plan.badge || '') + '</span></div>';
-    html += '    <div class="facility-name">' + plan.name + '</div>';
-    html += '    <div class="facility-meta">定員' + maxCap + '名</div>';
-    html += '    <div class="facility-price">' + plan.priceDisplay + ' ' + availBadge(level) + '</div>';
-    html += '  </div>';
-    html += isFull ? '' : '  <div class="facility-arrow">&#8250;</div>';
-    html += '</div>';
+    if (cat === 'all') {
+      html += '<div style="font-size:0.85rem;font-weight:700;color:var(--main-dark);margin:12px 0 6px;padding:4px 0;border-bottom:2px solid var(--main)">' + (catNames[catKey] || catKey) + '</div>';
+    }
+    groups[catKey].forEach(item => {
+      const room = ROOMS.find(r => r.id === item.plan.rooms[0]);
+      const isFull = item.level === 'none';
+      const clickAttr = isFull ? '' : ' onclick="selectPlanFromSearch(\'' + item.plan.id + '\')"';
+      const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
+      html += '<div class="facility-card"' + fullStyle + clickAttr + '>';
+      html += '  <div class="facility-icon">' + (room ? room.icon : '') + '</div>';
+      html += '  <div class="facility-info">';
+      html += '    <div><span class="plan-badge" style="background:' + (item.plan.badgeColor || '#999') + '">' + (item.plan.badge || '') + '</span></div>';
+      html += '    <div class="facility-name">' + item.plan.name + '</div>';
+      html += '    <div class="facility-meta">定員' + item.maxCap + '名</div>';
+      html += '    <div class="facility-price">' + item.plan.priceDisplay + ' ' + availBadge(item.level) + '</div>';
+      html += '  </div>';
+      html += isFull ? '' : '  <div class="facility-arrow">&#8250;</div>';
+      html += '</div>';
+    });
   });
 
   if (!found) {
