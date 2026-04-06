@@ -1303,8 +1303,8 @@ const SEARCH_CATEGORIES = [
   { id: 'stay', label: '宿泊', icon: '🌙' },
   { id: 'day', label: '日帰り', icon: '☀️' },
   { id: 'sport', label: 'スポーツ', icon: '🎾' },
-  { id: 'outdoor', label: 'アウトドア', icon: '⛺' },
   { id: 'sauna', label: 'サウナ', icon: '🧖' },
+  { id: 'outdoor', label: 'アウトドア', icon: '⛺' },
 ];
 
 function searchByDate() {
@@ -1333,11 +1333,11 @@ function renderSearchResults() {
   const dateStr = formatDate(state.searchDate);
   const cat = state.searchCategory || 'all';
 
-  // タブ
-  let html = '<div class="tabs" id="search-tabs" style="margin-bottom:12px">';
+  // タブ（3列×2行グリッド）
+  let html = '<div id="search-tabs" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px">';
   SEARCH_CATEGORIES.forEach(c => {
     const active = c.id === cat ? ' active' : '';
-    html += '<div class="tab' + active + '" onclick="filterSearchResults(\'' + c.id + '\', this)">' + c.icon + ' ' + c.label + '</div>';
+    html += '<div class="tab' + active + '" style="text-align:center;white-space:nowrap" onclick="filterSearchResults(\'' + c.id + '\', this)">' + c.icon + ' ' + c.label + '</div>';
   });
   html += '</div>';
 
