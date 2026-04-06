@@ -55,28 +55,39 @@ body {
 .date-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .date-nav button {
   background: rgba(255,255,255,0.15);
   border: none;
   color: #fff;
-  font-size: 1rem;
-  padding: 10px 18px;
-  border-radius: 8px;
+  font-size: 1.4rem;
+  padding: 14px 24px;
+  border-radius: 10px;
   cursor: pointer;
-  min-width: 48px;
-  min-height: 48px;
+  min-width: 60px;
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
+  font-weight: 700;
 }
 .date-nav button:active { background: rgba(255,255,255,0.3); }
 .date-nav .today-btn {
   background: rgba(255,255,255,0.25);
-  font-size: 0.9rem;
-  padding: 10px 20px;
+  font-size: 1rem;
+  padding: 14px 28px;
+}
+.date-nav .date-input {
+  background: rgba(255,255,255,0.15);
+  border: 2px solid rgba(255,255,255,0.3);
+  color: #fff;
+  font-size: 1rem;
+  padding: 12px 14px;
+  border-radius: 10px;
+  min-height: 60px;
+  font-weight: 600;
+  color-scheme: dark;
 }
 
 /* ===== 統計バー ===== */
@@ -587,9 +598,10 @@ td.block-start-td + td.block-mid { border-left: none; }
   <div class="header-title">ふたみ予約管理</div>
   <div class="header-date" id="headerDate"></div>
   <div class="date-nav">
-    <button onclick="changeDate(-1)" aria-label="前日">&lt;</button>
+    <button onclick="changeDate(-1)" aria-label="前日">◀</button>
+    <input type="date" class="date-input" id="dateJump" onchange="jumpToDate(this.value)">
     <button class="today-btn" onclick="goToday()">今日</button>
-    <button onclick="changeDate(1)" aria-label="翌日">&gt;</button>
+    <button onclick="changeDate(1)" aria-label="翌日">▶</button>
   </div>
 </header>
 
@@ -927,12 +939,23 @@ function generateDummyData() {
 // ===== 日付ナビゲーション =====
 function changeDate(delta) {
   currentDate.setDate(currentDate.getDate() + delta);
+  syncDateInput();
   render();
 }
 function goToday() {
   currentDate = new Date();
   currentDate.setHours(0,0,0,0);
+  syncDateInput();
   render();
+}
+function jumpToDate(val) {
+  if (!val) return;
+  currentDate = new Date(val + 'T00:00:00');
+  render();
+}
+function syncDateInput() {
+  const el = document.getElementById('dateJump');
+  if (el) el.value = dateStr(currentDate);
 }
 
 // ===== あるROOMで利用可能なPLAN一覧を返す =====
@@ -943,6 +966,7 @@ function getPlansForRoom(roomId) {
 // ===== マトリクス描画 =====
 function render() {
   document.getElementById('headerDate').textContent = formatDateDisplay(currentDate);
+  syncDateInput();
   const ds = dateStr(currentDate);
   const allRes = loadReservations();
 
