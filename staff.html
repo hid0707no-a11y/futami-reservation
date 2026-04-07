@@ -838,30 +838,54 @@ let LAST_SYNC_AT = null;
 
 // API レスポンスの予約 → staff用形式に変換
 function convertApiReservation(r) {
-  // slots 配列から代表 hour リストを抽出
-  const hours = [];
-  let date = r.startDate;
+  // slots 配列をパース。当日hours と 翌日hours を分けて持つ
+  const todayHours = [];
+  const nextDayHours = [];
   let roomId = (r.roomIds && r.roomIds[0]) || '';
   if (Array.isArray(r.slots)) {
     for (const k of r.slots) {
       const parts = k.split('|');
       if (parts.length === 3) {
         if (!roomId) roomId = parts[0];
-        if (parts[1] === r.startDate) hours.push(parseInt(parts[2], 10));
+        const slotDate = parts[1];
+        const hour = parseInt(parts[2], 10);
+        if (slotDate === r.startDate) todayHours.push(hour);
+        else nextDayHours.push(hour);
       }
     }
   }
+  // 宿泊の場合: 当日 + 翌日(0-9表記) を1つの配列に統合（既存ロジック互換）
+  const isOverNight = nextDayHours.length > 0;
+  let combinedHours = [...todayHours];
+  if (isOverNight) {
+    // 翌日のhour（0〜9）はそのままの数値で追加。既存ロジックが a<10 なら +24 して並べる
+    nextDayHours.forEach(h => combinedHours.push(h));
+  }
+
+  // guests オブジェクト → 合計人数
+  let guestsTotal = 1;
+  if (r.guestCount) {
+    guestsTotal = r.guestCount;
+  } else if (r.guests && typeof r.guests === 'object') {
+    guestsTotal = (r.guests.adult || 0) + (r.guests.elementary || 0) + (r.guests.child || 0);
+    if (guestsTotal === 0) guestsTotal = 1;
+  }
+
   return {
     id: r.id,
     date: r.startDate,
+    endDate: r.endDate,
+    nights: r.nights || 0,
     roomId,
     planId: r.planId,
     name: (r.customer && r.customer.name) || '',
     phone: (r.customer && r.customer.phone) || '',
-    slotsOverride: hours.length > 0 ? hours : undefined,
+    guests: guestsTotal,
+    slotsOverride: combinedHours.length > 0 ? combinedHours : undefined,
     checkedIn: r.status === 'checked_in',
     isFutamiDay: !!r.isFutamiDay,
     guestCount: r.guestCount || null,
+    note: r.note || '',
   };
 }
 
@@ -1245,6 +1269,9 @@ function showDetail(resId) {
     html += `<button class="checkin-btn do-checkin" onclick="toggleCheckin('${res.id}')">\u30C1\u30A7\u30C3\u30AF\u30A4\u30F3\u3059\u308B</button>`;
   }
 
+  // === キャンセルボタン（要API） ===
+  html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${res.id}','${(res.name||'').replace(/'/g,'')}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
+
   document.getElementById('detailContent').innerHTML = html;
   document.getElementById('detailOverlay').classList.add('show');
   document.getElementById('detailSheet').classList.add('show');
@@ -1253,6 +1280,30 @@ function showDetail(resId) {
 function closeDetail() {
   document.getElementById('detailOverlay').classList.remove('show');
   document.getElementById('detailSheet').classList.remove('show');
+}
+
+// ===== 予約キャンセル（API） =====
+async function cancelReservationApi(resId, name) {
+  const ok = confirm(`${name || 'この予約'}\u3092\u30AD\u30E3\u30F3\u30BB\u30EB\u3057\u3066\u3082\u3088\u308D\u3057\u3044\u3067\u3059\u304B\uFF1F\n\n\u30B9\u30ED\u30C3\u30C8\u306F\u4ED6\u306E\u4E88\u7D04\u306B\u958B\u653E\u3055\u308C\u307E\u3059\u3002`);
+  if (!ok) return;
+  try {
+    const res = await fetch(API_BASE + '/cancelReservation?key=' + encodeURIComponent(STAFF_API_KEY), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: resId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast('\u30AD\u30E3\u30F3\u30BB\u30EB\u5931\u6557: ' + (data.error || res.status));
+      return;
+    }
+    closeDetail();
+    await loadGcalData();
+    showToast('\u30AD\u30E3\u30F3\u30BB\u30EB\u3057\u307E\u3057\u305F');
+  } catch (e) {
+    console.error('cancel error', e);
+    showToast('\u901A\u4FE1\u30A8\u30E9\u30FC');
+  }
 }
 
 // ===== チェックイン切り替え =====
