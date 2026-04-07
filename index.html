@@ -2780,7 +2780,7 @@ function proceedToConfirm() {
   navigate('screen-confirm');
 }
 
-function submitBooking() {
+async function submitBooking() {
   const name = document.getElementById('confirm-name').value.trim();
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
@@ -2789,8 +2789,55 @@ function submitBooking() {
   if (!name) { alert('お名前を入力してください'); return; }
   if (!phone) { alert('電話番号を入力してください'); return; }
 
-  const bookingId = 'FTM-' + Date.now().toString(36).toUpperCase();
   const plan = state.selectedPlan;
+
+  // === API送信用 slot キー配列を生成 ===
+  let slotKeys = [];
+  try {
+    const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
+    const roomId = state.selectedRoomId;
+    slotKeys = expanded.map(s => roomId + '|' + s.date + '|' + s.hour);
+  } catch (e) {
+    console.error('slot expand error', e);
+  }
+
+  // === Firestore API に送信 ===
+  let apiResId = null;
+  if (slotKeys.length > 0) {
+    try {
+      const startDate = state.selectedDate;
+      const endDate = (state.selectedNights && state.selectedNights > 0)
+        ? slotKeys[slotKeys.length - 1].split('|')[1]
+        : startDate;
+      const apiResult = await submitReservation({
+        planId: plan.id,
+        roomIds: [state.selectedRoomId],
+        slots: slotKeys,
+        startDate,
+        endDate,
+        nights: state.selectedNights || 0,
+        customer: { name, phone, email, isMember: !!state.isResident },
+        guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
+        pricing: { basePrice: 0, personFee: 0, optionFee: 0, total: state.totalPrice || 0 },
+        note,
+        createdBy: 'web',
+      });
+      apiResId = apiResult.reservationId;
+      // 即座にOCCUPIED_SLOTSに反映（再ロードまで待たない）
+      slotKeys.forEach(k => OCCUPIED_SLOTS.add(k));
+    } catch (e) {
+      if (e && e.code === 'slot_conflict') {
+        alert('申し訳ありません、その時間帯は先ほど他の方が予約されました。お手数ですが、もう一度お選びください。');
+        await loadAvailabilityData();
+        return;
+      }
+      console.error('予約API失敗', e);
+      alert('予約の送信に失敗しました。通信環境を確認してもう一度お試しください。');
+      return;
+    }
+  }
+
+  const bookingId = apiResId || ('FTM-' + Date.now().toString(36).toUpperCase());
 
   const booking = {
     id: bookingId,
