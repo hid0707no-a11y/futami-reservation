@@ -830,21 +830,79 @@ function formatDateDisplay(d) {
   return `${d.getMonth()+1}\u6708${d.getDate()}\u65E5\uFF08${weekday(d)}\uFF09`;
 }
 
-// ===== Googleカレンダー由来データ =====
+// ===== Firestore API 由来データ =====
+const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
+const STAFF_API_KEY = 'dev-key-change-me'; // TODO: 本番強化
 let GCAL_BOOKINGS = [];
+let LAST_SYNC_AT = null;
+
+// API レスポンスの予約 → staff用形式に変換
+function convertApiReservation(r) {
+  // slots 配列から代表 hour リストを抽出
+  const hours = [];
+  let date = r.startDate;
+  let roomId = (r.roomIds && r.roomIds[0]) || '';
+  if (Array.isArray(r.slots)) {
+    for (const k of r.slots) {
+      const parts = k.split('|');
+      if (parts.length === 3) {
+        if (!roomId) roomId = parts[0];
+        if (parts[1] === r.startDate) hours.push(parseInt(parts[2], 10));
+      }
+    }
+  }
+  return {
+    id: r.id,
+    date: r.startDate,
+    roomId,
+    planId: r.planId,
+    name: (r.customer && r.customer.name) || '',
+    phone: (r.customer && r.customer.phone) || '',
+    slotsOverride: hours.length > 0 ? hours : undefined,
+    checkedIn: r.status === 'checked_in',
+    isFutamiDay: !!r.isFutamiDay,
+    guestCount: r.guestCount || null,
+  };
+}
 
 async function loadGcalData() {
   try {
-    const res = await fetch('data.json?t=' + Date.now());
-    if (!res.ok) throw new Error('data.json fetch failed');
+    const res = await fetch(API_BASE + '/listReservations?key=' + encodeURIComponent(STAFF_API_KEY) + '&t=' + Date.now());
+    if (!res.ok) throw new Error('API fetch failed: ' + res.status);
     const data = await res.json();
-    GCAL_BOOKINGS = data.staffBookings || [];
-    console.log('[gcal] loaded', GCAL_BOOKINGS.length, 'bookings');
+    const reservations = data.reservations || [];
+    GCAL_BOOKINGS = reservations
+      .filter(r => r.status !== 'cancelled')
+      .map(convertApiReservation);
+    LAST_SYNC_AT = new Date();
+    console.log('[api] loaded', GCAL_BOOKINGS.length, 'reservations at', LAST_SYNC_AT.toLocaleTimeString());
+    updateSyncIndicator();
     if (typeof render === 'function') render();
   } catch (e) {
-    console.warn('[gcal] load failed:', e);
+    console.warn('[api] load failed:', e);
+    updateSyncIndicator(true);
   }
 }
+
+function updateSyncIndicator(error) {
+  let el = document.getElementById('sync-indicator');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-indicator';
+    el.style.cssText = 'position:fixed;bottom:10px;right:10px;background:rgba(0,0,0,0.7);color:white;padding:4px 10px;border-radius:12px;font-size:11px;z-index:9999;';
+    document.body.appendChild(el);
+  }
+  if (error) {
+    el.style.background = 'rgba(220,40,40,0.85)';
+    el.textContent = '同期エラー';
+  } else if (LAST_SYNC_AT) {
+    el.style.background = 'rgba(40,140,80,0.85)';
+    el.textContent = '最終同期: ' + LAST_SYNC_AT.toLocaleTimeString();
+  }
+}
+
+// 30秒ごとに自動更新
+setInterval(() => { loadGcalData(); }, 30000);
 
 // ===== LocalStorage =====
 function loadReservations() {
@@ -1448,7 +1506,7 @@ function closeAddForm() {
   document.getElementById('addModal').classList.remove('show');
 }
 
-function submitReservation() {
+async function submitReservation() {
   const roomIdFromSelect = document.getElementById('addRoom').value;
   const ds = document.getElementById('addDate').value;
   const name = document.getElementById('addName').value.trim();
@@ -1497,27 +1555,72 @@ function submitReservation() {
     return;
   }
 
-  const newRes = {
-    id: 'res_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-    planId: selectedPlanId,
-    roomId: roomId,
-    date: ds,
-    name: name,
-    phone: phone,
-    guests: guests,
-    note: note,
-    checkedIn: false,
-  };
-  if (slotsOverride) {
-    newRes.slotsOverride = slotsOverride;
+  // === API送信用 slotKey 配列を生成 ===
+  const planSlots = slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
+  const slotKeys = [];
+  // 宿泊系: 翌日にまたがるスロット(0-9)は翌日扱い
+  const isStay = plan.planType === 'stay' || (planSlots.includes(16) && planSlots.includes(0));
+  const nextDay = (function(){
+    const d = new Date(ds + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return dateStr(d);
+  })();
+  for (const h of planSlots) {
+    if (isStay && h >= 0 && h <= 9) {
+      slotKeys.push(`${roomId}|${nextDay}|${h}`);
+    } else {
+      slotKeys.push(`${roomId}|${ds}|${h}`);
+    }
   }
 
-  allRes.push(newRes);
-  saveReservations(allRes);
+  const startDate = ds;
+  const endDate = isStay ? nextDay : ds;
+  const isFutamiSauna = (plan.planType === 'sauna' && (typeof isFutamiDayDate === 'function' ? isFutamiDayDate(ds) : false));
+
+  const payload = {
+    planId: selectedPlanId,
+    roomIds: [roomId],
+    slots: slotKeys,
+    startDate,
+    endDate,
+    nights: isStay ? 1 : 0,
+    customer: { name, phone, isMember: false },
+    guests: { adult: guests, elementary: 0, child: 0 },
+    guestCount: isFutamiSauna ? guests : undefined,
+    pricing: null,
+    note,
+    createdBy: 'staff',
+  };
+
+  // API送信
+  try {
+    const res = await fetch(API_BASE + '/createReservation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.status === 409) {
+      showToast('\u305D\u306E\u6642\u9593\u5E2F\u306F\u4ED6\u306E\u4E88\u7D04\u3068\u91CD\u8907\u3057\u3066\u3044\u307E\u3059');
+      await loadGcalData();
+      return;
+    }
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      console.error('API error', errData);
+      showToast('API\u30A8\u30E9\u30FC: ' + (errData.error || res.status));
+      return;
+    }
+    const result = await res.json();
+    console.log('[staff] reservation created:', result.reservationId);
+  } catch (e) {
+    console.error('予約API送信失敗', e);
+    showToast('\u901A\u4FE1\u30A8\u30E9\u30FC\u3001\u30CD\u30C3\u30C8\u63A5\u7D9A\u3092\u78BA\u8A8D\u3057\u3066\u4E0B\u3055\u3044');
+    return;
+  }
 
   closeAddForm();
   currentDate = new Date(ds + 'T00:00:00');
-  render();
+  await loadGcalData(); // APIから最新取得
   showToast(`${name}\u3055\u3093\u306E\u4E88\u7D04\u3092\u767B\u9332\u3057\u307E\u3057\u305F`);
 }
 
