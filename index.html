@@ -1373,26 +1373,56 @@ function updateBackButton() {
    あるプランが使うスロットが全て空いているかを判定する
    ================================================================ */
 
-// data.json から読み込む占有スロット集合（カレンダー実データ）
+// Firestore API から読み込む占有スロット集合
 const OCCUPIED_SLOTS = new Set();
 let DATA_LOADED = false;
 
+const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
+const AVAILABILITY_URL = 'https://availability-6ry33ad4oa-an.a.run.app';
+
 async function loadAvailabilityData() {
   try {
-    const res = await fetch('data.json?t=' + Date.now());
-    if (!res.ok) throw new Error('data.json fetch failed');
+    const res = await fetch(AVAILABILITY_URL + '?t=' + Date.now());
+    if (!res.ok) throw new Error('availability API fetch failed');
     const data = await res.json();
+    OCCUPIED_SLOTS.clear();
     (data.occupiedSlots || []).forEach(s => OCCUPIED_SLOTS.add(s));
     DATA_LOADED = true;
-    console.log('[data] loaded', OCCUPIED_SLOTS.size, 'occupied slots from', data.bookingCount, 'bookings');
+    console.log('[api] loaded', OCCUPIED_SLOTS.size, 'occupied slots from API');
     // 既に表示中の画面があれば再描画
     if (typeof renderSearchResults === 'function' && state.flow === 'date' && state.searchDate) {
       renderSearchResults();
     }
   } catch (e) {
-    console.warn('[data] load failed, falling back to empty:', e);
-    DATA_LOADED = true; // フォールバック: 全部空き
+    console.warn('[api] load failed, falling back to data.json:', e);
+    try {
+      const res2 = await fetch('data.json?t=' + Date.now());
+      if (res2.ok) {
+        const data2 = await res2.json();
+        (data2.occupiedSlots || []).forEach(s => OCCUPIED_SLOTS.add(s));
+      }
+    } catch (e2) {
+      console.warn('[data] fallback also failed:', e2);
+    }
+    DATA_LOADED = true;
   }
+}
+
+// 予約送信（POST /createReservation）
+async function submitReservation(payload) {
+  const res = await fetch(API_BASE + '/createReservation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (res.status === 409) {
+    throw { code: 'slot_conflict', conflicts: data.conflicts };
+  }
+  if (!res.ok) {
+    throw { code: 'api_error', detail: data };
+  }
+  return data;
 }
 
 // 特定の部屋+日付+時間スロットが空いているか
