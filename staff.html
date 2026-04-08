@@ -1709,7 +1709,9 @@ if ('serviceWorker' in navigator) {
 }
 
 // ===== 初期化 =====
-generateDummyData();
+// localStorage 完全クリア（旧ダミーデータ・旧手動予約を排除）
+try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+// generateDummyData(); // 無効化：本番運用ではAPIから取得
 render();
 loadGcalData();
 </script>
