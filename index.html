@@ -1479,12 +1479,23 @@ function getAvailableRooms(plan, date) {
 
 function getAvailabilityLevel(plan, date) {
   if (!date) return 'ok';
+
+  // ふたみの日サウナは shared_slots の残席で判定
+  if (plan.planType === 'sauna' && isFutamiDay(date)) {
+    const remain = getFutamiSaunaRemaining(plan, date);
+    if (remain <= 0) return 'none';
+    if (remain <= 2) return 'few';
+    return 'ok';
+  }
+
   const available = getAvailableRooms(plan, date);
   // 全室パックは全部屋が空いている必要がある
   if (plan.requiresAllRooms) {
     return available.length === plan.rooms.length ? 'ok' : 'none';
   }
   if (available.length === 0) return 'none';
+  // 単一部屋プラン（サウナ等）は ok / none の2値
+  if (plan.rooms.length === 1) return 'ok';
   if (available.length <= 1) return 'few';
   return 'ok';
 }
