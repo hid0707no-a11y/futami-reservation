@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#1e3a8a">
+<title>ふたみ予約 月俯瞰</title>
+<style>
+:root {
+  --navy: #1e3a8a;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+  margin: 0;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 14px;
+}
+.header {
+  background: var(--navy);
+  color: #fff;
+  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.header-title { font-weight: 700; font-size: 16px; margin-bottom: 8px; }
+.header-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.header button, .header a {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.header button:hover, .header a:hover { background: rgba(255,255,255,0.25); }
+.header .month-label { font-size: 18px; font-weight: 700; padding: 0 8px; min-width: 130px; text-align: center; }
+.header .today-btn { background: #fbbf24; color: #78350f; }
+.header .back-btn { background: #f3f4f6; color: var(--navy); }
+.cat-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.cat-btn {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cat-btn.active {
+  background: #fff;
+  color: var(--navy);
+}
+
+.legend {
+  background: #fff;
+  padding: 8px 12px;
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--gray-200);
+  flex-wrap: wrap;
+}
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-box { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--gray-200); }
+
+.scroll-wrapper {
+  overflow: auto;
+  max-height: calc(100vh - 200px);
+  background: #fff;
+}
+.month-table {
+  border-collapse: collapse;
+  background: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.month-table th, .month-table td {
+  border: 1px solid var(--gray-200);
+  text-align: center;
+  padding: 0;
+  height: 32px;
+  min-width: 32px;
+  max-width: 32px;
+}
+.month-table thead th {
+  background: var(--gray-50);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  font-size: 11px;
+  padding: 6px 0;
+}
+.month-table thead th.weekend-sat { color: #2563eb; background: #eff6ff; }
+.month-table thead th.weekend-sun { color: #dc2626; background: #fef2f2; }
+.month-table thead th.futami {
+  background: #fef3c7;
+  color: #b45309;
+}
+.month-table thead th.futami::after { content: '★'; display: block; font-size: 9px; }
+.month-table thead th.col-room {
+  min-width: 130px;
+  max-width: 130px;
+  text-align: left;
+  padding: 6px 10px;
+  position: sticky;
+  left: 0;
+  z-index: 30;
+}
+.month-table .room-name {
+  text-align: left;
+  padding: 6px 10px;
+  font-weight: 600;
+  background: var(--gray-50);
+  position: sticky;
+  left: 0;
+  min-width: 130px;
+  max-width: 130px;
+  z-index: 10;
+  font-size: 12px;
+}
+.month-table .building-row td {
+  background: #dbeafe;
+  font-weight: 700;
+  text-align: left;
+  padding: 6px 12px;
+  color: var(--navy);
+  font-size: 13px;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+}
+.cell-empty { background: #fff; }
+.cell-some { background: #a7f3d0; cursor: pointer; }
+.cell-many { background: #34d399; cursor: pointer; color: #fff; font-weight: 700; }
+.cell-full { background: #dc2626; cursor: pointer; color: #fff; font-weight: 700; }
+.cell-past { background: #f3f4f6; color: #9ca3af; }
+.cell-count { font-size: 11px; line-height: 1; }
+
+/* セル詳細ポップアップ */
+.popup-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+}
+.popup-overlay.show { display: flex; align-items: center; justify-content: center; padding: 16px; }
+.popup-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  max-width: 420px;
+  width: 100%;
+  max-height: 70vh;
+  overflow-y: auto;
+  position: relative;
+}
+.popup-card h3 { margin: 0 0 4px; font-size: 16px; color: var(--navy); }
+.popup-card .sub { color: #6b7280; font-size: 12px; margin-bottom: 12px; }
+.popup-card .close-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.res-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.res-item:last-child { border-bottom: none; }
+.res-item .name { font-weight: 600; }
+.res-item .meta { font-size: 11px; color: #6b7280; margin-top: 2px; }
+.res-item .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--gray-100); }
+.res-item .badge.stay { background: #ddd6fe; color: #5b21b6; }
+.res-item .badge.day { background: #fed7aa; color: #9a3412; }
+.res-item .badge.sport { background: #bfdbfe; color: #1e40af; }
+.res-item .badge.sauna { background: #fbcfe8; color: #9d174d; }
+.res-item .badge.outdoor { background: #bbf7d0; color: #14532d; }
+.res-item a {
+  font-size: 11px;
+  color: var(--navy);
+  text-decoration: none;
+  background: var(--gray-100);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+#syncIndicator {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(40,140,80,0.85);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-size: 11px;
+  z-index: 999;
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-title">ふたみ予約 月俯瞰</div>
+  <div class="header-row">
+    <button onclick="changeMonth(-1)">◀</button>
+    <div class="month-label" id="monthLabel">2026年4月</div>
+    <button onclick="changeMonth(1)">▶</button>
+    <button class="today-btn" onclick="goToday()">今月</button>
+    <a href="staff.html" class="back-btn">📋 詳細</a>
+  </div>
+  <div class="cat-tabs">
+    <button class="cat-btn active" data-cat="all" onclick="setCategory('all')">すべて</button>
+    <button class="cat-btn" data-cat="stay" onclick="setCategory('stay')">🌙 宿泊</button>
+    <button class="cat-btn" data-cat="day" onclick="setCategory('day')">☀️ 日帰り</button>
+    <button class="cat-btn" data-cat="sport" onclick="setCategory('sport')">🎾 スポーツ</button>
+    <button class="cat-btn" data-cat="sauna" onclick="setCategory('sauna')">🧖 サウナ</button>
+    <button class="cat-btn" data-cat="outdoor" onclick="setCategory('outdoor')">⛺ アウトドア</button>
+  </div>
+</header>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-box" style="background:#fff"></div>空き</div>
+  <div class="legend-item"><div class="legend-box" style="background:#a7f3d0"></div>一部予約</div>
+  <div class="legend-item"><div class="legend-box" style="background:#34d399"></div>多め</div>
+  <div class="legend-item"><div class="legend-box" style="background:#dc2626"></div>満</div>
+  <div class="legend-item"><div class="legend-box" style="background:#fef3c7"></div>★ふたみの日</div>
+</div>
+
+<div class="scroll-wrapper">
+  <table class="month-table" id="monthTable"></table>
+</div>
+
+<!-- ポップアップ -->
+<div class="popup-overlay" id="popupOverlay" onclick="if(event.target===this)closePopup()">
+  <div class="popup-card">
+    <button class="close-btn" onclick="closePopup()">×</button>
+    <h3 id="popupTitle">予約一覧</h3>
+    <div class="sub" id="popupSub"></div>
+    <div id="popupBody"></div>
+  </div>
+</div>
+
+<div id="syncIndicator">読み込み中...</div>
+
+<script>
+// ===== 設定 =====
+const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
+const AVAILABILITY_URL = 'https://availability-6ry33ad4oa-an.a.run.app';
+const STAFF_API_KEY = 'dev-key-change-me';
+
+// ===== ROOMS定義（カテゴリ・建物別） =====
+const ROOMS = [
+  // 宿泊（ふれあいの館）
+  { id: 'room_27', name: '27畳', building: 'ふれあいの館', category: 'stay' },
+  { id: 'room_6_1', name: '6畳(1)', building: 'ふれあいの館', category: 'stay' },
+  { id: 'room_6_2', name: '6畳(2)', building: 'ふれあいの館', category: 'stay' },
+  { id: 'room_6_3', name: '6畳(3)', building: 'ふれあいの館', category: 'stay' },
+  { id: 'room_6_4', name: '6畳(4)', building: 'ふれあいの館', category: 'stay' },
+  { id: 'room_exp', name: '体験学習室', building: 'ふれあいの館', category: 'stay' },
+  // 日帰り
+  { id: 'room_train', name: '研修室', building: '日帰り施設', category: 'day' },
+  { id: 'room_kitchen', name: '厨房・食堂', building: '日帰り施設', category: 'day' },
+  // スポーツ
+  { id: 'court_1', name: 'Aコート', building: 'テニスコート', category: 'sport' },
+  { id: 'court_2', name: 'Bコート', building: 'テニスコート', category: 'sport' },
+  { id: 'court_3', name: 'Cコート', building: 'テニスコート', category: 'sport' },
+  { id: 'court_4', name: 'Dコート', building: 'テニスコート', category: 'sport' },
+  { id: 'court_5', name: 'Eコート', building: 'テニスコート', category: 'sport' },
+  { id: 'midori', name: 'みどりの広場', building: 'スポーツ施設', category: 'sport' },
+  // サウナ
+  { id: 'sauna', name: 'サンセットサウナ', building: 'サウナ', category: 'sauna' },
+  // アウトドア
+  { id: 'camp', name: 'キャンプ場', building: 'アウトドア', category: 'outdoor' },
+  { id: 'lodge_a', name: 'ロッジA', building: 'アウトドア', category: 'outdoor' },
+  { id: 'lodge_b', name: 'ロッジB', building: 'アウトドア', category: 'outdoor' },
+];
+
+// ===== 状態 =====
+let currentMonth = (function(){
+  const d = new Date();
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+})();
+let currentCategory = 'all';
+let RESERVATIONS = []; // listReservations API レスポンス
+let FUTAMI_DAYS = new Set(); // ふたみの日リスト
+let LAST_SYNC = null;
+
+// ===== ユーティリティ =====
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+function dateStr(y, m, d) { return `${y}-${pad(m)}-${pad(d)}`; }
+function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+function dayOfWeek(y, m, d) { return new Date(y, m - 1, d).getDay(); }
+function todayStr() {
+  const d = new Date();
+  return dateStr(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+// ===== データ取得 =====
+async function loadData() {
+  document.getElementById('syncIndicator').textContent = '同期中...';
+  document.getElementById('syncIndicator').style.background = 'rgba(100,100,100,0.85)';
+  try {
+    const [resA, resF] = await Promise.all([
+      fetch(API_BASE + '/listReservations?key=' + encodeURIComponent(STAFF_API_KEY) + '&t=' + Date.now()),
+      fetch(API_BASE + '/futamiDays?t=' + Date.now()),
+    ]);
+    const dataA = await resA.json();
+    const dataF = await resF.json();
+    RESERVATIONS = (dataA.reservations || []).filter(r => r.status !== 'cancelled');
+    FUTAMI_DAYS = new Set(dataF.dates || []);
+    LAST_SYNC = new Date();
+    document.getElementById('syncIndicator').textContent = '最終同期: ' + LAST_SYNC.toLocaleTimeString();
+    document.getElementById('syncIndicator').style.background = 'rgba(40,140,80,0.85)';
+    render();
+  } catch (e) {
+    console.error('load failed', e);
+    document.getElementById('syncIndicator').textContent = '同期エラー';
+    document.getElementById('syncIndicator').style.background = 'rgba(220,40,40,0.85)';
+  }
+}
+setInterval(loadData, 60000); // 60秒ごと
+
+// ===== 予約 → 日付・部屋マップ =====
+function buildOccupancyMap() {
+  // map[roomId][date] = [reservation, ...]
+  const map = {};
+  for (const r of RESERVATIONS) {
+    if (!Array.isArray(r.slots)) continue;
+    // 予約が触れている全日付・全部屋を抽出
+    const datesAndRooms = new Set();
+    for (const k of r.slots) {
+      const parts = k.split('|');
+      if (parts.length !== 3) continue;
+      let roomId = parts[0];
+      if (roomId === 'sauna_share') roomId = 'sauna';
+      const date = parts[1];
+      datesAndRooms.add(roomId + '|' + date);
+    }
+    for (const key of datesAndRooms) {
+      const [roomId, date] = key.split('|');
+      if (!map[roomId]) map[roomId] = {};
+      if (!map[roomId][date]) map[roomId][date] = [];
+      map[roomId][date].push(r);
+    }
+  }
+  return map;
+}
+
+// ===== カテゴリで ROOMS フィルタ =====
+function filteredRooms() {
+  if (currentCategory === 'all') return ROOMS;
+  return ROOMS.filter(r => r.category === currentCategory);
+}
+
+// ===== レンダリング =====
+function render() {
+  const { year, month } = currentMonth;
+  document.getElementById('monthLabel').textContent = `${year}年${month}月`;
+  const days = daysInMonth(year, month);
+  const today = todayStr();
+
+  // ヘッダー行
+  let html = '<thead><tr>';
+  html += '<th class="col-room">施設</th>';
+  for (let d = 1; d <= days; d++) {
+    const ds = dateStr(year, month, d);
+    const dow = dayOfWeek(year, month, d);
+    let cls = '';
+    if (dow === 6) cls = 'weekend-sat';
+    if (dow === 0) cls = 'weekend-sun';
+    if (FUTAMI_DAYS.has(ds)) cls = 'futami';
+    html += `<th class="${cls}">${d}<br><span style="font-size:9px">${'日月火水木金土'[dow]}</span></th>`;
+  }
+  html += '</tr></thead>';
+
+  // ボディ
+  const occMap = buildOccupancyMap();
+  const rooms = filteredRooms();
+  // building 別にグループ化
+  const byBuilding = {};
+  for (const r of rooms) {
+    if (!byBuilding[r.building]) byBuilding[r.building] = [];
+    byBuilding[r.building].push(r);
+  }
+
+  html += '<tbody>';
+  for (const [building, list] of Object.entries(byBuilding)) {
+    html += `<tr class="building-row"><td colspan="${days + 1}">${building}</td></tr>`;
+    for (const room of list) {
+      html += `<tr><td class="room-name">${room.name}</td>`;
+      for (let d = 1; d <= days; d++) {
+        const ds = dateStr(year, month, d);
+        const reservations = (occMap[room.id] || {})[ds] || [];
+        const count = reservations.length;
+        let cellClass = 'cell-empty';
+        let label = '';
+        if (ds < today) cellClass = 'cell-past';
+        if (count > 0) {
+          if (count === 1) cellClass = 'cell-some';
+          else if (count <= 3) cellClass = 'cell-many';
+          else cellClass = 'cell-full';
+          label = `<span class="cell-count">${count}</span>`;
+        }
+        const onclick = count > 0 ? ` onclick="showCellDetail('${room.id}','${ds}','${room.name.replace(/'/g, '')}')"` : '';
+        html += `<td class="${cellClass}"${onclick}>${label}</td>`;
+      }
+      html += '</tr>';
+    }
+  }
+  html += '</tbody>';
+
+  document.getElementById('monthTable').innerHTML = html;
+}
+
+// ===== セルクリック → 詳細ポップアップ =====
+function showCellDetail(roomId, ds, roomName) {
+  const occMap = buildOccupancyMap();
+  const list = (occMap[roomId] || {})[ds] || [];
+  if (list.length === 0) return;
+  document.getElementById('popupTitle').textContent = roomName;
+  document.getElementById('popupSub').textContent = formatDateLabel(ds);
+  let html = '';
+  for (const r of list) {
+    const cat = inferCategory(r);
+    const name = (r.customer && r.customer.name) || '?';
+    const phone = (r.customer && r.customer.phone) || '';
+    const time = inferTime(r, ds);
+    const badgeClass = cat || 'all';
+    const badgeLabel = { stay: '🌙宿泊', day: '☀️日帰り', sport: '🎾スポーツ', sauna: '🧖サウナ', outdoor: '⛺アウトドア' }[cat] || '予約';
+    html += `
+      <div class="res-item">
+        <div>
+          <div class="name">${escapeHtml(name)} ${r.guestCount ? '<span style="color:#6b7280;font-size:11px">'+r.guestCount+'名</span>' : ''}</div>
+          <div class="meta">${time}${phone ? ' / ' + escapeHtml(phone) : ''}</div>
+        </div>
+        <span class="badge ${badgeClass}">${badgeLabel}</span>
+      </div>`;
+  }
+  document.getElementById('popupBody').innerHTML = html;
+  document.getElementById('popupOverlay').classList.add('show');
+}
+
+function closePopup() {
+  document.getElementById('popupOverlay').classList.remove('show');
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s == null ? '' : s);
+  return d.innerHTML;
+}
+
+function inferCategory(r) {
+  const room = (r.roomIds && r.roomIds[0]) || '';
+  const norm = room === 'sauna_share' ? 'sauna' : room;
+  const def = ROOMS.find(x => x.id === norm);
+  return def ? def.category : 'all';
+}
+
+function inferTime(r, ds) {
+  if (!Array.isArray(r.slots)) return '';
+  const hours = r.slots
+    .filter(k => k.split('|')[1] === ds)
+    .map(k => parseInt(k.split('|')[2], 10))
+    .sort((a, b) => a - b);
+  if (hours.length === 0) {
+    // 翌朝食い込み（前日宿泊）
+    return '前泊継続';
+  }
+  const first = hours[0];
+  const last = hours[hours.length - 1];
+  return `${first}:00〜${last + 1}:00`;
+}
+
+function formatDateLabel(ds) {
+  const [y, m, d] = ds.split('-').map(Number);
+  const dow = '日月火水木金土'[new Date(y, m - 1, d).getDay()];
+  let label = `${y}年${m}月${d}日（${dow}）`;
+  if (FUTAMI_DAYS.has(ds)) label += ' ★ふたみの日';
+  return label;
+}
+
+// ===== ナビゲーション =====
+function changeMonth(delta) {
+  currentMonth.month += delta;
+  if (currentMonth.month > 12) { currentMonth.month = 1; currentMonth.year++; }
+  if (currentMonth.month < 1) { currentMonth.month = 12; currentMonth.year--; }
+  render();
+}
+function goToday() {
+  const d = new Date();
+  currentMonth = { year: d.getFullYear(), month: d.getMonth() + 1 };
+  render();
+}
+function setCategory(cat) {
+  currentCategory = cat;
+  document.querySelectorAll('.cat-btn').forEach(el => {
+    el.classList.toggle('active', el.dataset.cat === cat);
+  });
+  render();
+}
+
+// ===== 初期化 =====
+loadData();
+</script>
+</body>
+</html>
