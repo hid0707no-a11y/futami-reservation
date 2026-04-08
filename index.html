@@ -2557,6 +2557,14 @@ function renderHourlyGrid() {
 
   let html = '';
   if (isTennis) {
+    // 既に選択中の枠が占有してる30分スロット集合を計算
+    const occupiedByMe = new Set();
+    for (const sk of state.selectedHours) {
+      if (typeof sk === 'string' && /^\d{4}$/.test(sk)) {
+        occupiedByMe.add(sk);
+        occupiedByMe.add(addMinutes(sk, 30));
+      }
+    }
     // 30分刻みで1時間枠を生成: 8:00-9:00, 8:30-9:30, ..., 21:00-22:00
     for (let totalMin = range.start * 60; totalMin + 60 <= range.end * 60; totalMin += 30) {
       const sH = Math.floor(totalMin / 60);
@@ -2567,13 +2575,20 @@ function renderHourlyGrid() {
       const sLabel = `${String(sH).padStart(2,'0')}:${String(sM).padStart(2,'0')}`;
       const eLabel = `${String(eH).padStart(2,'0')}:${String(eM).padStart(2,'0')}`;
       const startKey = `${String(sH).padStart(2,'0')}${String(sM).padStart(2,'0')}`;
-      const midKey = `${String(sH).padStart(2,'0')}${String(sM === 0 ? 30 : 30).padStart(2,'0')}`;
-      // 同時間枠の2スロット（startKey, midKey）両方が空いてるか
-      const avail = isTennisSlotFree(roomId, date, startKey)
-                 && isTennisSlotFree(roomId, date, addMinutes(startKey, 30));
-      const cls = avail ? '' : ' unavailable';
-      const sel = state.selectedHours.includes(startKey) ? ' selected' : '';
-      html += '<div class="hourly-slot' + cls + sel + '" onclick="toggleHour(\'' + startKey + '\', this, ' + avail + ')">' + sLabel + '〜' + eLabel + '</div>';
+      const midSlot = addMinutes(startKey, 30);
+      const isSelected = state.selectedHours.includes(startKey);
+      // 1) 他の予約と衝突
+      const apiAvail = isTennisSlotFree(roomId, date, startKey)
+                    && isTennisSlotFree(roomId, date, midSlot);
+      // 2) 自分の他の選択と重複
+      let overlapMine = false;
+      if (!isSelected) {
+        if (occupiedByMe.has(startKey) || occupiedByMe.has(midSlot)) overlapMine = true;
+      }
+      const avail = apiAvail && !overlapMine;
+      const cls = avail || isSelected ? '' : ' unavailable';
+      const sel = isSelected ? ' selected' : '';
+      html += '<div class="hourly-slot' + cls + sel + '" onclick="toggleHour(\'' + startKey + '\', this, ' + (avail || isSelected) + ')">' + sLabel + '〜' + eLabel + '</div>';
     }
   } else {
     // 既存: 1時間単位（ロッジ等）
@@ -2618,11 +2633,11 @@ function toggleHour(hour, el, avail) {
   const idx = state.selectedHours.indexOf(hour);
   if (idx >= 0) {
     state.selectedHours.splice(idx, 1);
-    el.classList.remove('selected');
   } else {
     state.selectedHours.push(hour);
-    el.classList.add('selected');
   }
+  // テニスは重複制御のため再描画
+  renderHourlyGrid();
   updateBookingPriceSummary();
 }
 
