@@ -1369,6 +1369,7 @@ function updateBackButton() {
 
 // Firestore API から読み込む占有スロット集合
 const OCCUPIED_SLOTS = new Set();
+const SHARED_SLOTS = {}; // ふたみの日サウナ用 { slotKey: {capacity, used, remaining} }
 let DATA_LOADED = false;
 
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
@@ -1381,8 +1382,13 @@ async function loadAvailabilityData() {
     const data = await res.json();
     OCCUPIED_SLOTS.clear();
     (data.occupiedSlots || []).forEach(s => OCCUPIED_SLOTS.add(s));
+    // 共有スロット（ふたみの日）
+    Object.keys(SHARED_SLOTS).forEach(k => delete SHARED_SLOTS[k]);
+    if (data.sharedSlots) {
+      Object.assign(SHARED_SLOTS, data.sharedSlots);
+    }
     DATA_LOADED = true;
-    console.log('[api] loaded', OCCUPIED_SLOTS.size, 'occupied slots from API');
+    console.log('[api] loaded', OCCUPIED_SLOTS.size, 'occupied slots,', Object.keys(SHARED_SLOTS).length, 'shared slots');
     // 既に表示中の画面があれば再描画
     if (typeof renderSearchResults === 'function' && state.flow === 'date' && state.searchDate) {
       renderSearchResults();
@@ -1411,12 +1417,30 @@ async function submitReservation(payload) {
   });
   const data = await res.json();
   if (res.status === 409) {
+    if (data.error === 'capacity_exceeded') {
+      throw { code: 'capacity_exceeded', fullSlots: data.fullSlots, requested: data.requested };
+    }
     throw { code: 'slot_conflict', conflicts: data.conflicts };
   }
   if (!res.ok) {
     throw { code: 'api_error', detail: data };
   }
   return data;
+}
+
+// ふたみの日サウナの残席チェック（プランの全スロットでの最小残席数を返す）
+function getFutamiSaunaRemaining(plan, dateStr) {
+  if (!plan || plan.planType !== 'sauna') return 8;
+  const slots = Array.isArray(plan.slots) ? plan.slots : [];
+  if (slots.length === 0) return 8;
+  let minRemain = 8;
+  for (const h of slots) {
+    const key = `sauna_share|${dateStr}|${h}`;
+    const info = SHARED_SLOTS[key];
+    const remain = info ? info.remaining : 8;
+    if (remain < minRemain) minRemain = remain;
+  }
+  return Math.max(0, minRemain);
 }
 
 // 特定の部屋+日付+時間スロットが空いているか
@@ -2128,16 +2152,22 @@ function showRoomBooking() {
 
   } else if (pt === 'sauna') {
     const futamiDay = isFutamiDay(state.selectedDate);
+    const futamiRemain = futamiDay ? getFutamiSaunaRemaining(plan, state.selectedDate) : 8;
 
     if (futamiDay) {
       html += '<div style="background:#fff3e0;border:2px solid #f5a623;border-radius:12px;padding:12px 14px;margin-bottom:12px;text-align:center">';
-      html += '<div style="font-size:1.1rem;font-weight:700;color:#e65100">&#x1F389; ふたみの日 特別プラン</div>';
-      html += '<div style="font-size:0.85rem;color:#bf360c;margin-top:4px">毎月23日は「ふたみの日」！おひとり様 2,300円でサウナ体験</div>';
+      html += '<div style="font-size:1.1rem;font-weight:700;color:#e65100">&#x1F389; Futami Special Day</div>';
+      html += '<div style="font-size:0.85rem;color:#bf360c;margin-top:4px">毎月23日は「ふたみの日」！おひとり様 2,300円（税込）でサウナ体験</div>';
+      html += '<div style="font-size:0.9rem;color:#bf360c;margin-top:6px;font-weight:700">この時間帯の残席：' + futamiRemain + ' / 8 名</div>';
       html += '</div>';
     }
 
     html += '<div class="form-group">';
-    html += '<label class="form-label">ご利用人数（8名まで）</label>';
+    if (futamiDay) {
+      html += '<label class="form-label">ご利用人数（残席' + futamiRemain + '名まで）</label>';
+    } else {
+      html += '<label class="form-label">ご利用人数（8名まで）</label>';
+    }
     html += '<div class="stepper">';
     html += '<button class="stepper-btn" onclick="stepBookingGuests(-1)">-</button>';
     html += '<span class="stepper-value" id="booking-guest-count">' + state.guests + '</span>';
@@ -2362,7 +2392,13 @@ function stepExtra(extraId, delta) {
    ================================================================ */
 function stepBookingGuests(delta) {
   const room = ROOMS.find(r => r.id === state.selectedRoomId);
-  const max = room ? room.capacity : 50;
+  let max = room ? room.capacity : 50;
+  // ふたみの日サウナの場合は残席で上限制限
+  const plan = state.selectedPlan;
+  if (plan && plan.planType === 'sauna' && isFutamiDay(state.selectedDate)) {
+    const remain = getFutamiSaunaRemaining(plan, state.selectedDate);
+    max = Math.min(max, remain);
+  }
   state.guests = Math.max(1, Math.min(max, state.guests + delta));
   const el = document.getElementById('booking-guest-count');
   if (el) el.textContent = state.guests;
@@ -2785,11 +2821,15 @@ async function submitBooking() {
 
   const plan = state.selectedPlan;
 
+  // === ふたみの日サウナ判定 ===
+  const isFutamiSauna = plan.planType === 'sauna' && isFutamiDay(state.selectedDate);
+
   // === API送信用 slot キー配列を生成 ===
   let slotKeys = [];
   try {
     const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
-    const roomId = state.selectedRoomId;
+    // ふたみの日は sauna_share、それ以外は通常の roomId
+    const roomId = isFutamiSauna ? 'sauna_share' : state.selectedRoomId;
     slotKeys = expanded.map(s => roomId + '|' + s.date + '|' + s.hour);
   } catch (e) {
     console.error('slot expand error', e);
@@ -2803,9 +2843,11 @@ async function submitBooking() {
       const endDate = (state.selectedNights && state.selectedNights > 0)
         ? slotKeys[slotKeys.length - 1].split('|')[1]
         : startDate;
-      const apiResult = await submitReservation({
-        planId: plan.id,
-        roomIds: [state.selectedRoomId],
+      // ふたみの日サウナの場合は人数を guestCount に。state.guests がサウナの人数。
+      const futamiSeats = isFutamiSauna ? (state.guests || 1) : null;
+      const payload = {
+        planId: isFutamiSauna ? 'plan_sauna_futami' : plan.id,
+        roomIds: [isFutamiSauna ? 'sauna_share' : state.selectedRoomId],
         slots: slotKeys,
         startDate,
         endDate,
@@ -2815,13 +2857,22 @@ async function submitBooking() {
         pricing: { basePrice: 0, personFee: 0, optionFee: 0, total: state.totalPrice || 0 },
         note,
         createdBy: 'web',
-      });
+      };
+      if (isFutamiSauna) payload.guestCount = futamiSeats;
+      const apiResult = await submitReservation(payload);
       apiResId = apiResult.reservationId;
       // 即座にOCCUPIED_SLOTSに反映（再ロードまで待たない）
-      slotKeys.forEach(k => OCCUPIED_SLOTS.add(k));
+      if (!isFutamiSauna) {
+        slotKeys.forEach(k => OCCUPIED_SLOTS.add(k));
+      }
     } catch (e) {
       if (e && e.code === 'slot_conflict') {
         alert('申し訳ありません、その時間帯は先ほど他の方が予約されました。お手数ですが、もう一度お選びください。');
+        await loadAvailabilityData();
+        return;
+      }
+      if (e && e.code === 'capacity_exceeded') {
+        alert('申し訳ありません、ふたみの日の残席が不足しています。人数を減らすか、別の時間帯をお選びください。');
         await loadAvailabilityData();
         return;
       }
