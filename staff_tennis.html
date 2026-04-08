@@ -234,8 +234,14 @@ const COURTS = [
   { id: 'court_wall', label: '壁' },
 ];
 
-const HOURS = [];
-for (let h = 8; h <= 21; h++) HOURS.push(h);
+// 30分単位の時刻スロット ("0800", "0830", "0900", ..., "2130")
+const TIME_SLOTS = [];
+for (let h = 8; h <= 21; h++) {
+  TIME_SLOTS.push(`${String(h).padStart(2,'0')}00`);
+  TIME_SLOTS.push(`${String(h).padStart(2,'0')}30`);
+}
+function timeLabel(t) { return `${t.slice(0,2)}:${t.slice(2)}`; }
+function isHourStart(t) { return t.endsWith('00'); }
 
 // 予約者名 → 色のマッピング（同じ名前なら同じ色）
 const NAME_COLORS = [
@@ -287,7 +293,8 @@ async function loadData() {
 }
 setInterval(loadData, 60000);
 
-// (date, courtId, hour) → reservation を引くマップ
+// (date, courtId, time) → reservation を引くマップ
+// time は "0900" 形式（30分単位）
 function buildLookup() {
   const map = {};
   for (const r of RESERVATIONS) {
@@ -298,9 +305,21 @@ function buildLookup() {
       const courtId = parts[0];
       if (!courtId.startsWith('court_')) continue;
       const date = parts[1];
-      const hour = parseInt(parts[2], 10);
-      const key = `${date}|${courtId}|${hour}`;
-      map[key] = r;
+      const time = parts[2];
+      // 旧形式（hour整数）も30分単位に変換
+      let normalizedTimes = [];
+      if (/^\d{4}$/.test(time)) {
+        normalizedTimes = [time];
+      } else {
+        // hour整数 → "HH00" と "HH30" 両方
+        const h = parseInt(time, 10);
+        if (!isNaN(h)) {
+          normalizedTimes = [`${String(h).padStart(2,'0')}00`, `${String(h).padStart(2,'0')}30`];
+        }
+      }
+      for (const t of normalizedTimes) {
+        map[`${date}|${courtId}|${t}`] = r;
+      }
     }
   }
   return map;
@@ -313,11 +332,15 @@ function render() {
   const today = todayStr();
   const lookup = buildLookup();
 
-  // ヘッダー
+  // ヘッダー（30分単位）
   let html = '<thead><tr>';
   html += '<th class="day-cell">日</th>';
   html += '<th class="court-label">コート</th>';
-  for (const h of HOURS) html += `<th>${h}</th>`;
+  for (const t of TIME_SLOTS) {
+    const cls = isHourStart(t) ? 'style="border-left:2px solid #b45309"' : '';
+    const label = isHourStart(t) ? t.slice(0,2) : '';
+    html += `<th ${cls}>${label}</th>`;
+  }
   html += '</tr></thead><tbody>';
 
   // 各日 × 各コートで行を作成
@@ -340,29 +363,33 @@ function render() {
       }
       html += `<td class="court-label">${court.label}</td>`;
 
-      // 各時間セル
-      for (const h of HOURS) {
-        if (isClosed) {
-          if (h === 13) {
-            // 中央セルに「定休日」
-            html += `<td class="closed-cell" colspan="${HOURS.length}" style="text-align:center">定 休 日</td>`;
-            // 残りはスキップ
-            break;
+      // 各時間セル（30分単位）
+      if (isClosed) {
+        html += `<td class="closed-cell" colspan="${TIME_SLOTS.length}" style="text-align:center">定 休 日</td>`;
+      } else {
+        for (let ti = 0; ti < TIME_SLOTS.length; ti++) {
+          const t = TIME_SLOTS[ti];
+          const key = `${ds}|${court.id}|${t}`;
+          const res = lookup[key];
+          const borderStyle = isHourStart(t) ? 'border-left:2px solid #b45309;' : '';
+          if (res) {
+            // 同じ予約が前のセルにも続いてるかチェック
+            const prevT = ti > 0 ? TIME_SLOTS[ti - 1] : null;
+            const prevKey = prevT ? `${ds}|${court.id}|${prevT}` : null;
+            const prevRes = prevKey ? lookup[prevKey] : null;
+            const isContinuation = prevRes && prevRes.id === res.id;
+            const name = (res.customer && res.customer.name) || '?';
+            const color = colorForName(name);
+            // 連続セルの最初だけ名前表示
+            if (isContinuation) {
+              html += `<td class="booked" style="background:${color};${borderStyle}" onclick="showDetail('${res.id}')"></td>`;
+            } else {
+              const short = name.length > 4 ? name.slice(0, 3) + '…' : name;
+              html += `<td class="booked" style="background:${color};${borderStyle}" onclick="showDetail('${res.id}')">${escapeHtml(short)}</td>`;
+            }
           } else {
-            // 中央以外は colspan に吸収されるためここでは出力しない
-            // ただし最初のループ以降は continue
-            continue;
+            html += `<td style="${borderStyle}"></td>`;
           }
-        }
-        const key = `${ds}|${court.id}|${h}`;
-        const res = lookup[key];
-        if (res) {
-          const name = (res.customer && res.customer.name) || '?';
-          const short = name.length > 6 ? name.slice(0, 5) + '…' : name;
-          const color = colorForName(name);
-          html += `<td class="booked" style="background:${color}" onclick="showDetail('${res.id}')">${escapeHtml(short)}</td>`;
-        } else {
-          html += `<td></td>`;
         }
       }
       html += '</tr>';
@@ -378,18 +405,39 @@ function showDetail(resId) {
   if (!r) return;
   document.getElementById('popupTitle').textContent = (r.customer && r.customer.name) || '予約';
   document.getElementById('popupSub').textContent = `${r.startDate}`;
-  // 占有時間と部屋を整理
+  // 占有時間と部屋を整理（30分単位）
   const courts = {};
   for (const k of r.slots) {
-    const [c, , h] = k.split('|');
+    const parts = k.split('|');
+    if (parts.length !== 3) continue;
+    const c = parts[0];
+    const t = parts[2];
     if (!courts[c]) courts[c] = [];
-    courts[c].push(parseInt(h, 10));
+    // 30分単位に正規化
+    if (/^\d{4}$/.test(t)) {
+      courts[c].push(t);
+    } else {
+      const h = parseInt(t, 10);
+      if (!isNaN(h)) {
+        courts[c].push(`${String(h).padStart(2,'0')}00`);
+        courts[c].push(`${String(h).padStart(2,'0')}30`);
+      }
+    }
   }
   let body = '';
-  for (const [cid, hours] of Object.entries(courts)) {
+  for (const [cid, times] of Object.entries(courts)) {
     const courtLabel = (COURTS.find(x => x.id === cid) || {}).label || cid;
-    hours.sort((a, b) => a - b);
-    body += `<div class="row"><span class="lbl">${courtLabel}コート</span><span>${hours[0]}:00〜${hours[hours.length - 1] + 1}:00</span></div>`;
+    times.sort();
+    const first = times[0];
+    const last = times[times.length - 1];
+    // 終了 = last + 30分
+    const lastH = parseInt(last.slice(0,2), 10);
+    const lastM = parseInt(last.slice(2), 10);
+    const endM = lastM + 30;
+    const endH = lastH + Math.floor(endM / 60);
+    const endMin = endM % 60;
+    const endLabel = `${String(endH).padStart(2,'0')}:${String(endMin).padStart(2,'0')}`;
+    body += `<div class="row"><span class="lbl">${courtLabel}コート</span><span>${timeLabel(first)}〜${endLabel}</span></div>`;
   }
   if (r.customer && r.customer.phone) {
     body += `<div class="row"><span class="lbl">電話</span><a href="tel:${r.customer.phone}">${r.customer.phone}</a></div>`;
