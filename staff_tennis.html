@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1e3a8a">
+<title>テニスコート予約者一覧表</title>
+<style>
+:root {
+  --navy: #1e3a8a;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-700: #374151;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+  margin: 0;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 13px;
+}
+.header {
+  background: var(--navy);
+  color: #fff;
+  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.header-title { font-weight: 700; font-size: 16px; margin-bottom: 8px; }
+.header-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.header button, .header a {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.header .month-label {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 0 8px;
+  min-width: 130px;
+  text-align: center;
+}
+.header .today-btn { background: #fbbf24; color: #78350f; }
+.header .back-btn { background: #f3f4f6; color: var(--navy); }
+.header .print-btn { background: #10b981; color: #fff; }
+
+.scroll-wrapper {
+  overflow: auto;
+  max-height: calc(100vh - 80px);
+  background: #fff;
+}
+.tennis-table {
+  border-collapse: collapse;
+  background: #fff;
+  font-size: 11px;
+  margin: 12px;
+}
+.tennis-table th, .tennis-table td {
+  border: 1px solid var(--gray-300);
+  padding: 0;
+  text-align: center;
+  height: 22px;
+  min-width: 38px;
+}
+.tennis-table thead th {
+  background: #fef3c7;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 6px 0;
+  font-size: 11px;
+}
+.tennis-table .day-cell {
+  background: #f9fafb;
+  font-weight: 700;
+  width: 50px;
+  min-width: 50px;
+  font-size: 13px;
+  vertical-align: middle;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+}
+.tennis-table .day-cell.weekend-sat { color: #2563eb; background: #eff6ff; }
+.tennis-table .day-cell.weekend-sun { color: #dc2626; background: #fef2f2; }
+.tennis-table .day-cell.today { box-shadow: inset 0 0 0 3px #fbbf24; }
+.tennis-table .court-label {
+  background: #fffbeb;
+  font-weight: 700;
+  width: 28px;
+  min-width: 28px;
+  font-size: 11px;
+  color: #b45309;
+  position: sticky;
+  left: 50px;
+  z-index: 9;
+}
+.tennis-table .closed-cell {
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 10px;
+  font-weight: 600;
+}
+.tennis-table .booked {
+  font-size: 9px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px;
+}
+.day-row-divider { border-top: 2px solid var(--navy) !important; }
+
+/* 印刷用 */
+@media print {
+  .header { display: none; }
+  .scroll-wrapper { max-height: none; overflow: visible; }
+  .tennis-table { font-size: 9px; margin: 0; }
+  .tennis-table th, .tennis-table td { height: 16px; min-width: 28px; }
+  body { background: #fff; }
+}
+
+/* ポップアップ */
+.popup-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.popup-overlay.show { display: flex; }
+.popup-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  max-width: 360px;
+  width: 100%;
+  position: relative;
+}
+.popup-card h3 { margin: 0 0 6px; font-size: 16px; color: var(--navy); }
+.popup-card .sub { color: #6b7280; font-size: 12px; margin-bottom: 12px; }
+.popup-card .close-btn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.popup-card .row {
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.popup-card .row:last-child { border-bottom: none; }
+.popup-card .row .lbl { color: #6b7280; }
+
+#syncIndicator {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(40,140,80,0.85);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-size: 11px;
+  z-index: 999;
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-title">🎾 テニスコート予約者一覧表</div>
+  <div class="header-row">
+    <button onclick="changeMonth(-1)">◀</button>
+    <div class="month-label" id="monthLabel">2026年4月</div>
+    <button onclick="changeMonth(1)">▶</button>
+    <button class="today-btn" onclick="goToday()">今月</button>
+    <button class="print-btn" onclick="window.print()">🖨 印刷</button>
+    <a href="staff2.html" class="back-btn">📅 月俯瞰</a>
+    <a href="staff.html" class="back-btn">📋 詳細</a>
+  </div>
+</header>
+
+<div class="scroll-wrapper">
+  <table class="tennis-table" id="tennisTable"></table>
+</div>
+
+<!-- ポップアップ -->
+<div class="popup-overlay" id="popupOverlay" onclick="if(event.target===this)closePopup()">
+  <div class="popup-card">
+    <button class="close-btn" onclick="closePopup()">×</button>
+    <h3 id="popupTitle">予約詳細</h3>
+    <div class="sub" id="popupSub"></div>
+    <div id="popupBody"></div>
+  </div>
+</div>
+
+<div id="syncIndicator">読み込み中...</div>
+
+<script>
+const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
+const STAFF_API_KEY = 'dev-key-change-me';
+
+const COURTS = [
+  { id: 'court_1', label: 'A' },
+  { id: 'court_2', label: 'B' },
+  { id: 'court_3', label: 'C' },
+  { id: 'court_4', label: 'D' },
+  { id: 'court_5', label: 'E' },
+  { id: 'court_wall', label: '壁' },
+];
+
+const HOURS = [];
+for (let h = 8; h <= 21; h++) HOURS.push(h);
+
+// 予約者名 → 色のマッピング（同じ名前なら同じ色）
+const NAME_COLORS = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+  '#14b8a6', '#a855f7', '#0ea5e9', '#65a30d', '#dc2626',
+];
+function colorForName(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return NAME_COLORS[Math.abs(hash) % NAME_COLORS.length];
+}
+
+let currentMonth = (function() {
+  const d = new Date();
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+})();
+let RESERVATIONS = [];
+let LAST_SYNC = null;
+
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+function dateStr(y, m, d) { return `${y}-${pad(m)}-${pad(d)}`; }
+function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+function dayOfWeek(y, m, d) { return new Date(y, m - 1, d).getDay(); }
+function todayStr() {
+  const d = new Date();
+  return dateStr(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+async function loadData() {
+  document.getElementById('syncIndicator').textContent = '同期中...';
+  document.getElementById('syncIndicator').style.background = 'rgba(100,100,100,0.85)';
+  try {
+    const res = await fetch(API_BASE + '/listReservations?key=' + encodeURIComponent(STAFF_API_KEY) + '&t=' + Date.now());
+    const data = await res.json();
+    // テニスコートのみ
+    RESERVATIONS = (data.reservations || [])
+      .filter(r => r.status !== 'cancelled')
+      .filter(r => Array.isArray(r.roomIds) && r.roomIds.some(id => id.startsWith('court_')));
+    LAST_SYNC = new Date();
+    document.getElementById('syncIndicator').textContent = '最終同期: ' + LAST_SYNC.toLocaleTimeString();
+    document.getElementById('syncIndicator').style.background = 'rgba(40,140,80,0.85)';
+    render();
+  } catch (e) {
+    console.error('load failed', e);
+    document.getElementById('syncIndicator').textContent = '同期エラー';
+    document.getElementById('syncIndicator').style.background = 'rgba(220,40,40,0.85)';
+  }
+}
+setInterval(loadData, 60000);
+
+// (date, courtId, hour) → reservation を引くマップ
+function buildLookup() {
+  const map = {};
+  for (const r of RESERVATIONS) {
+    if (!Array.isArray(r.slots)) continue;
+    for (const k of r.slots) {
+      const parts = k.split('|');
+      if (parts.length !== 3) continue;
+      const courtId = parts[0];
+      if (!courtId.startsWith('court_')) continue;
+      const date = parts[1];
+      const hour = parseInt(parts[2], 10);
+      const key = `${date}|${courtId}|${hour}`;
+      map[key] = r;
+    }
+  }
+  return map;
+}
+
+function render() {
+  const { year, month } = currentMonth;
+  document.getElementById('monthLabel').textContent = `${year}年${month}月`;
+  const days = daysInMonth(year, month);
+  const today = todayStr();
+  const lookup = buildLookup();
+
+  // ヘッダー
+  let html = '<thead><tr>';
+  html += '<th class="day-cell">日</th>';
+  html += '<th class="court-label">コート</th>';
+  for (const h of HOURS) html += `<th>${h}</th>`;
+  html += '</tr></thead><tbody>';
+
+  // 各日 × 各コートで行を作成
+  for (let d = 1; d <= days; d++) {
+    const ds = dateStr(year, month, d);
+    const dow = dayOfWeek(year, month, d);
+    const dowLabel = '日月火水木金土'[dow];
+    const isClosed = (dow === 2); // 火曜定休
+    let dayCellCls = 'day-cell';
+    if (dow === 0) dayCellCls += ' weekend-sun';
+    if (dow === 6) dayCellCls += ' weekend-sat';
+    if (ds === today) dayCellCls += ' today';
+
+    for (let ci = 0; ci < COURTS.length; ci++) {
+      const court = COURTS[ci];
+      const rowCls = (ci === 0 && d > 1) ? ' class="day-row-divider"' : '';
+      html += `<tr${rowCls}>`;
+      if (ci === 0) {
+        html += `<td class="${dayCellCls}" rowspan="${COURTS.length}">${d}<br><span style="font-size:10px;font-weight:normal">(${dowLabel})</span></td>`;
+      }
+      html += `<td class="court-label">${court.label}</td>`;
+
+      // 各時間セル
+      for (const h of HOURS) {
+        if (isClosed) {
+          if (h === 13) {
+            // 中央セルに「定休日」
+            html += `<td class="closed-cell" colspan="${HOURS.length}" style="text-align:center">定 休 日</td>`;
+            // 残りはスキップ
+            break;
+          } else {
+            // 中央以外は colspan に吸収されるためここでは出力しない
+            // ただし最初のループ以降は continue
+            continue;
+          }
+        }
+        const key = `${ds}|${court.id}|${h}`;
+        const res = lookup[key];
+        if (res) {
+          const name = (res.customer && res.customer.name) || '?';
+          const short = name.length > 6 ? name.slice(0, 5) + '…' : name;
+          const color = colorForName(name);
+          html += `<td class="booked" style="background:${color}" onclick="showDetail('${res.id}')">${escapeHtml(short)}</td>`;
+        } else {
+          html += `<td></td>`;
+        }
+      }
+      html += '</tr>';
+    }
+  }
+
+  html += '</tbody>';
+  document.getElementById('tennisTable').innerHTML = html;
+}
+
+function showDetail(resId) {
+  const r = RESERVATIONS.find(x => x.id === resId);
+  if (!r) return;
+  document.getElementById('popupTitle').textContent = (r.customer && r.customer.name) || '予約';
+  document.getElementById('popupSub').textContent = `${r.startDate}`;
+  // 占有時間と部屋を整理
+  const courts = {};
+  for (const k of r.slots) {
+    const [c, , h] = k.split('|');
+    if (!courts[c]) courts[c] = [];
+    courts[c].push(parseInt(h, 10));
+  }
+  let body = '';
+  for (const [cid, hours] of Object.entries(courts)) {
+    const courtLabel = (COURTS.find(x => x.id === cid) || {}).label || cid;
+    hours.sort((a, b) => a - b);
+    body += `<div class="row"><span class="lbl">${courtLabel}コート</span><span>${hours[0]}:00〜${hours[hours.length - 1] + 1}:00</span></div>`;
+  }
+  if (r.customer && r.customer.phone) {
+    body += `<div class="row"><span class="lbl">電話</span><a href="tel:${r.customer.phone}">${r.customer.phone}</a></div>`;
+  }
+  if (r.note) {
+    body += `<div class="row"><span class="lbl">備考</span><span>${escapeHtml(r.note)}</span></div>`;
+  }
+  document.getElementById('popupBody').innerHTML = body;
+  document.getElementById('popupOverlay').classList.add('show');
+}
+
+function closePopup() {
+  document.getElementById('popupOverlay').classList.remove('show');
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s == null ? '' : s);
+  return d.innerHTML;
+}
+
+function changeMonth(delta) {
+  currentMonth.month += delta;
+  if (currentMonth.month > 12) { currentMonth.month = 1; currentMonth.year++; }
+  if (currentMonth.month < 1) { currentMonth.month = 12; currentMonth.year--; }
+  render();
+}
+function goToday() {
+  const d = new Date();
+  currentMonth = { year: d.getFullYear(), month: d.getMonth() + 1 };
+  render();
+}
+
+loadData();
+</script>
+</body>
+</html>

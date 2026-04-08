@@ -237,6 +237,7 @@ body {
     <button onclick="changeMonth(1)">▶</button>
     <button class="today-btn" onclick="goToday()">今月</button>
     <a href="staff.html" class="back-btn">📋 詳細</a>
+    <a href="staff_tennis.html" class="back-btn" style="background:#fef3c7;color:#b45309">🎾 テニス</a>
   </div>
   <div class="cat-tabs">
     <button class="cat-btn active" data-cat="all" onclick="setCategory('all')">すべて</button>
@@ -290,12 +291,7 @@ const ROOMS = [
   // 日帰り
   { id: 'room_train', name: '研修室', building: '日帰り施設', category: 'day' },
   { id: 'room_kitchen', name: '厨房・食堂', building: '日帰り施設', category: 'day' },
-  // スポーツ
-  { id: 'court_1', name: 'Aコート', building: 'テニスコート', category: 'sport' },
-  { id: 'court_2', name: 'Bコート', building: 'テニスコート', category: 'sport' },
-  { id: 'court_3', name: 'Cコート', building: 'テニスコート', category: 'sport' },
-  { id: 'court_4', name: 'Dコート', building: 'テニスコート', category: 'sport' },
-  { id: 'court_5', name: 'Eコート', building: 'テニスコート', category: 'sport' },
+  // スポーツ（テニスは別画面 staff_tennis.html）
   { id: 'midori', name: 'みどりの広場', building: 'スポーツ施設', category: 'sport' },
   // サウナ
   { id: 'sauna', name: 'サンセットサウナ', building: 'サウナ', category: 'sauna' },
