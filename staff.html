@@ -838,35 +838,24 @@ const STAFF_API_KEY = 'dev-key-change-me'; // TODO: 本番強化
 let GCAL_BOOKINGS = [];
 let LAST_SYNC_AT = null;
 
-// API レスポンスの予約 → staff用形式に変換
+// API レスポンスの予約 → staff用形式に変換（複数部屋なら複数レコード）
 function convertApiReservation(r) {
-  // slots 配列をパース。当日hours と 翌日hours を分けて持つ
-  const todayHours = [];
-  const nextDayHours = [];
-  let roomId = (r.roomIds && r.roomIds[0]) || '';
-  // sauna_share（ふたみの日）は staff画面では sauna として表示
-  if (roomId === 'sauna_share') roomId = 'sauna';
+  // 部屋一覧（重複排除＋sauna_share→sauna 変換）
+  const allRooms = new Set();
+  if (Array.isArray(r.roomIds)) {
+    for (const rid of r.roomIds) {
+      allRooms.add(rid === 'sauna_share' ? 'sauna' : rid);
+    }
+  }
   if (Array.isArray(r.slots)) {
     for (const k of r.slots) {
       const parts = k.split('|');
       if (parts.length === 3) {
-        if (!roomId) roomId = parts[0];
-        const slotDate = parts[1];
-        const hour = parseInt(parts[2], 10);
-        if (slotDate === r.startDate) todayHours.push(hour);
-        else nextDayHours.push(hour);
+        allRooms.add(parts[0] === 'sauna_share' ? 'sauna' : parts[0]);
       }
     }
   }
-  // 宿泊の場合: 当日 + 翌日(0-9表記) を1つの配列に統合（既存ロジック互換）
-  const isOverNight = nextDayHours.length > 0;
-  let combinedHours = [...todayHours];
-  if (isOverNight) {
-    // 翌日のhour（0〜9）はそのままの数値で追加。既存ロジックが a<10 なら +24 して並べる
-    nextDayHours.forEach(h => combinedHours.push(h));
-  }
 
-  // guests オブジェクト → 合計人数
   let guestsTotal = 1;
   if (r.guestCount) {
     guestsTotal = r.guestCount;
@@ -875,22 +864,44 @@ function convertApiReservation(r) {
     if (guestsTotal === 0) guestsTotal = 1;
   }
 
-  return {
-    id: r.id,
-    date: r.startDate,
-    endDate: r.endDate,
-    nights: r.nights || 0,
-    roomId,
-    planId: r.planId,
-    name: (r.customer && r.customer.name) || '',
-    phone: (r.customer && r.customer.phone) || '',
-    guests: guestsTotal,
-    slotsOverride: combinedHours.length > 0 ? combinedHours : undefined,
-    checkedIn: r.status === 'checked_in',
-    isFutamiDay: !!r.isFutamiDay,
-    guestCount: r.guestCount || null,
-    note: r.note || '',
-  };
+  const records = [];
+  const roomList = Array.from(allRooms);
+  for (const roomId of roomList) {
+    const todayHours = [];
+    const nextDayHours = [];
+    if (Array.isArray(r.slots)) {
+      for (const k of r.slots) {
+        const parts = k.split('|');
+        if (parts.length !== 3) continue;
+        const slotRoom = parts[0] === 'sauna_share' ? 'sauna' : parts[0];
+        if (slotRoom !== roomId) continue;
+        const slotDate = parts[1];
+        const hour = parseInt(parts[2], 10);
+        if (slotDate === r.startDate) todayHours.push(hour);
+        else nextDayHours.push(hour);
+      }
+    }
+    let combinedHours = [...todayHours];
+    nextDayHours.forEach(h => combinedHours.push(h));
+    records.push({
+      id: r.id + (roomList.length > 1 ? '_' + roomId : ''),
+      _origId: r.id,
+      date: r.startDate,
+      endDate: r.endDate,
+      nights: r.nights || 0,
+      roomId,
+      planId: r.planId,
+      name: (r.customer && r.customer.name) || '',
+      phone: (r.customer && r.customer.phone) || '',
+      guests: guestsTotal,
+      slotsOverride: combinedHours.length > 0 ? combinedHours : undefined,
+      checkedIn: r.status === 'checked_in',
+      isFutamiDay: !!r.isFutamiDay,
+      guestCount: r.guestCount || null,
+      note: r.note || '',
+    });
+  }
+  return records;
 }
 
 async function loadGcalData() {
@@ -901,7 +912,7 @@ async function loadGcalData() {
     const reservations = data.reservations || [];
     GCAL_BOOKINGS = reservations
       .filter(r => r.status !== 'cancelled')
-      .map(convertApiReservation);
+      .flatMap(convertApiReservation);
     LAST_SYNC_AT = new Date();
     console.log('[api] loaded', GCAL_BOOKINGS.length, 'reservations at', LAST_SYNC_AT.toLocaleTimeString());
     updateSyncIndicator();
@@ -1277,7 +1288,9 @@ function showDetail(resId) {
   }
 
   // === キャンセルボタン（要API） ===
-  html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${res.id}','${(res.name||'').replace(/'/g,'')}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
+  // 複数部屋予約の場合は _origId を使う
+  const cancelId = res._origId || res.id;
+  html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${cancelId}','${(res.name||'').replace(/'/g,'')}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
 
   document.getElementById('detailContent').innerHTML = html;
   document.getElementById('detailOverlay').classList.add('show');
