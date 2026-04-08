@@ -842,6 +842,8 @@ function convertApiReservation(r) {
   const todayHours = [];
   const nextDayHours = [];
   let roomId = (r.roomIds && r.roomIds[0]) || '';
+  // sauna_share（ふたみの日）は staff画面では sauna として表示
+  if (roomId === 'sauna_share') roomId = 'sauna';
   if (Array.isArray(r.slots)) {
     for (const k of r.slots) {
       const parts = k.split('|');
