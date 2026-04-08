@@ -9,6 +9,16 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0f3460">
 <title>ふたみ予約管理</title>
+<script>
+(function(){
+  var PW='Futamii202604', K='futami_staff_auth';
+  if(sessionStorage.getItem(K)!==PW){
+    var i=prompt('パスワードを入力してください');
+    if(i!==PW){document.documentElement.innerHTML='';location.replace('about:blank');return;}
+    sessionStorage.setItem(K,PW);
+  }
+})();
+</script>
 <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoi44G144Gf44G/5LqI57SE566h55CGIiwic2hvcnRfbmFtZSI6IuS6iOe0hOeuoeeQhiIsInN0YXJ0X3VybCI6Ii4vc3RhZmYuaHRtbCIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiMwZjM0NjAiLCJ0aGVtZV9jb2xvciI6IiMwZjM0NjAifQ==">
 <style>
 /* ===== リセット・ベース ===== */
@@ -834,7 +844,7 @@ function formatDateDisplay(d) {
 
 // ===== Firestore API 由来データ =====
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
-const STAFF_API_KEY = 'dev-key-change-me'; // TODO: 本番強化
+const STAFF_API_KEY = '9c7babba9d2e5424f25f388bb7a3f27d8ab922e9899542ece9c5e4445c60effa';
 let GCAL_BOOKINGS = [];
 let LAST_SYNC_AT = null;
 
