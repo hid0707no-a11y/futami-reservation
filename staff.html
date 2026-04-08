@@ -953,17 +953,21 @@ function getSlotMap(roomId, ds, allRes) {
   const map = {};
   for (const res of allRes) {
     if (res.roomId !== roomId) continue;
-    // 当日の予約: date === ds
-    // 前日宿泊の翌朝食い込み: date === prevDay && slotsに0-9が含まれる
     const plan = PLANS.find(p => p.id === res.planId);
-    if (!plan) continue;
-    const resSlots = res.slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
+    // plan が見つからなくても slotsOverride があれば表示する（migrated_* 対応）
+    const resSlots = res.slotsOverride || (plan && Array.isArray(plan.slots) ? plan.slots : []);
+    if (resSlots.length === 0) continue;
+    const color = plan ? plan.color : '#94a3b8';
 
     if (res.date === ds) {
-      // 当日予約 - 表示時間帯(8-21)のスロットのみマップに載せる
+      // 宿泊系プラン判定: plan.slots/resSlots に 16以降と0-9両方含む or nights>0
+      const isStay = (plan && Array.isArray(plan.slots) && plan.slots.includes(16) && plan.slots.includes(0))
+                  || (resSlots.includes(16) && resSlots.includes(0))
+                  || (res.nights && res.nights > 0);
       for (const s of resSlots) {
         if (s >= 8 && s <= 21) {
-          map[s] = { resId: res.id, planId: res.planId, color: plan.color, name: res.name, checkedIn: res.checkedIn };
+          if (isStay && s < 12) continue;
+          map[s] = { resId: res.id, planId: res.planId, color, name: res.name, checkedIn: res.checkedIn };
         }
       }
     }
@@ -982,13 +986,12 @@ function getOvernightCarryover(roomId, ds, allRes) {
   for (const res of allRes) {
     if (res.roomId !== roomId || res.date !== prevDs) continue;
     const plan = PLANS.find(p => p.id === res.planId);
-    if (!plan) continue;
-    const resSlots = res.slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
-    // 翌日にまたがるスロット（0〜9）があれば、表示用にマッピング
+    const resSlots = res.slotsOverride || (plan && Array.isArray(plan.slots) ? plan.slots : []);
+    if (resSlots.length === 0) continue;
+    const color = plan ? plan.color : '#94a3b8';
     for (const s of resSlots) {
       if (s >= 0 && s <= 9 && s >= 8) {
-        // 8, 9 のスロットが翌日朝に表示される
-        map[s] = { resId: res.id, planId: res.planId, color: plan.color, name: res.name, checkedIn: res.checkedIn, carryover: true };
+        map[s] = { resId: res.id, planId: res.planId, color, name: res.name, checkedIn: res.checkedIn, carryover: true };
       }
     }
   }
