@@ -1370,6 +1370,7 @@ function updateBackButton() {
 // Firestore API から読み込む占有スロット集合
 const OCCUPIED_SLOTS = new Set();
 const SHARED_SLOTS = {}; // ふたみの日サウナ用 { slotKey: {capacity, used, remaining} }
+const TENNIS_SLOTS = new Set(); // テニス30分単位
 let DATA_LOADED = false;
 
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
@@ -1387,8 +1388,11 @@ async function loadAvailabilityData() {
     if (data.sharedSlots) {
       Object.assign(SHARED_SLOTS, data.sharedSlots);
     }
+    // テニス30分スロット
+    TENNIS_SLOTS.clear();
+    (data.tennisSlots || []).forEach(s => TENNIS_SLOTS.add(s));
     DATA_LOADED = true;
-    console.log('[api] loaded', OCCUPIED_SLOTS.size, 'occupied slots,', Object.keys(SHARED_SLOTS).length, 'shared slots');
+    console.log('[api] loaded', OCCUPIED_SLOTS.size, 'slots,', TENNIS_SLOTS.size, 'tennis,', Object.keys(SHARED_SLOTS).length, 'shared');
     // 既に表示中の画面があれば再描画
     if (typeof renderSearchResults === 'function' && state.flow === 'date' && state.searchDate) {
       renderSearchResults();
@@ -2529,7 +2533,7 @@ function onBookingDateChange() {
 }
 
 /* ================================================================
-   HOURLY GRID (tennis, lodge day)
+   HOURLY GRID (tennis = 30分単位開始 1時間枠 / lodge day = 1時間単位)
    ================================================================ */
 function renderHourlyGrid() {
   const grid = document.getElementById('hourly-grid');
@@ -2538,16 +2542,64 @@ function renderHourlyGrid() {
   const roomId = state.selectedRoomId;
   const date = state.selectedDate;
   const range = plan.hourlyRange || { start: 8, end: 22 };
+  const isTennis = roomId && roomId.startsWith('court_');
 
   let html = '';
-  for (let h = range.start; h < range.end; h++) {
-    const avail = isSlotFree(roomId, date, h);
-    const cls = avail ? '' : ' unavailable';
-    const sel = state.selectedHours.includes(h) ? ' selected' : '';
-    const label = (h < 10 ? '0' : '') + h + ':00';
-    html += '<div class="hourly-slot' + cls + sel + '" onclick="toggleHour(' + h + ', this, ' + avail + ')">' + label + '</div>';
+  if (isTennis) {
+    // 30分刻みで1時間枠を生成: 8:00-9:00, 8:30-9:30, ..., 21:00-22:00
+    for (let totalMin = range.start * 60; totalMin + 60 <= range.end * 60; totalMin += 30) {
+      const sH = Math.floor(totalMin / 60);
+      const sM = totalMin % 60;
+      const eMin = totalMin + 60;
+      const eH = Math.floor(eMin / 60);
+      const eM = eMin % 60;
+      const sLabel = `${String(sH).padStart(2,'0')}:${String(sM).padStart(2,'0')}`;
+      const eLabel = `${String(eH).padStart(2,'0')}:${String(eM).padStart(2,'0')}`;
+      const startKey = `${String(sH).padStart(2,'0')}${String(sM).padStart(2,'0')}`;
+      const midKey = `${String(sH).padStart(2,'0')}${String(sM === 0 ? 30 : 30).padStart(2,'0')}`;
+      // 同時間枠の2スロット（startKey, midKey）両方が空いてるか
+      const avail = isTennisSlotFree(roomId, date, startKey)
+                 && isTennisSlotFree(roomId, date, addMinutes(startKey, 30));
+      const cls = avail ? '' : ' unavailable';
+      const sel = state.selectedHours.includes(startKey) ? ' selected' : '';
+      html += '<div class="hourly-slot' + cls + sel + '" onclick="toggleHour(\'' + startKey + '\', this, ' + avail + ')">' + sLabel + '〜' + eLabel + '</div>';
+    }
+  } else {
+    // 既存: 1時間単位（ロッジ等）
+    for (let h = range.start; h < range.end; h++) {
+      const avail = isSlotFree(roomId, date, h);
+      const cls = avail ? '' : ' unavailable';
+      const sel = state.selectedHours.includes(h) ? ' selected' : '';
+      const label = (h < 10 ? '0' : '') + h + ':00';
+      html += '<div class="hourly-slot' + cls + sel + '" onclick="toggleHour(' + h + ', this, ' + avail + ')">' + label + '</div>';
+    }
   }
   grid.innerHTML = html;
+}
+
+// テニス用: 30分単位スロットの空き判定
+function isTennisSlotFree(courtId, date, timeStr) {
+  // 過去判定
+  const today = getTodayStr();
+  if (date < today) return false;
+  if (date === today) {
+    const now = new Date();
+    const slotH = parseInt(timeStr.slice(0,2), 10);
+    const slotM = parseInt(timeStr.slice(2), 10);
+    const slotMin = slotH * 60 + slotM;
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (slotMin <= nowMin) return false;
+  }
+  return !TENNIS_SLOTS.has(`${courtId}|${date}|${timeStr}`);
+}
+
+function addMinutes(timeStr, mins) {
+  const h = parseInt(timeStr.slice(0,2), 10);
+  const m = parseInt(timeStr.slice(2), 10);
+  const total = h * 60 + m + mins;
+  const nh = Math.floor(total / 60);
+  const nm = total % 60;
+  return `${String(nh).padStart(2,'0')}${String(nm).padStart(2,'0')}`;
 }
 
 function toggleHour(hour, el, avail) {
@@ -2823,14 +2875,30 @@ async function submitBooking() {
 
   // === ふたみの日サウナ判定 ===
   const isFutamiSauna = plan.planType === 'sauna' && isFutamiDay(state.selectedDate);
+  // === テニス判定 ===
+  const isTennis = state.selectedRoomId && state.selectedRoomId.startsWith('court_');
 
   // === API送信用 slot キー配列を生成 ===
   let slotKeys = [];
   try {
-    const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
-    // ふたみの日は sauna_share、それ以外は通常の roomId
-    const roomId = isFutamiSauna ? 'sauna_share' : state.selectedRoomId;
-    slotKeys = expanded.map(s => roomId + '|' + s.date + '|' + s.hour);
+    if (isTennis && Array.isArray(state.selectedHours)) {
+      // テニスは selectedHours が "0900","0930"... の HHMM 開始時刻文字列
+      // 各開始時刻に対し その時刻 + 30分後 の2スロットを生成
+      const courtId = state.selectedRoomId;
+      const date = state.selectedDate;
+      const set = new Set();
+      for (const h of state.selectedHours) {
+        if (typeof h === 'string' && /^\d{4}$/.test(h)) {
+          set.add(`${courtId}|${date}|${h}`);
+          set.add(`${courtId}|${date}|${addMinutes(h, 30)}`);
+        }
+      }
+      slotKeys = Array.from(set);
+    } else {
+      const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
+      const roomId = isFutamiSauna ? 'sauna_share' : state.selectedRoomId;
+      slotKeys = expanded.map(s => roomId + '|' + s.date + '|' + s.hour);
+    }
   } catch (e) {
     console.error('slot expand error', e);
   }
@@ -2861,8 +2929,10 @@ async function submitBooking() {
       if (isFutamiSauna) payload.guestCount = futamiSeats;
       const apiResult = await submitReservation(payload);
       apiResId = apiResult.reservationId;
-      // 即座にOCCUPIED_SLOTSに反映（再ロードまで待たない）
-      if (!isFutamiSauna) {
+      // 即座にローカルSetに反映（再ロードまで待たない）
+      if (isTennis) {
+        slotKeys.forEach(k => TENNIS_SLOTS.add(k));
+      } else if (!isFutamiSauna) {
         slotKeys.forEach(k => OCCUPIED_SLOTS.add(k));
       }
     } catch (e) {
