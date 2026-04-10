@@ -1780,8 +1780,9 @@ function renderMonthlyCalendar() {
   // Disable prev button if current month is this month
   const now = new Date();
   const isPrevDisabled = (year === now.getFullYear() && month === now.getMonth());
-  // Limit forward to 6 months
-  const maxDate = new Date(now.getFullYear(), now.getMonth() + 6, 1);
+  // カテゴリ別に月送り上限を設定（宿泊12ヶ月、その他3ヶ月）
+  const fwdMonths = (fg.category === 'stay' || fg.category === 'day') ? 12 : 3;
+  const maxDate = new Date(now.getFullYear(), now.getMonth() + fwdMonths, 1);
   const isNextDisabled = (year > maxDate.getFullYear() || (year === maxDate.getFullYear() && month >= maxDate.getMonth()));
 
   let html = '<div class="section-title">' + fg.icon + ' ' + fg.name + '</div>';
