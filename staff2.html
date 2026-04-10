@@ -621,6 +621,11 @@ function renderCalendarModal() {
   html += '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">';
   html += '<input type="date" id="addForceOpen" style="padding:6px;border:1px solid #ccc;border-radius:6px;">';
   html += '<button onclick="addForceDate(\'forceOpen\')" style="padding:6px 12px;background:#16c79a;color:#fff;border:none;border-radius:6px;cursor:pointer;">追加</button></div>';
+  html += '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">';
+  html += '<input type="date" id="rangeOpenFrom" style="padding:6px;border:1px solid #ccc;border-radius:6px;width:130px;">';
+  html += '<span>〜</span>';
+  html += '<input type="date" id="rangeOpenTo" style="padding:6px;border:1px solid #ccc;border-radius:6px;width:130px;">';
+  html += '<button onclick="addForceRange(\'forceOpen\')" style="padding:6px 12px;background:#16c79a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">期間の定休日を一括営業</button></div>';
   html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">';
   (CAL_SETTINGS.forceOpen || []).sort().forEach(d => {
     html += '<span style="background:#d1fae5;padding:2px 8px;border-radius:10px;font-size:12px;">' + d +
@@ -633,6 +638,11 @@ function renderCalendarModal() {
   html += '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">';
   html += '<input type="date" id="addForceClosed" style="padding:6px;border:1px solid #ccc;border-radius:6px;">';
   html += '<button onclick="addForceDate(\'forceClosed\')" style="padding:6px 12px;background:#e94560;color:#fff;border:none;border-radius:6px;cursor:pointer;">追加</button></div>';
+  html += '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">';
+  html += '<input type="date" id="rangeClosedFrom" style="padding:6px;border:1px solid #ccc;border-radius:6px;width:130px;">';
+  html += '<span>〜</span>';
+  html += '<input type="date" id="rangeClosedTo" style="padding:6px;border:1px solid #ccc;border-radius:6px;width:130px;">';
+  html += '<button onclick="addForceRange(\'forceClosed\')" style="padding:6px 12px;background:#e94560;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">期間一括休業</button></div>';
   html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">';
   (CAL_SETTINGS.forceClosed || []).sort().forEach(d => {
     html += '<span style="background:#fecaca;padding:2px 8px;border-radius:10px;font-size:12px;">' + d +
@@ -661,6 +671,45 @@ async function addForceDate(field) {
   input.value = '';
   await saveCalendarSettings();
   renderCalendarModal();
+}
+
+async function addForceRange(field) {
+  var fromId = field === 'forceOpen' ? 'rangeOpenFrom' : 'rangeClosedFrom';
+  var toId = field === 'forceOpen' ? 'rangeOpenTo' : 'rangeClosedTo';
+  var from = document.getElementById(fromId).value;
+  var to = document.getElementById(toId).value;
+  if (!from || !to || from > to) { alert('期間を正しく指定してください'); return; }
+  if (!CAL_SETTINGS[field]) CAL_SETTINGS[field] = [];
+  var closedDays = CAL_SETTINGS.defaultClosedDays || [2];
+  var d = new Date(from + 'T00:00:00');
+  var end = new Date(to + 'T00:00:00');
+  var count = 0;
+  while (d <= end) {
+    var ds = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    if (field === 'forceOpen') {
+      // 定休曜日に該当する日だけ追加
+      if (closedDays.includes(d.getDay()) && !CAL_SETTINGS.forceOpen.includes(ds)) {
+        CAL_SETTINGS.forceOpen.push(ds);
+        count++;
+      }
+    } else {
+      // 営業日（定休曜日でない日）だけ追加
+      if (!closedDays.includes(d.getDay()) && !CAL_SETTINGS.forceClosed.includes(ds)) {
+        CAL_SETTINGS.forceClosed.push(ds);
+        count++;
+      }
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  document.getElementById(fromId).value = '';
+  document.getElementById(toId).value = '';
+  if (count > 0) {
+    await saveCalendarSettings();
+    renderCalendarModal();
+    alert(count + '日追加しました');
+  } else {
+    alert('追加対象の日がありませんでした');
+  }
 }
 
 async function removeForceDate(field, date) {
