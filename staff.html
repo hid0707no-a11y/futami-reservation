@@ -26,9 +26,10 @@ _fbAuth.onAuthStateChanged(function(user) {
     _fbUser = user;
     document.getElementById('login-overlay')?.remove();
     // loadGcalDataが定義されるまで待ってから呼ぶ
+    var _tryCount = 0;
     function tryLoad() {
       if (typeof loadGcalData === 'function') { loadGcalData(); }
-      else { setTimeout(tryLoad, 100); }
+      else if (++_tryCount < 50) { setTimeout(tryLoad, 100); }
     }
     tryLoad();
   }
@@ -38,7 +39,7 @@ async function getAuthHeader() {
     var token = await _fbUser.getIdToken();
     return { 'Authorization': 'Bearer ' + token };
   }
-  return { 'X-API-Key': STAFF_API_KEY };
+  return {};
 }
 function doLogin() {
   var email = document.getElementById('login-email').value;
@@ -898,7 +899,7 @@ function escapeHtml(s) {
 
 // ===== Firestore API 由来データ =====
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
-const STAFF_API_KEY = '7b1bac383ecc0d112c332a82649f4ce2b6dd5fd9131953254841797c989be2c6';
+// APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 let GCAL_BOOKINGS = [];
 let LAST_SYNC_AT = null;
 

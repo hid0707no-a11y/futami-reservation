@@ -21,9 +21,10 @@ _fbAuth.onAuthStateChanged(function(user) {
   if (user) {
     _fbUser = user;
     document.getElementById('login-overlay')?.remove();
+    var _tryCount = 0;
     function tryLoad() {
       if (typeof loadData === 'function') { loadData(); }
-      else { setTimeout(tryLoad, 100); }
+      else if (++_tryCount < 50) { setTimeout(tryLoad, 100); }
     }
     tryLoad();
   }
@@ -33,7 +34,7 @@ async function getAuthHeader() {
     var token = await _fbUser.getIdToken();
     return { 'Authorization': 'Bearer ' + token };
   }
-  return { 'X-API-Key': STAFF_API_KEY };
+  return {};
 }
 function doLogin() {
   var email = document.getElementById('login-email').value;
@@ -331,7 +332,7 @@ body {
 // ===== 設定 =====
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
 const AVAILABILITY_URL = 'https://availability-6ry33ad4oa-an.a.run.app';
-const STAFF_API_KEY = '7b1bac383ecc0d112c332a82649f4ce2b6dd5fd9131953254841797c989be2c6';
+// APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 
 // ===== ROOMS定義（カテゴリ・建物別） =====
 const ROOMS = [
