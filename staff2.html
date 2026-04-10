@@ -575,8 +575,8 @@ function setCategory(cat) {
   render();
 }
 
-// ===== 初期化 =====
-loadData();
+// ===== 初期化（ログイン後にonAuthStateChangedから呼ばれる） =====
+if (_fbUser) loadData();
 </script>
 </body>
 </html>
