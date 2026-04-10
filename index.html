@@ -2432,13 +2432,14 @@ function stepExtra(extraId, delta) {
 function stepBookingGuests(delta) {
   const room = ROOMS.find(r => r.id === state.selectedRoomId);
   let max = room ? room.capacity : 50;
-  // ふたみの日サウナの場合は残席で上限制限
+  // ふたみの日サウナ：2〜8人（1予約で完売）
   const plan = state.selectedPlan;
-  if (plan && plan.planType === 'sauna' && isFutamiDay(state.selectedDate)) {
-    const remain = getFutamiSaunaRemaining(plan, state.selectedDate);
-    max = Math.min(max, remain);
+  const isFutami = plan && plan.planType === 'sauna' && isFutamiDay(state.selectedDate);
+  if (isFutami) {
+    max = 8;
   }
-  state.guests = Math.max(1, Math.min(max, state.guests + delta));
+  const minGuests = isFutami ? 2 : 1;
+  state.guests = Math.max(minGuests, Math.min(max, state.guests + delta));
   const el = document.getElementById('booking-guest-count');
   if (el) el.textContent = state.guests;
   updateBookingPriceSummary();
@@ -3047,10 +3048,7 @@ async function submitBooking() {
         return;
       }
       if (e && e.code === 'capacity_exceeded') {
-        const msg = isCamp
-          ? '申し訳ありません、キャンプ場の空き区画が不足しています。区画数を減らすか、別の日程をお選びください。'
-          : '申し訳ありません、ふたみの日の残席が不足しています。人数を減らすか、別の時間帯をお選びください。';
-        alert(msg);
+        alert('申し訳ありません、キャンプ場の空き区画が不足しています。区画数を減らすか、別の日程をお選びください。');
         await loadAvailabilityData();
         return;
       }
