@@ -1008,9 +1008,11 @@ function getSlotMap(roomId, ds, allRes) {
       const isStay = (plan && Array.isArray(plan.slots) && plan.slots.includes(16) && plan.slots.includes(0))
                   || (resSlots.includes(16) && resSlots.includes(0))
                   || (res.nights && res.nights > 0);
+      // チェックイン時刻を特定（slotsの先頭 or デフォルト16）
+      const ciHour = (plan && Array.isArray(plan.slots) && plan.slots.length > 0) ? plan.slots[0] : 16;
       for (const s of resSlots) {
         if (s >= 8 && s <= 21) {
-          if (isStay && s < 12) continue;
+          if (isStay && s < ciHour) continue; // チェックイン前の翌朝スロットはcarryoverで表示
           map[s] = { resId: res.id, planId: res.planId, color, name: res.name, checkedIn: res.checkedIn };
         }
       }
@@ -1033,8 +1035,10 @@ function getOvernightCarryover(roomId, ds, allRes) {
     const resSlots = res.slotsOverride || (plan && Array.isArray(plan.slots) ? plan.slots : []);
     if (resSlots.length === 0) continue;
     const color = plan ? plan.color : '#94a3b8';
+    // チェックイン時刻を特定（翌朝のチェックイン前の時間帯がcarryover）
+    const ciHour = (plan && Array.isArray(plan.slots) && plan.slots.length > 0) ? plan.slots[0] : 16;
     for (const s of resSlots) {
-      if (s >= 0 && s <= 9 && s >= 8) {
+      if (s >= 8 && s < ciHour) {
         map[s] = { resId: res.id, planId: res.planId, color, name: res.name, checkedIn: res.checkedIn, carryover: true };
       }
     }
