@@ -2901,6 +2901,8 @@ async function submitBooking() {
 
   // === ふたみの日サウナ判定 ===
   const isFutamiSauna = plan.planType === 'sauna' && isFutamiDay(state.selectedDate);
+  // === キャンプ判定 ===
+  const isCamp = plan.planType === 'camp';
   // === テニス判定 ===
   const isTennis = state.selectedRoomId && state.selectedRoomId.startsWith('court_');
 
@@ -2953,12 +2955,13 @@ async function submitBooking() {
         createdBy: 'web',
       };
       if (isFutamiSauna) payload.guestCount = futamiSeats;
+      if (isCamp) payload.guestCount = state.campSites;
       const apiResult = await submitReservation(payload);
       apiResId = apiResult.reservationId;
       // 即座にローカルSetに反映（再ロードまで待たない）
       if (isTennis) {
         slotKeys.forEach(k => TENNIS_SLOTS.add(k));
-      } else if (!isFutamiSauna) {
+      } else if (!isFutamiSauna && !isCamp) {
         slotKeys.forEach(k => OCCUPIED_SLOTS.add(k));
       }
     } catch (e) {
@@ -2968,7 +2971,10 @@ async function submitBooking() {
         return;
       }
       if (e && e.code === 'capacity_exceeded') {
-        alert('申し訳ありません、ふたみの日の残席が不足しています。人数を減らすか、別の時間帯をお選びください。');
+        const msg = isCamp
+          ? '申し訳ありません、キャンプ場の空き区画が不足しています。区画数を減らすか、別の日程をお選びください。'
+          : '申し訳ありません、ふたみの日の残席が不足しています。人数を減らすか、別の時間帯をお選びください。';
+        alert(msg);
         await loadAvailabilityData();
         return;
       }
