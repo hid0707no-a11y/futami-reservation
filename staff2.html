@@ -6,15 +6,41 @@
 <meta name="theme-color" content="#1e3a8a">
 
 <title>ふたみ予約 月俯瞰</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
-(function(){
-  var PW='Futamii202604', K='futami_staff_auth';
-  if(sessionStorage.getItem(K)!==PW){
-    var i=prompt('パスワードを入力してください');
-    if(i!==PW){document.documentElement.innerHTML='';location.replace('about:blank');return;}
-    sessionStorage.setItem(K,PW);
+firebase.initializeApp({
+  apiKey: "AIzaSyDS4b-ukVqd1iiMo7DeRIB2tzKwrt-or10",
+  authDomain: "futami-yoyaku-492607.firebaseapp.com",
+  projectId: "futami-yoyaku-492607"
+});
+var _fbAuth = firebase.auth();
+var _fbUser = null;
+_fbAuth.onAuthStateChanged(function(user) {
+  if (user) {
+    _fbUser = user;
+    document.getElementById('login-overlay')?.remove();
+    if (typeof loadData === 'function') loadData();
   }
-})();
+});
+async function getAuthHeader() {
+  if (_fbUser) {
+    var token = await _fbUser.getIdToken();
+    return { 'Authorization': 'Bearer ' + token };
+  }
+  return { 'X-API-Key': STAFF_API_KEY };
+}
+function doLogin() {
+  var email = document.getElementById('login-email').value;
+  var pass = document.getElementById('login-pass').value;
+  var err = document.getElementById('login-error');
+  _fbAuth.signInWithEmailAndPassword(email, pass).catch(function(e) {
+    err.textContent = 'ログイン失敗: メールアドレスまたはパスワードが正しくありません';
+  });
+}
+function doLogout() {
+  _fbAuth.signOut().then(function() { location.reload(); });
+}
 </script>
 <style>
 :root {
@@ -240,6 +266,17 @@ body {
 </head>
 <body>
 
+<div id="login-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#1e3a8a;z-index:99999;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:32px;width:320px;text-align:center;">
+    <h2 style="color:#1e3a8a;margin-bottom:16px;font-size:18px;">ふたみ予約 月俯瞰</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:16px;">スタッフログイン</p>
+    <input id="login-email" type="email" placeholder="メールアドレス" style="width:100%;padding:10px;margin-bottom:8px;border:1px solid #ccc;border-radius:6px;font-size:14px;">
+    <input id="login-pass" type="password" placeholder="パスワード" style="width:100%;padding:10px;margin-bottom:12px;border:1px solid #ccc;border-radius:6px;font-size:14px;" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()" style="width:100%;padding:10px;background:#1e3a8a;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;">ログイン</button>
+    <p id="login-error" style="color:#e94560;font-size:12px;margin-top:8px;min-height:16px;"></p>
+  </div>
+</div>
+
 <header class="header">
   <div class="header-title">ふたみ予約 月俯瞰</div>
   <div class="header-row">
@@ -338,7 +375,7 @@ async function loadData() {
   document.getElementById('syncIndicator').style.background = 'rgba(100,100,100,0.85)';
   try {
     const [resA, resF] = await Promise.all([
-      fetch(API_BASE + '/listReservations?t=' + Date.now(), { headers: { 'X-API-Key': STAFF_API_KEY } }),
+      fetch(API_BASE + '/listReservations?t=' + Date.now(), { headers: await getAuthHeader() }),
       fetch(API_BASE + '/futamiDays?t=' + Date.now()),
     ]);
     const dataA = await resA.json();
