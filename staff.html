@@ -901,9 +901,11 @@ function convertApiReservation(r) {
       }
     }
     // 宿泊系は「チェックイン時刻順（午後→深夜→翌朝）」でソート
+    // チェックイン時刻を推定（todayHoursの最大値付近がチェックイン）
+    const checkinHour = todayHours.length > 0 ? Math.max(...todayHours.filter(h => h >= 12)) || 14 : 14;
     todayHours.sort((a, b) => {
-      const aAdj = a < 10 ? a + 24 : a;
-      const bAdj = b < 10 ? b + 24 : b;
+      const aAdj = a < checkinHour ? a + 24 : a;
+      const bAdj = b < checkinHour ? b + 24 : b;
       return aAdj - bAdj;
     });
     nextDayHours.sort((a, b) => a - b);

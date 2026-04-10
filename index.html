@@ -2437,13 +2437,16 @@ function expandStaySlots(plan, baseDate, nights) {
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
   if (slots.length === 0) return [];
 
+  // チェックイン時刻を特定（slots配列の先頭＝チェックイン開始時刻）
+  const checkinHour = slots[0];
+
   const result = [];
   for (let n = 0; n < nights; n++) {
     const checkinDate = addDays(baseDate, n);
     const nextDate = addDays(baseDate, n + 1);
     for (const h of slots) {
-      // 0-9時（翌朝）は翌日の日付でチェック
-      const date = h < 10 ? nextDate : checkinDate;
+      // チェックイン時刻より前の時間は翌日（チェックアウト日）扱い
+      const date = h < checkinHour ? nextDate : checkinDate;
       result.push({ date, hour: h });
     }
   }
