@@ -342,7 +342,7 @@ async function loadData() {
     document.getElementById('syncIndicator').style.background = 'rgba(220,40,40,0.85)';
   }
 }
-setInterval(loadData, 60000);
+setInterval(() => { if (_fbUser) loadData(); }, 60000);
 
 // (date, courtId, time) → reservation を引くマップ
 // time は "0900" 形式（30分単位）
@@ -522,7 +522,7 @@ function goToday() {
   render();
 }
 
-loadData();
+if (_fbUser) loadData();
 </script>
 </body>
 </html>

@@ -1009,8 +1009,8 @@ function updateSyncIndicator(error) {
   }
 }
 
-// 30秒ごとに自動更新
-setInterval(() => { loadGcalData(); }, 30000);
+// 30秒ごとに自動更新（ログイン済みの場合のみ）
+setInterval(() => { if (_fbUser) loadGcalData(); }, 30000);
 
 // ===== LocalStorage =====
 function loadReservations() {
@@ -1787,7 +1787,8 @@ if ('serviceWorker' in navigator) {
 try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
 // generateDummyData(); // 無効化：本番運用ではAPIから取得
 render();
-loadGcalData();
+// 初期ロードはonAuthStateChangedで行う（ログイン後に自動実行）
+if (_fbUser) loadGcalData();
 </script>
 </body>
 </html>

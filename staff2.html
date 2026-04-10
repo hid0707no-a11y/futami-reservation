@@ -393,7 +393,7 @@ async function loadData() {
     document.getElementById('syncIndicator').style.background = 'rgba(220,40,40,0.85)';
   }
 }
-setInterval(loadData, 60000); // 60秒ごと
+setInterval(() => { if (_fbUser) loadData(); }, 60000); // 60秒ごと（ログイン済みのみ）
 
 // ===== 予約 → 日付・部屋マップ =====
 function buildOccupancyMap() {
