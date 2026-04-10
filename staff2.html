@@ -198,6 +198,8 @@ body {
 .cell-many { background: #34d399; cursor: pointer; color: #fff; font-weight: 700; }
 .cell-full { background: #dc2626; cursor: pointer; color: #fff; font-weight: 700; }
 .cell-past { background: #f3f4f6; color: #9ca3af; }
+.cell-closed { background: #fef2f2; }
+.closed-day { background: #fef2f2 !important; color: #e94560; }
 .cell-count { font-size: 11px; line-height: 1; }
 
 /* セル詳細ポップアップ */
@@ -382,12 +384,15 @@ async function loadData() {
   document.getElementById('syncIndicator').textContent = '同期中...';
   document.getElementById('syncIndicator').style.background = 'rgba(100,100,100,0.85)';
   try {
-    const [resA, resF] = await Promise.all([
-      fetch(API_BASE + '/listReservations?t=' + Date.now(), { headers: await getAuthHeader() }),
+    const authH = await getAuthHeader();
+    const [resA, resF, resC] = await Promise.all([
+      fetch(API_BASE + '/listReservations?t=' + Date.now(), { headers: authH }),
       fetch(API_BASE + '/futamiDays?t=' + Date.now()),
+      fetch(API_BASE + '/businessCalendar?t=' + Date.now()),
     ]);
     const dataA = await resA.json();
     const dataF = await resF.json();
+    if (resC.ok) { const dataC = await resC.json(); CAL_SETTINGS = dataC; }
     RESERVATIONS = (dataA.reservations || []).filter(r => r.status !== 'cancelled');
     FUTAMI_DAYS = new Set(dataF.dates || []);
     LAST_SYNC = new Date();
@@ -435,6 +440,13 @@ function filteredRooms() {
 }
 
 // ===== レンダリング =====
+function isClosedDayLocal(ds) {
+  if (CAL_SETTINGS.forceClosed && CAL_SETTINGS.forceClosed.includes(ds)) return true;
+  if (CAL_SETTINGS.forceOpen && CAL_SETTINGS.forceOpen.includes(ds)) return false;
+  var d = new Date(ds + 'T00:00:00');
+  return (CAL_SETTINGS.defaultClosedDays || [2]).includes(d.getDay());
+}
+
 function render() {
   const { year, month } = currentMonth;
   document.getElementById('monthLabel').textContent = `${year}年${month}月`;
@@ -448,10 +460,13 @@ function render() {
     const ds = dateStr(year, month, d);
     const dow = dayOfWeek(year, month, d);
     let cls = '';
+    const closed = isClosedDayLocal(ds);
     if (dow === 6) cls = 'weekend-sat';
     if (dow === 0) cls = 'weekend-sun';
-    if (FUTAMI_DAYS.has(ds)) cls = 'futami';
-    html += `<th class="${cls}">${d}<br><span style="font-size:9px">${'日月火水木金土'[dow]}</span></th>`;
+    if (closed) cls = 'closed-day';
+    if (FUTAMI_DAYS.has(ds)) cls += ' futami';
+    const closedMark = closed ? '<br><span style="font-size:8px;color:#e94560;">休</span>' : '';
+    html += `<th class="${cls}">${d}<br><span style="font-size:9px">${'日月火水木金土'[dow]}</span>${closedMark}</th>`;
   }
   html += '</tr></thead>';
 
@@ -477,6 +492,7 @@ function render() {
         let cellClass = 'cell-empty';
         let label = '';
         if (ds < today) cellClass = 'cell-past';
+        else if (isClosedDayLocal(ds) && count === 0) cellClass = 'cell-closed';
         if (count > 0) {
           if (count === 1) cellClass = 'cell-some';
           else if (count <= 3) cellClass = 'cell-many';
