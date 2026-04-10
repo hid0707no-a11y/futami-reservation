@@ -292,6 +292,7 @@ body {
     <button class="today-btn" onclick="goToday()">今月</button>
     <a href="staff.html" class="back-btn">📋 詳細</a>
     <a href="staff_tennis.html" class="back-btn" style="background:#fef3c7;color:#b45309">🎾 テニス</a>
+    <button onclick="openCalendarSettings()" class="back-btn" style="background:#e0f2fe;color:#0369a1;border:none;cursor:pointer">📅 営業設定</button>
     <button onclick="doLogout()" class="back-btn" style="background:#fef2f2;color:#dc2626;margin-left:auto;font-size:12px;border:none;cursor:pointer">ログアウト</button>
   </div>
   <div class="cat-tabs">
@@ -581,8 +582,115 @@ function setCategory(cat) {
   render();
 }
 
+// ===== 営業カレンダー管理 =====
+var CAL_SETTINGS = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+
+async function loadCalendarSettings() {
+  try {
+    const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
+    if (res.ok) CAL_SETTINGS = await res.json();
+  } catch(e) {}
+}
+
+function openCalendarSettings() {
+  loadCalendarSettings().then(() => renderCalendarModal());
+  document.getElementById('calModal').style.display = 'flex';
+}
+
+function closeCalendarModal() {
+  document.getElementById('calModal').style.display = 'none';
+}
+
+function renderCalendarModal() {
+  const days = ['日','月','火','水','木','金','土'];
+  let html = '<h3 style="margin-bottom:12px;color:#0f3460;">営業カレンダー設定</h3>';
+
+  // 定休曜日
+  html += '<div style="margin-bottom:16px;"><strong>定休曜日</strong><div style="display:flex;gap:6px;margin-top:6px;">';
+  for (let i = 0; i < 7; i++) {
+    const checked = (CAL_SETTINGS.defaultClosedDays || []).includes(i);
+    html += '<label style="padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px;' +
+      (checked ? 'background:#e94560;color:#fff;' : 'background:#f3f4f6;color:#374151;') +
+      '"><input type="checkbox" data-dow="' + i + '" ' + (checked ? 'checked' : '') +
+      ' onchange="toggleClosedDay(' + i + ')" style="display:none;">' + days[i] + '</label>';
+  }
+  html += '</div></div>';
+
+  // 営業強制日（forceOpen）
+  html += '<div style="margin-bottom:16px;"><strong>特別営業日</strong>（定休日でも営業する日）';
+  html += '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">';
+  html += '<input type="date" id="addForceOpen" style="padding:6px;border:1px solid #ccc;border-radius:6px;">';
+  html += '<button onclick="addForceDate(\'forceOpen\')" style="padding:6px 12px;background:#16c79a;color:#fff;border:none;border-radius:6px;cursor:pointer;">追加</button></div>';
+  html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">';
+  (CAL_SETTINGS.forceOpen || []).sort().forEach(d => {
+    html += '<span style="background:#d1fae5;padding:2px 8px;border-radius:10px;font-size:12px;">' + d +
+      ' <span onclick="removeForceDate(\'forceOpen\',\'' + d + '\')" style="cursor:pointer;color:#e94560;">✕</span></span>';
+  });
+  html += '</div></div>';
+
+  // 休業強制日（forceClosed）
+  html += '<div style="margin-bottom:16px;"><strong>臨時休業日</strong>（営業日でも休業する日）';
+  html += '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">';
+  html += '<input type="date" id="addForceClosed" style="padding:6px;border:1px solid #ccc;border-radius:6px;">';
+  html += '<button onclick="addForceDate(\'forceClosed\')" style="padding:6px 12px;background:#e94560;color:#fff;border:none;border-radius:6px;cursor:pointer;">追加</button></div>';
+  html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">';
+  (CAL_SETTINGS.forceClosed || []).sort().forEach(d => {
+    html += '<span style="background:#fecaca;padding:2px 8px;border-radius:10px;font-size:12px;">' + d +
+      ' <span onclick="removeForceDate(\'forceClosed\',\'' + d + '\')" style="cursor:pointer;color:#666;">✕</span></span>';
+  });
+  html += '</div></div>';
+
+  document.getElementById('calModalBody').innerHTML = html;
+}
+
+async function toggleClosedDay(dow) {
+  let arr = CAL_SETTINGS.defaultClosedDays || [];
+  if (arr.includes(dow)) arr = arr.filter(d => d !== dow);
+  else arr.push(dow);
+  CAL_SETTINGS.defaultClosedDays = arr;
+  await saveCalendarSettings();
+  renderCalendarModal();
+}
+
+async function addForceDate(field) {
+  const input = document.getElementById(field === 'forceOpen' ? 'addForceOpen' : 'addForceClosed');
+  const val = input.value;
+  if (!val) return;
+  if (!CAL_SETTINGS[field]) CAL_SETTINGS[field] = [];
+  if (!CAL_SETTINGS[field].includes(val)) CAL_SETTINGS[field].push(val);
+  input.value = '';
+  await saveCalendarSettings();
+  renderCalendarModal();
+}
+
+async function removeForceDate(field, date) {
+  CAL_SETTINGS[field] = (CAL_SETTINGS[field] || []).filter(d => d !== date);
+  await saveCalendarSettings();
+  renderCalendarModal();
+}
+
+async function saveCalendarSettings() {
+  try {
+    const authH = await getAuthHeader();
+    await fetch(API_BASE + '/businessCalendar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authH },
+      body: JSON.stringify(CAL_SETTINGS),
+    });
+  } catch(e) { alert('保存に失敗しました'); }
+}
+
 // ===== 初期化（ログイン後にonAuthStateChangedから呼ばれる） =====
 if (_fbUser) loadData();
 </script>
+
+<!-- 営業カレンダーモーダル -->
+<div id="calModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:400px;max-height:80vh;overflow-y:auto;position:relative;">
+    <button onclick="closeCalendarModal()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+    <div id="calModalBody"></div>
+  </div>
+</div>
+
 </body>
 </html>
