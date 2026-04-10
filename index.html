@@ -1932,6 +1932,7 @@ function showPlanSelect(fgId) {
 
   const dateInput = document.getElementById('plan-select-date');
   dateInput.min = getTodayStr();
+  dateInput.max = getMaxBookingDate(fg.category);
   dateInput.value = state.searchDate || '';
 
   navigate('screen-plan-select');
@@ -2247,9 +2248,13 @@ function showRoomBooking() {
 
   el.innerHTML = html;
 
-  // 日付min設定
+  // 日付min/max設定
   const dateInput = document.getElementById('booking-date');
-  if (dateInput) dateInput.min = getTodayStr();
+  if (dateInput) {
+    dateInput.min = getTodayStr();
+    const plan = state.selectedPlan;
+    dateInput.max = getMaxBookingDate(plan ? plan.category : 'stay');
+  }
 
   navigate('screen-room-booking');
   onBookingDateChange();
@@ -3122,6 +3127,20 @@ async function submitBooking() {
 /* ================================================================
    UTILS
    ================================================================ */
+// 予約受付期間（カテゴリ別）
+function getMaxBookingDate(category) {
+  var today = new Date();
+  var days;
+  if (category === 'stay' || category === 'day') {
+    days = 365; // ふれあい宿泊・日帰り: 1年前から
+  } else {
+    days = 90;  // テニス・グラウンド・キャンプ・ロッジ・サウナ: 90日前から
+  }
+  var d = new Date(today);
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function getTodayStr() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
