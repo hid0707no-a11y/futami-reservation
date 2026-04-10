@@ -900,8 +900,14 @@ function convertApiReservation(r) {
         else nextDayHours.push(hour);
       }
     }
-    let combinedHours = [...todayHours];
-    nextDayHours.forEach(h => combinedHours.push(h));
+    // 宿泊系は「チェックイン時刻順（午後→深夜→翌朝）」でソート
+    todayHours.sort((a, b) => {
+      const aAdj = a < 10 ? a + 24 : a;
+      const bAdj = b < 10 ? b + 24 : b;
+      return aAdj - bAdj;
+    });
+    nextDayHours.sort((a, b) => a - b);
+    let combinedHours = [...todayHours, ...nextDayHours];
     records.push({
       id: r.id + (roomList.length > 1 ? '_' + roomId : ''),
       _origId: r.id,

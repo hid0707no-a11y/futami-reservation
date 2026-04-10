@@ -2937,7 +2937,7 @@ async function submitBooking() {
     try {
       const startDate = state.selectedDate;
       const endDate = (state.selectedNights && state.selectedNights > 0)
-        ? slotKeys[slotKeys.length - 1].split('|')[1]
+        ? addDays(startDate, state.selectedNights)
         : startDate;
       // ふたみの日サウナの場合は人数を guestCount に。state.guests がサウナの人数。
       const futamiSeats = isFutamiSauna ? (state.guests || 1) : null;
