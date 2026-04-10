@@ -399,7 +399,7 @@ async function loadData() {
     document.getElementById('syncIndicator').style.background = 'rgba(220,40,40,0.85)';
   }
 }
-setInterval(() => { if (_fbUser) loadData(); }, 60000); // 60秒ごと（ログイン済みのみ）
+setInterval(() => { if (_fbUser && !document.hidden) loadData(); }, 60000); // 60秒ごと（ログイン済み＋タブアクティブのみ）
 
 // ===== 予約 → 日付・部屋マップ =====
 function buildOccupancyMap() {

@@ -774,7 +774,8 @@ const ROOMS = [
   { id: 'room_train', name: '研修室', building: 'ふれあいの館', icon: '\uD83C\uDFE0' },
   { id: 'room_kitchen', name: '厨房・食堂', building: 'ふれあいの館', icon: '\uD83C\uDFE0' },
   { id: 'camp', name: 'キャンプ場', building: 'アウトドア', icon: '\u26FA' },
-  { id: 'lodge', name: 'ロッジ', building: 'アウトドア', icon: '\uD83C\uDFD5\uFE0F' },
+  { id: 'lodge_a', name: 'ロッジA', building: 'アウトドア', icon: '\uD83C\uDFD5\uFE0F' },
+  { id: 'lodge_b', name: 'ロッジB', building: 'アウトドア', icon: '\uD83C\uDFD5\uFE0F' },
   { id: 'court_1', name: 'コート1', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'court_2', name: 'コート2', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'court_3', name: 'コート3', building: 'テニス', icon: '\uD83C\uDFBE' },
@@ -836,10 +837,10 @@ const PLANS = [
     slots: [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12],
     price: '790円/区画', badge: '\u26FA キャンプ', color: '#059669' },
   // ロッジ
-  { id: 'lodge_stay', name: 'ロッジ宿泊', rooms: ['lodge'],
+  { id: 'lodge_stay', name: 'ロッジ宿泊', rooms: ['lodge_a','lodge_b'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     price: '4,720円/棟', badge: '\uD83C\uDF19 宿泊', color: '#6366f1' },
-  { id: 'lodge_day', name: 'ロッジ日帰り', rooms: ['lodge'],
+  { id: 'lodge_day', name: 'ロッジ日帰り', rooms: ['lodge_a','lodge_b'],
     slots: [10,11,12,13,14,15], price: '330円/時', badge: '\u2600\uFE0F 日帰り', color: '#f59e0b' },
 
   // テニス（時間を都度選ぶ）
@@ -1016,8 +1017,8 @@ function updateSyncIndicator(error) {
   }
 }
 
-// 30秒ごとに自動更新（ログイン済みの場合のみ）
-setInterval(() => { if (_fbUser) loadGcalData(); }, 30000);
+// 30秒ごとに自動更新（ログイン済み＋タブがアクティブな場合のみ）
+setInterval(() => { if (_fbUser && !document.hidden) loadGcalData(); }, 30000);
 
 // ===== LocalStorage =====
 function loadReservations() {
