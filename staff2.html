@@ -608,9 +608,11 @@ async function loadCalendarSettings() {
   } catch(e) {}
 }
 
-function openCalendarSettings() {
-  loadCalendarSettings().then(() => renderCalendarModal());
+async function openCalendarSettings() {
   document.getElementById('calModal').style.display = 'flex';
+  document.getElementById('calModalBody').innerHTML = '<p style="text-align:center;color:#666;">読み込み中...</p>';
+  await loadCalendarSettings();
+  renderCalendarModal();
 }
 
 function closeCalendarModal() {

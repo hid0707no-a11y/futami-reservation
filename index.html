@@ -1397,8 +1397,10 @@ const AVAILABILITY_URL = 'https://availability-6ry33ad4oa-an.a.run.app';
 async function loadAvailabilityData() {
   try {
     // 営業カレンダーも同時に取得
-    loadBusinessCalendar().catch(() => {});
-    const res = await fetch(AVAILABILITY_URL + '?t=' + Date.now());
+    const [, res] = await Promise.all([
+      loadBusinessCalendar().catch(() => {}),
+      fetch(AVAILABILITY_URL + '?t=' + Date.now()),
+    ]);
     if (!res.ok) throw new Error('availability API fetch failed');
     const data = await res.json();
     OCCUPIED_SLOTS.clear();

@@ -280,6 +280,20 @@ body {
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
 // APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 
+var BUSINESS_CAL = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+async function loadBusinessCal() {
+  try {
+    const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
+    if (res.ok) BUSINESS_CAL = await res.json();
+  } catch(e) {}
+}
+function isClosedDay(ds) {
+  if (BUSINESS_CAL.forceClosed && BUSINESS_CAL.forceClosed.includes(ds)) return true;
+  if (BUSINESS_CAL.forceOpen && BUSINESS_CAL.forceOpen.includes(ds)) return false;
+  var d = new Date(ds + 'T00:00:00');
+  return (BUSINESS_CAL.defaultClosedDays || [2]).includes(d.getDay());
+}
+
 const COURTS = [
   { id: 'court_1', label: 'A' },
   { id: 'court_2', label: 'B' },
@@ -330,6 +344,7 @@ async function loadData() {
   document.getElementById('syncIndicator').textContent = '同期中...';
   document.getElementById('syncIndicator').style.background = 'rgba(100,100,100,0.85)';
   try {
+    loadBusinessCal().catch(() => {});
     const res = await fetch(API_BASE + '/listReservations?t=' + Date.now(), {
       headers: await getAuthHeader()
     });
@@ -405,7 +420,7 @@ function render() {
     const ds = dateStr(year, month, d);
     const dow = dayOfWeek(year, month, d);
     const dowLabel = '日月火水木金土'[dow];
-    const isClosed = (dow === 2); // 火曜定休
+    const isClosed = isClosedDay(ds);
     let dayCellCls = 'day-cell';
     if (dow === 0) dayCellCls += ' weekend-sun';
     if (dow === 6) dayCellCls += ' weekend-sat';
