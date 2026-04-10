@@ -2475,6 +2475,12 @@ function expandStaySlots(plan, baseDate, nights) {
   return result;
 }
 
+// 定休日チェック（火曜=2）。将来は営業カレンダーAPIに差し替え予定。
+function isClosedDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.getDay() === 2; // 火曜日
+}
+
 function getMaxNights() {
   const plan = state.selectedPlan;
   const roomId = state.selectedRoomId;
@@ -2486,6 +2492,10 @@ function getMaxNights() {
 
   let max = 0;
   for (let n = 0; n < 14; n++) {
+    // n泊目の宿泊日（チェックイン日からn日後）が定休日なら泊まれない
+    const stayDate = addDays(baseDate, n);
+    if (n > 0 && isClosedDay(stayDate)) break; // チェックイン当日は除く（チェックアウト日=翌日なのでOK）
+
     const expanded = expandStaySlots(plan, baseDate, n + 1);
     let allFree = true;
     for (const s of expanded) {
