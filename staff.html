@@ -24,7 +24,12 @@ _fbAuth.onAuthStateChanged(function(user) {
   if (user) {
     _fbUser = user;
     document.getElementById('login-overlay')?.remove();
-    if (typeof loadGcalData === 'function') loadGcalData();
+    // loadGcalDataが定義されるまで待ってから呼ぶ
+    function tryLoad() {
+      if (typeof loadGcalData === 'function') { loadGcalData(); }
+      else { setTimeout(tryLoad, 100); }
+    }
+    tryLoad();
   }
 });
 async function getAuthHeader() {
