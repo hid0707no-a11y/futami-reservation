@@ -983,7 +983,20 @@ body {
       </div>
     </div>
 
-    <button class="btn btn-primary" onclick="submitBooking()">予約を確定する</button>
+    <button class="btn btn-primary" onclick="showReview()">確認画面へ</button>
+    <div class="text-center text-muted mt-16">
+      ※ 入力内容を確認してから確定できます。
+    </div>
+  </div>
+
+  <!-- ========== REVIEW SCREEN ========== -->
+  <div class="screen" id="screen-review">
+    <div class="section-title">予約内容の最終確認</div>
+    <div class="summary-card" id="review-summary"></div>
+    <div style="display:flex;gap:12px;margin-top:16px;">
+      <button class="btn" style="flex:1;background:#f3f4f6;color:#374151;" onclick="navigate('screen-confirm')">戻って修正</button>
+      <button class="btn btn-primary" style="flex:2;" onclick="submitBooking()">この内容で予約を確定する</button>
+    </div>
     <div class="text-center text-muted mt-16">
       ※ 確定後の変更は電話にてご連絡ください。
     </div>
@@ -2900,12 +2913,11 @@ function proceedToConfirm() {
   navigate('screen-confirm');
 }
 
-async function submitBooking() {
+function showReview() {
   const name = document.getElementById('confirm-name').value.trim();
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
   const email2 = document.getElementById('confirm-email2').value.trim();
-  const note = document.getElementById('confirm-note').value.trim();
 
   if (!name) { alert('お名前を入力してください'); return; }
   if (!phone) { alert('電話番号を入力してください'); return; }
@@ -2915,6 +2927,25 @@ async function submitBooking() {
     return;
   }
   document.getElementById('email-mismatch').style.display = 'none';
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  var note = document.getElementById('confirm-note').value.trim();
+  var html = document.getElementById('booking-summary').innerHTML;
+  html += '<div style="border-top:2px solid #e5e7eb;margin:12px 0;padding-top:12px;">';
+  html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + esc(name) + '</span></div>';
+  html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + esc(phone) + '</span></div>';
+  if (email) html += '<div class="summary-row"><span class="summary-label">メール</span><span class="summary-value">' + esc(email) + '</span></div>';
+  if (note) html += '<div class="summary-row"><span class="summary-label">備考</span><span class="summary-value">' + esc(note) + '</span></div>';
+  html += '</div>';
+  document.getElementById('review-summary').innerHTML = html;
+  navigate('screen-review');
+}
+
+async function submitBooking() {
+  const name = document.getElementById('confirm-name').value.trim();
+  const phone = document.getElementById('confirm-phone').value.trim();
+  const email = document.getElementById('confirm-email').value.trim();
+  const note = document.getElementById('confirm-note').value.trim();
 
   const plan = state.selectedPlan;
 
