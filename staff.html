@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="ふたみ予約管理">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0f3460">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net; img-src 'self' data:; font-src 'self';">
 <title>ふたみ予約管理</title>
 <script>
 (function(){
@@ -842,6 +843,14 @@ function formatDateDisplay(d) {
   return `${d.getMonth()+1}\u6708${d.getDate()}\u65E5\uFF08${weekday(d)}\uFF09`;
 }
 
+// ===== セキュリティユーティリティ =====
+function escapeHtml(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.appendChild(document.createTextNode(s));
+  return d.innerHTML;
+}
+
 // ===== Firestore API 由来データ =====
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
 const STAFF_API_KEY = '9c7babba9d2e5424f25f388bb7a3f27d8ab922e9899542ece9c5e4445c60effa';
@@ -916,7 +925,9 @@ function convertApiReservation(r) {
 
 async function loadGcalData() {
   try {
-    const res = await fetch(API_BASE + '/listReservations?key=' + encodeURIComponent(STAFF_API_KEY) + '&t=' + Date.now());
+    const res = await fetch(API_BASE + '/listReservations?t=' + Date.now(), {
+      headers: { 'X-API-Key': STAFF_API_KEY }
+    });
     if (!res.ok) throw new Error('API fetch failed: ' + res.status);
     const data = await res.json();
     const reservations = data.reservations || [];
@@ -1209,13 +1220,13 @@ function render() {
             if (info.carryover) {
               label = `<span style="font-size:0.65rem">\u2190\u524D\u6CCA</span>`;
             } else {
-              label = `<span class="cell-name">${info.name}</span>`;
+              label = `<span class="cell-name">${escapeHtml(info.name)}</span>`;
             }
           } else if (span === 1) {
             if (info.carryover) {
               label = `<span style="font-size:0.6rem">\u2190</span>`;
             } else {
-              label = `<span class="cell-name" style="font-size:0.6rem">${info.name}</span>`;
+              label = `<span class="cell-name" style="font-size:0.6rem">${escapeHtml(info.name)}</span>`;
             }
           }
           // 中央付近にプラン名（塊の中間）
@@ -1282,13 +1293,13 @@ function showDetail(resId) {
   }
 
   let html = `
-    <div class="detail-row"><span class="label">\u4E88\u7D04\u8005</span><span class="value">${res.name}</span></div>
-    <div class="detail-row"><span class="label">\u96FB\u8A71\u756A\u53F7</span><span class="value"><a href="tel:${res.phone}" style="color:var(--navy)">${res.phone}</a></span></div>
+    <div class="detail-row"><span class="label">\u4E88\u7D04\u8005</span><span class="value">${escapeHtml(res.name)}</span></div>
+    <div class="detail-row"><span class="label">\u96FB\u8A71\u756A\u53F7</span><span class="value"><a href="tel:${escapeHtml(res.phone)}" style="color:var(--navy)">${escapeHtml(res.phone)}</a></span></div>
     <div class="detail-row"><span class="label">\u30D7\u30E9\u30F3</span><span class="value">${plan ? plan.badge + ' ' + plan.name : '-'}</span></div>
     <div class="detail-row"><span class="label">\u6642\u9593</span><span class="value">${slotsText || '-'}</span></div>
     <div class="detail-row"><span class="label">\u4EBA\u6570</span><span class="value">${res.guests}\u540D</span></div>
     <div class="detail-row"><span class="label">\u6599\u91D1</span><span class="value">${plan ? plan.price : '-'}</span></div>
-    <div class="detail-row"><span class="label">\u5099\u8003</span><span class="value">${res.note || '---'}</span></div>
+    <div class="detail-row"><span class="label">\u5099\u8003</span><span class="value">${escapeHtml(res.note) || '---'}</span></div>
   `;
 
   if (res.checkedIn) {
@@ -1300,7 +1311,8 @@ function showDetail(resId) {
   // === キャンセルボタン（要API） ===
   // 複数部屋予約の場合は _origId を使う
   const cancelId = res._origId || res.id;
-  html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${cancelId}','${(res.name||'').replace(/'/g,'')}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
+  const safeName = escapeHtml((res.name||'').replace(/'/g,''));
+  html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${cancelId}','${safeName}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
 
   document.getElementById('detailContent').innerHTML = html;
   document.getElementById('detailOverlay').classList.add('show');
@@ -1317,9 +1329,9 @@ async function cancelReservationApi(resId, name) {
   const ok = confirm(`${name || 'この予約'}\u3092\u30AD\u30E3\u30F3\u30BB\u30EB\u3057\u3066\u3082\u3088\u308D\u3057\u3044\u3067\u3059\u304B\uFF1F\n\n\u30B9\u30ED\u30C3\u30C8\u306F\u4ED6\u306E\u4E88\u7D04\u306B\u958B\u653E\u3055\u308C\u307E\u3059\u3002`);
   if (!ok) return;
   try {
-    const res = await fetch(API_BASE + '/cancelReservation?key=' + encodeURIComponent(STAFF_API_KEY), {
+    const res = await fetch(API_BASE + '/cancelReservation', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': STAFF_API_KEY },
       body: JSON.stringify({ id: resId }),
     });
     if (!res.ok) {

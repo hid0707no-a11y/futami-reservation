@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#1e3a8a">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net; img-src 'self' data:; font-src 'self';">
 <title>テニスコート予約者一覧表</title>
 <script>
 (function(){
@@ -285,7 +286,9 @@ async function loadData() {
   document.getElementById('syncIndicator').textContent = '同期中...';
   document.getElementById('syncIndicator').style.background = 'rgba(100,100,100,0.85)';
   try {
-    const res = await fetch(API_BASE + '/listReservations?key=' + encodeURIComponent(STAFF_API_KEY) + '&t=' + Date.now());
+    const res = await fetch(API_BASE + '/listReservations?t=' + Date.now(), {
+      headers: { 'X-API-Key': STAFF_API_KEY }
+    });
     const data = await res.json();
     // テニスコートのみ
     RESERVATIONS = (data.reservations || [])
