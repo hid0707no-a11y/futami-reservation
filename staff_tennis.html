@@ -517,8 +517,26 @@ function showDetail(resId) {
   if (r.note) {
     body += `<div class="row"><span class="lbl">備考</span><span>${escapeHtml(r.note)}</span></div>`;
   }
+  body += `<div style="margin-top:12px;"><button onclick="cancelReservation('${resId}','${escapeHtml((r.customer && r.customer.name) || '')}')" style="width:100%;padding:10px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;cursor:pointer;font-weight:700;">この予約をキャンセル</button></div>`;
   document.getElementById('popupBody').innerHTML = body;
   document.getElementById('popupOverlay').classList.add('show');
+}
+
+async function cancelReservation(resId, name) {
+  if (!confirm((name || 'この予約') + ' をキャンセルしてもよろしいですか？')) return;
+  try {
+    const authH = await getAuthHeader();
+    const res = await fetch(API_BASE + '/cancelReservation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authH },
+      body: JSON.stringify({ id: resId }),
+    });
+    if (!res.ok) { alert('キャンセルに失敗しました'); return; }
+    closePopup();
+    await loadData();
+  } catch (e) {
+    alert('キャンセルに失敗しました');
+  }
 }
 
 function closePopup() {
