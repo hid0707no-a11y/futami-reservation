@@ -2515,7 +2515,7 @@ function checkNightsAvailability() {
 }
 
 function stepCampSites(delta) {
-  state.campSites = Math.max(1, Math.min(10, state.campSites + delta));
+  state.campSites = Math.max(1, Math.min(8, state.campSites + delta));
   const el = document.getElementById('camp-sites-count');
   if (el) el.textContent = state.campSites;
   updateSimplePriceInfo();
