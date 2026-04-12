@@ -2,6 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
+import { google } from 'googleapis';
 
 admin.initializeApp();
 
@@ -1293,6 +1294,241 @@ export const staffHealthMonitor = onSchedule(
       await sendMonitorAlert('[ふたみ予約] スタッフ機能ヘルスチェック失敗', body);
     } else {
       console.log('[monitor] all checks passed');
+    }
+  }
+);
+
+/**
+ * ===== 予約データ Google Sheets 同期（日次 03:00 JST）=====
+ *
+ * 役割:
+ *  - Firestore reservations の全件を Google Sheets に毎朝書き出す
+ *  - バックアップ兼データ基盤として使える（社長の Google Drive 経由で閲覧）
+ *  - 行政報告書の原データ、KPI 集計、Looker 連携の source of truth
+ *  - 書式が決まったら別シートで整形して行政報告に使えるよう、生データは常に固定書式
+ *
+ * 同期先:
+ *  - スプシID: SHEETS_SYNC_ID 環境変数（Firebase Functions の .env で設定）
+ *  - reservations タブ: confirmed 全件
+ *  - cancelled タブ: cancelled 全件
+ *  - meta タブ: 最終同期時刻・件数
+ *
+ * 認証:
+ *  - Cloud Functions のデフォルト SA (Application Default Credentials) 経由
+ *  - 事前にスプシを編集者として SA に共有する必要あり
+ */
+const SHEETS_SYNC_ID = process.env.SHEETS_SYNC_ID || '';
+
+interface ReservationRow {
+  id: string;
+  createdAt: string;
+  status: string;
+  planId: string;
+  roomIds: string;
+  startDate: string;
+  endDate: string;
+  nights: number;
+  timeStr: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  guestsAdult: number;
+  guestsElementary: number;
+  guestsChild: number;
+  guestsSportEstimate: number;
+  pricingTotal: number;
+  pricingLightingFee: number;
+  weekdayDiscountHours: number;
+  isResident: string;
+  createdBy: string;
+  note: string;
+}
+
+function reservationToRow(id: string, data: any): ReservationRow {
+  const pricing = data.pricing || {};
+  const tennis = pricing.tennis || {};
+  const midori = pricing.midori || {};
+  const slots: string[] = Array.isArray(data.slots) ? data.slots : [];
+  // 時間範囲を HHMM 文字列から読み取って概要を作る
+  const uniqHours = new Set<string>();
+  for (const s of slots) {
+    const parts = String(s).split('|');
+    if (parts.length === 3) uniqHours.add(parts[2]);
+  }
+  const timeStr = Array.from(uniqHours).sort().join(',');
+
+  const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : '';
+  const customer = data.customer || {};
+  const guests = data.guests || {};
+  return {
+    id,
+    createdAt,
+    status: data.status || '',
+    planId: data.planId || '',
+    roomIds: Array.isArray(data.roomIds) ? data.roomIds.join(',') : '',
+    startDate: data.startDate || '',
+    endDate: data.endDate || '',
+    nights: typeof data.nights === 'number' ? data.nights : 0,
+    timeStr,
+    customerName: customer.name || '',
+    customerPhone: customer.phone || '',
+    customerEmail: customer.email || '',
+    guestsAdult: typeof guests.adult === 'number' ? guests.adult : 0,
+    guestsElementary: typeof guests.elementary === 'number' ? guests.elementary : 0,
+    guestsChild: typeof guests.child === 'number' ? guests.child : 0,
+    guestsSportEstimate: typeof pricing.sportGuestEstimate === 'number' ? pricing.sportGuestEstimate : 0,
+    pricingTotal: typeof pricing.total === 'number' ? pricing.total : 0,
+    pricingLightingFee: (tennis.lightingFee || 0) + (midori.lightingFee || 0),
+    weekdayDiscountHours: typeof tennis.weekdayDiscountHours === 'number' ? tennis.weekdayDiscountHours : 0,
+    isResident: customer.isMember === true ? '市民' : '市外',
+    createdBy: data.createdBy || '',
+    note: (data.note || '').toString().slice(0, 500),
+  };
+}
+
+const SHEET_HEADERS = [
+  '予約ID', '登録日時', 'ステータス', 'プランID', '部屋ID',
+  '利用開始日', '利用終了日', '泊数', '時間帯',
+  'お名前', '電話番号', 'メール',
+  '大人', '小学生', '未就学児', '利用予定人数(目安)',
+  '合計金額', '照明料金', '平日割適用枠数',
+  '市民区分', '予約経路', '備考',
+];
+
+function rowToArray(r: ReservationRow): (string | number)[] {
+  return [
+    r.id, r.createdAt, r.status, r.planId, r.roomIds,
+    r.startDate, r.endDate, r.nights, r.timeStr,
+    r.customerName, r.customerPhone, r.customerEmail,
+    r.guestsAdult, r.guestsElementary, r.guestsChild, r.guestsSportEstimate,
+    r.pricingTotal, r.pricingLightingFee, r.weekdayDiscountHours,
+    r.isResident, r.createdBy, r.note,
+  ];
+}
+
+async function syncReservationsToSheets(): Promise<{ synced: number; cancelled: number }> {
+  if (!SHEETS_SYNC_ID) {
+    console.warn('[sync] SHEETS_SYNC_ID 未設定 — スプシ同期をスキップ');
+    return { synced: 0, cancelled: 0 };
+  }
+
+  // ADC 経由で Sheets API 認証（Cloud Functions のデフォルト SA を使用）
+  const auth = new google.auth.GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  const sheets = google.sheets({ version: 'v4', auth: (await auth.getClient()) as any });
+
+  // Firestore から全予約を取得
+  const snap = await db.collection('reservations').orderBy('createdAt', 'desc').get();
+  const confirmed: ReservationRow[] = [];
+  const cancelled: ReservationRow[] = [];
+  snap.forEach(doc => {
+    const row = reservationToRow(doc.id, doc.data());
+    if (row.status === 'cancelled') cancelled.push(row);
+    else confirmed.push(row);
+  });
+
+  // reservations タブを上書き
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEETS_SYNC_ID,
+    range: 'reservations',
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEETS_SYNC_ID,
+    range: 'reservations!A1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [SHEET_HEADERS, ...confirmed.map(rowToArray)],
+    },
+  });
+
+  // cancelled タブを上書き
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEETS_SYNC_ID,
+    range: 'cancelled',
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEETS_SYNC_ID,
+    range: 'cancelled!A1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [SHEET_HEADERS, ...cancelled.map(rowToArray)],
+    },
+  });
+
+  // meta タブ更新
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEETS_SYNC_ID,
+    range: 'meta',
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEETS_SYNC_ID,
+    range: 'meta!A1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [
+        ['項目', '値'],
+        ['最終同期時刻', new Date().toISOString()],
+        ['同期ソース', 'Firestore reservations'],
+        ['確定予約件数', String(confirmed.length)],
+        ['キャンセル件数', String(cancelled.length)],
+        ['同期関数', 'dailySyncToSheets'],
+      ],
+    },
+  });
+
+  console.log(`[sync] sheets sync OK confirmed=${confirmed.length} cancelled=${cancelled.length}`);
+  return { synced: confirmed.length, cancelled: cancelled.length };
+}
+
+// スケジュール実行（毎日 03:00 JST）
+export const dailySyncToSheets = onSchedule(
+  {
+    schedule: '0 3 * * *',
+    timeZone: 'Asia/Tokyo',
+    region: 'asia-northeast1',
+    memory: '512MiB',
+  },
+  async () => {
+    try {
+      const result = await syncReservationsToSheets();
+      console.log(JSON.stringify({
+        severity: 'INFO',
+        audit: true,
+        action: 'sync.sheets.daily',
+        timestamp: new Date().toISOString(),
+        ...result,
+      }));
+    } catch (e: any) {
+      console.error('[sync] failed:', e.message || e);
+      await sendMonitorAlert(
+        '[ふたみ予約] 日次スプシ同期エラー',
+        [
+          'dailySyncToSheets が失敗しました。',
+          '',
+          `エラー: ${e.message || e}`,
+          `時刻: ${new Date().toISOString()}`,
+          '',
+          '対応: Firebase Console でログを確認してください。',
+        ].join('\n'),
+      );
+    }
+  }
+);
+
+// 手動トリガー（初回動作確認用）
+// curl -H "Authorization: Bearer <idToken>" https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net/triggerSyncToSheets
+export const triggerSyncToSheets = onRequest(
+  { region: 'asia-northeast1' },
+  async (req, res) => {
+    if (setCors(req, res)) return;
+    if (!(await requireStaffAuth(req, res))) return;
+    try {
+      const result = await syncReservationsToSheets();
+      res.status(200).json({ ok: true, ...result });
+    } catch (e: any) {
+      console.error('[sync] manual trigger failed:', e);
+      res.status(500).json({ error: 'sync_failed', detail: e.message || String(e) });
     }
   }
 );
