@@ -2053,6 +2053,11 @@ function showRoomBooking() {
   const pt = plan.planType;
   const el = document.getElementById('room-booking-content');
 
+  // プラン切替時の state 整合性保証:
+  // 当該プランに無関係な追加オプションは強制リセット
+  if (plan.id !== 'tennis_half') state.tennisHalfGuests = 1;
+  if (!plan.lightingPrice) state.useLighting = false;
+
   let html = '<div class="section-title">' + (room ? room.icon : '') + ' ' + plan.name + '</div>';
   if (room) html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
 
@@ -2108,7 +2113,7 @@ function showRoomBooking() {
     if (plan.id === 'tennis_half') {
       html += '<div class="card">';
       html += '<div class="form-group">';
-      html += '<label class="form-label">ご利用人数（半面練習・1人1時間単位）</label>';
+      html += '<label class="form-label">ご利用人数（半面練習・1人1時間単位・最大6名）</label>';
       html += '<div class="stepper">';
       html += '<button class="stepper-btn" onclick="stepTennisHalfGuests(-1)">-</button>';
       html += '<span class="stepper-value" id="tennis-half-count">' + state.tennisHalfGuests + '</span>';
@@ -2370,7 +2375,8 @@ function toggleLighting(checked) {
 }
 
 function stepTennisHalfGuests(delta) {
-  state.tennisHalfGuests = Math.max(1, Math.min(20, state.tennisHalfGuests + delta));
+  // 半面（練習用）は物理的に 6 名が現実的な上限
+  state.tennisHalfGuests = Math.max(1, Math.min(6, state.tennisHalfGuests + delta));
   const el = document.getElementById('tennis-half-count');
   if (el) el.textContent = state.tennisHalfGuests;
   updateBookingPriceSummary();
