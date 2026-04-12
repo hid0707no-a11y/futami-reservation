@@ -1,0 +1,31 @@
+# ===== Firebase / Node =====
+functions/node_modules/
+functions/lib/
+functions/.env
+functions/.env.*
+functions/firebase-debug.log
+functions/*.local
+
+# ===== Secrets =====
+.env
+.env.*
+credentials.json
+service-account*.json
+*-key.json
+
+# ===== OS / Editors =====
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# ===== Temporary / build =====
+*.log
+tmp/
+dist/
+build/
+
+# ===== docs subfolder =====
+# events_raw.json はカレンダー生データで再生成可能。commitしない。
+docs/events_raw.json

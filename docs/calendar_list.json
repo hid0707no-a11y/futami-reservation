@@ -1,0 +1,114 @@
+[
+  {
+    "id": "info@fureai-iyosasaeru.com",
+    "name": "info@fureai-iyosasaeru.com",
+    "description": "",
+    "backgroundColor": "#f83a22",
+    "accessRole": "owner"
+  },
+  {
+    "id": "futamisunsetsauna11.1@gmail.com",
+    "name": "futamisunsetsauna11.1@gmail.com",
+    "description": "",
+    "backgroundColor": "#ffad46",
+    "accessRole": "reader"
+  },
+  {
+    "id": "ja.japanese#holiday@group.v.calendar.google.com",
+    "name": "日本の祝日",
+    "description": "日本の祝日と行事",
+    "backgroundColor": "#16a765",
+    "accessRole": "reader"
+  },
+  {
+    "id": "c_762f68c4a068799f3f1076d2668865db6dc9d392376ab8fc3976a17960355a1f@group.calendar.google.com",
+    "name": "壁打ちコート",
+    "description": "",
+    "backgroundColor": "#4986e7",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_67c5f16f9e2020e994b34f0a5285aa79969e99ed97c8c478065cc4947ba54bfd@group.calendar.google.com",
+    "name": "研修室",
+    "description": "",
+    "backgroundColor": "#c2c2c2",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_9294a45c3826d1fd9853fd8c12e902ea0c4a501e0afce8b04a219bb812938e9e@group.calendar.google.com",
+    "name": "厨房・食堂",
+    "description": "",
+    "backgroundColor": "#b99aff",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_bd14531e064b0cac7c4d6bee2da356e5171a4a8cc9777b1dca5c57cd34e06828@group.calendar.google.com",
+    "name": "Aコート",
+    "description": "",
+    "backgroundColor": "#b3dc6c",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_12002a14607d05d64caa00ba059a65e3ee9d93f7e38d5a8d6ad6ceca0e8b1430@group.calendar.google.com",
+    "name": "Bコート",
+    "description": "",
+    "backgroundColor": "#f83a22",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_e6e501d326e620703bbc61fdd03c5b80710c8ed0489d1a194931734444119add@group.calendar.google.com",
+    "name": "Cコート",
+    "description": "",
+    "backgroundColor": "#9a9cff",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_eff86ce0ee21a373b3cb720418b280c3e355bc2a32b614e992a4824d7b59eece@group.calendar.google.com",
+    "name": "Dコート",
+    "description": "",
+    "backgroundColor": "#42d692",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_39df82d74e8022b4cdf1099449aa53c9cabcd7028dae02021b5249c130272cc8@group.calendar.google.com",
+    "name": "Eコート",
+    "description": "",
+    "backgroundColor": "#fbe983",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_942132440b833ebaaa1e7d700c813020507bd87b34bbbdeda8b67efe43a0f94e@group.calendar.google.com",
+    "name": "潮風ロッジ",
+    "description": "",
+    "backgroundColor": "#42d692",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_07b275354a40cc06b2de00d30a52d0c5b47e3c56ffdb28895bfd2999f152d397@group.calendar.google.com",
+    "name": "潮風キャンプ場",
+    "description": "",
+    "backgroundColor": "#c2c2c2",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_6065bbdeb65b43ba0e531fef46491dc1d8367069df07d1bdd660c33de95066f4@group.calendar.google.com",
+    "name": "潮風みどりの広場",
+    "description": "",
+    "backgroundColor": "#b3dc6c",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_9b0bc001a571d798c2172f9a8820af105b061023dd3a002e7b3fafb4affa8e78@group.calendar.google.com",
+    "name": "宿泊室",
+    "description": "",
+    "backgroundColor": "#ff7537",
+    "accessRole": "owner"
+  },
+  {
+    "id": "c_a911041c9665fdade5a6ae401c85abd40152e178fbe425df122e24042e2775ab@group.calendar.google.com",
+    "name": "体験学習室",
+    "description": "",
+    "backgroundColor": "#ac725e",
+    "accessRole": "owner"
+  }
+]

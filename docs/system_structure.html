@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ふたみ予約システム 構造ドキュメント</title>
+<style>
+:root {
+  --navy: #1e3a8a;
+  --orange: #f59e0b;
+  --green: #10b981;
+  --red: #dc2626;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-700: #374151;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, 'Hiragino Sans', sans-serif;
+  margin: 0;
+  background: var(--gray-50);
+  color: var(--gray-700);
+  line-height: 1.7;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 24px 20px 80px; }
+header { text-align: center; padding: 28px 0 20px; border-bottom: 4px solid var(--navy); margin-bottom: 32px; }
+header h1 { font-size: 28px; color: var(--navy); margin: 0 0 6px; }
+header .sub { color: #6b7280; font-size: 13px; }
+header .badge { display: inline-block; background: var(--green); color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 12px; margin: 0 4px; }
+h2 {
+  background: var(--navy);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px 8px 0 0;
+  font-size: 18px;
+  margin: 36px 0 0;
+}
+h3 { color: var(--navy); margin-top: 28px; border-left: 4px solid var(--orange); padding-left: 10px; }
+.section { background: #fff; padding: 20px 24px; border: 1px solid var(--gray-200); border-radius: 0 0 8px 8px; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+th { background: var(--gray-100); padding: 8px 12px; text-align: left; border: 1px solid var(--gray-200); }
+td { padding: 8px 12px; border: 1px solid var(--gray-200); vertical-align: top; }
+code { background: var(--gray-100); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--red); }
+.url-box { background: var(--gray-100); padding: 12px 16px; border-radius: 8px; margin: 8px 0; word-break: break-all; }
+.url-box a { color: var(--navy); text-decoration: none; font-weight: 600; }
+.url-box a:hover { text-decoration: underline; }
+.note { background: #fef3c7; border-left: 4px solid var(--orange); padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 13px; }
+.danger { background: #fee2e2; border-left: 4px solid var(--red); padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 13px; }
+
+/* システム構成図 */
+.diagram {
+  background: #fff;
+  border: 2px solid var(--navy);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.diagram .layer {
+  background: var(--gray-100);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 8px 0;
+  border-left: 6px solid var(--navy);
+}
+.diagram .layer.user { border-left-color: var(--green); background: #d1fae5; }
+.diagram .layer.front { border-left-color: var(--orange); background: #fef3c7; }
+.diagram .layer.api { border-left-color: var(--navy); background: #dbeafe; }
+.diagram .layer.db { border-left-color: var(--red); background: #fee2e2; }
+.diagram .arrow { text-align: center; font-size: 20px; color: var(--navy); margin: 4px 0; }
+.diagram .layer h4 { margin: 0 0 6px; font-size: 14px; }
+.diagram .layer ul { margin: 4px 0 0; padding-left: 20px; font-size: 12px; }
+.diagram .layer li { margin: 2px 0; }
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.kpi { background: var(--gray-100); padding: 14px; border-radius: 8px; text-align: center; }
+.kpi .num { font-size: 24px; font-weight: 700; color: var(--navy); }
+.kpi .label { font-size: 11px; color: #6b7280; margin-top: 4px; }
+
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  margin: 0 2px;
+  background: var(--gray-100);
+}
+.pill.green { background: #d1fae5; color: #065f46; }
+.pill.orange { background: #fef3c7; color: #92400e; }
+.pill.blue { background: #dbeafe; color: #1e40af; }
+.pill.red { background: #fee2e2; color: #991b1b; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>🏖 ふたみ予約システム 構造ドキュメント</h1>
+  <div class="sub">ふたみ潮風ふれあい公園 / 2026-04-08 作成</div>
+  <div style="margin-top: 10px;">
+    <span class="badge">本番稼働: 2026-04-10予定</span>
+    <span class="badge">月額: 0円（無料枠内）</span>
+  </div>
+</header>
+
+<!-- ===== サマリ ===== -->
+<div class="kpi-grid">
+  <div class="kpi"><div class="num">158</div><div class="label">予約データ件数</div></div>
+  <div class="kpi"><div class="num">6</div><div class="label">画面（フロント）</div></div>
+  <div class="kpi"><div class="num">7</div><div class="label">API エンドポイント</div></div>
+  <div class="kpi"><div class="num">5</div><div class="label">Firestore コレクション</div></div>
+  <div class="kpi"><div class="num">¥0</div><div class="label">月額運用コスト</div></div>
+</div>
+
+<!-- ===== システム構成図 ===== -->
+<h2>🗺 システム構成図</h2>
+<div class="section">
+<div class="diagram">
+
+  <div class="layer user">
+    <h4>👤 ユーザー層</h4>
+    <ul>
+      <li><strong>予約者</strong>：一般客（PC・スマホ）</li>
+      <li><strong>スタッフ</strong>：上村さん他（タブレット・PC）</li>
+    </ul>
+  </div>
+  <div class="arrow">↓ HTTPS</div>
+
+  <div class="layer front">
+    <h4>🌐 フロントエンド <span class="pill orange">GitHub Pages</span></h4>
+    <ul>
+      <li><code>index.html</code> — 予約者向け予約UI</li>
+      <li><code>staff.html</code> — スタッフ詳細管理（30秒自動更新）</li>
+      <li><code>staff2.html</code> — 月俯瞰ビュー（カテゴリフィルタ）</li>
+      <li><code>staff_tennis.html</code> — テニス専用30分刻み</li>
+    </ul>
+  </div>
+  <div class="arrow">↓ REST API（CORS制御）</div>
+
+  <div class="layer api">
+    <h4>⚙️ バックエンド API <span class="pill blue">Cloud Functions 2nd gen / Node.js 20 / TypeScript</span></h4>
+    <ul>
+      <li><code>GET /availability</code> — 占有スロット一覧（公開）</li>
+      <li><code>POST /createReservation</code> — 予約作成（公開・トランザクション）</li>
+      <li><code>GET /listReservations</code> — 予約一覧（要APIキー）</li>
+      <li><code>PATCH /updateReservation</code> — ステータス更新</li>
+      <li><code>DELETE /cancelReservation</code> — 予約キャンセル</li>
+      <li><code>GET/POST /futamiDays</code> — ふたみの日リスト</li>
+      <li><code>GET /health</code> — ヘルスチェック</li>
+    </ul>
+  </div>
+  <div class="arrow">↓ Firestore SDK</div>
+
+  <div class="layer db">
+    <h4>💾 データベース <span class="pill red">Firestore (asia-northeast1)</span></h4>
+    <ul>
+      <li><code>reservations/{id}</code> — 予約本体（顧客情報・期間・状態）</li>
+      <li><code>slots/{key}</code> — 通常スロット <code>roomId|YYYY-MM-DD|hour</code></li>
+      <li><code>shared_slots/{key}</code> — ふたみの日サウナ（capacity:8 / used:N）</li>
+      <li><code>tennis_slots/{key}</code> — テニス30分単位 <code>court_X|YYYY-MM-DD|HHMM</code></li>
+      <li><code>config/special_days</code> — ふたみの日リスト24ヶ月分</li>
+    </ul>
+  </div>
+
+</div>
+</div>
+
+<!-- ===== ドメイン情報 ===== -->
+<h2>🌐 ドメイン・URL情報</h2>
+<div class="section">
+
+<h3>本番URL（カスタムドメイン）</h3>
+<div class="url-box">
+  メインURL：<a href="https://yoyaku.fureai-iyosasaeru.com/">https://yoyaku.fureai-iyosasaeru.com/</a>
+</div>
+
+<table>
+<tr><th>画面</th><th>URL</th><th>用途</th></tr>
+<tr><td>予約者UI</td><td><code>https://yoyaku.fureai-iyosasaeru.com/</code></td><td>一般のお客さん</td></tr>
+<tr><td>スタッフ詳細</td><td><code>https://yoyaku.fureai-iyosasaeru.com/staff.html</code></td><td>1日の細かい管理・電話予約</td></tr>
+<tr><td>月俯瞰</td><td><code>https://yoyaku.fureai-iyosasaeru.com/staff2.html</code></td><td>1ヶ月分の利用状況</td></tr>
+<tr><td>テニス専用</td><td><code>https://yoyaku.fureai-iyosasaeru.com/staff_tennis.html</code></td><td>30分刻みコート管理</td></tr>
+</table>
+
+<h3>ドメイン管理情報</h3>
+<table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>ドメイン</td><td><code>fureai-iyosasaeru.com</code></td></tr>
+<tr><td>サブドメイン</td><td><code>yoyaku</code></td></tr>
+<tr><td>レジストラ</td><td>お名前.com（お名前ID: 72040160）</td></tr>
+<tr><td>有効期限</td><td>2030/02/16</td></tr>
+<tr><td>DNSレコード種別</td><td>CNAME</td></tr>
+<tr><td>CNAME 値</td><td><code>hid0707no-a11y.github.io</code></td></tr>
+<tr><td>TTL</td><td>3600秒</td></tr>
+</table>
+
+<div class="note">
+<strong>⚠️ 既存DNSレコード（触らない）</strong><br>
+Google Workspace用のメール・認証レコードがあります。削除すると <code>info@fureai-iyosasaeru.com</code> にメールが届かなくなります。
+<ul>
+  <li><code>NS</code>: 01-04.dnsv.jp</li>
+  <li><code>MX</code>: smtp.google.com</li>
+  <li><code>TXT</code>: google-site-verification=...</li>
+</ul>
+</div>
+
+<h3>API ベース URL</h3>
+<div class="url-box">
+  <code>https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net</code><br>
+  例：<code>/availability</code>, <code>/createReservation</code>
+</div>
+
+<h3>関連リポジトリ</h3>
+<table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>GitHubリポジトリ</td><td><a href="https://github.com/hid0707no-a11y/futami-reservation">hid0707no-a11y/futami-reservation</a></td></tr>
+<tr><td>ローカル（Mac）</td><td><code>~/futami-reservation</code></td></tr>
+<tr><td>マスター（Drive）</td><td><code>00_projects/futami_reservation/src/</code></td></tr>
+<tr><td>GCPプロジェクトID</td><td><code>futami-yoyaku-492607</code>（個人Gmail所有・組織なし）</td></tr>
+</table>
+
+</div>
+
+<!-- ===== Google Cloud / Firebase ===== -->
+<h2>☁️ Google Cloud / Firebase 詳細</h2>
+<div class="section">
+
+<h3>プロジェクト基本情報</h3>
+<table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>GCPプロジェクトID</td><td><code>futami-yoyaku-492607</code></td></tr>
+<tr><td>プロジェクト番号</td><td><code>361438299559</code></td></tr>
+<tr><td>所有者</td><td><code>hid0707no@gmail.com</code>（個人Gmail）</td></tr>
+<tr><td>組織</td><td>なし（組織外プロジェクト）</td></tr>
+<tr><td>Firebase登録</td><td>済み（同プロジェクト）</td></tr>
+<tr><td>リージョン</td><td><code>asia-northeast1</code>（東京）</td></tr>
+<tr><td>請求先アカウント</td><td><code>01466E-4F02A4-9369B8</code></td></tr>
+<tr><td>無料トライアル</td><td>使用済み・有効期限 2026-07-07</td></tr>
+</table>
+
+<div class="danger">
+<strong>⚠ 旧プロジェクト（放棄）：<code>futami-reservation-492604</code></strong><br>
+最初に Workspace組織配下で作成したプロジェクト。組織ポリシー <code>iam.allowedPolicyMemberDomains</code> により <code>allUsers</code> 公開ができず、組織管理者ロールも取得できなかったため放棄。<strong>このIDは使わないこと</strong>。後日削除推奨。
+</div>
+
+<h3>有効化済みAPI</h3>
+<table>
+<tr><th>API</th><th>用途</th></tr>
+<tr><td><code>firestore.googleapis.com</code></td><td>データベース</td></tr>
+<tr><td><code>cloudfunctions.googleapis.com</code></td><td>サーバーレス関数</td></tr>
+<tr><td><code>cloudbuild.googleapis.com</code></td><td>関数のビルド</td></tr>
+<tr><td><code>artifactregistry.googleapis.com</code></td><td>コンテナイメージ保管</td></tr>
+<tr><td><code>run.googleapis.com</code></td><td>Cloud Functions 2nd gen の実体</td></tr>
+<tr><td><code>eventarc.googleapis.com</code></td><td>イベント駆動</td></tr>
+<tr><td><code>pubsub.googleapis.com</code></td><td>メッセージング</td></tr>
+<tr><td><code>storage.googleapis.com</code></td><td>関数のソース保管</td></tr>
+<tr><td><code>firebaseextensions.googleapis.com</code></td><td>Firebase拡張</td></tr>
+</table>
+
+<h3>各種コンソールURL</h3>
+<table>
+<tr><th>機能</th><th>URL</th></tr>
+<tr><td>GCP コンソール</td><td><a href="https://console.cloud.google.com/?project=futami-yoyaku-492607">開く</a></td></tr>
+<tr><td>Firebase コンソール</td><td><a href="https://console.firebase.google.com/project/futami-yoyaku-492607/overview">開く</a></td></tr>
+<tr><td>Firestore データ</td><td><a href="https://console.firebase.google.com/project/futami-yoyaku-492607/firestore/data">開く</a></td></tr>
+<tr><td>Cloud Functions 一覧</td><td><a href="https://console.cloud.google.com/functions/list?project=futami-yoyaku-492607">開く</a></td></tr>
+<tr><td>Cloud Run（Functions実体）</td><td><a href="https://console.cloud.google.com/run?project=futami-yoyaku-492607">開く</a></td></tr>
+<tr><td>IAM（権限）</td><td><a href="https://console.cloud.google.com/iam-admin/iam?project=futami-yoyaku-492607">開く</a></td></tr>
+<tr><td>課金</td><td><a href="https://console.cloud.google.com/billing/linkedaccount?project=futami-yoyaku-492607">開く</a></td></tr>
+<tr><td>ログ</td><td><a href="https://console.cloud.google.com/logs/query?project=futami-yoyaku-492607">開く</a></td></tr>
+</table>
+
+<h3>ローカル CLI 認証</h3>
+<table>
+<tr><th>ツール</th><th>ログイン状態</th></tr>
+<tr><td><code>gcloud</code> CLI</td><td><code>hid0707no@gmail.com</code>（個人Gmail）</td></tr>
+<tr><td>Application Default Credentials</td><td><code>hid0707no@gmail.com</code></td></tr>
+<tr><td><code>firebase</code> CLI</td><td><code>hid0707no@gmail.com</code></td></tr>
+</table>
+<div class="note">
+⚠ ふたみアカウント（<code>info@fureai-iyosasaeru.com</code>）でログインすると Firestore 書込権限がありません。スクリプト実行時は必ず個人Gmail で <code>gcloud auth login</code> しておくこと。
+</div>
+
+<h3>Cloud Functions 個別URL</h3>
+<table>
+<tr><th>関数</th><th>URL</th></tr>
+<tr><td>availability</td><td><code>https://availability-6ry33ad4oa-an.a.run.app</code></td></tr>
+<tr><td>createReservation</td><td><code>https://createreservation-6ry33ad4oa-an.a.run.app</code></td></tr>
+<tr><td>listReservations</td><td><code>https://listreservations-6ry33ad4oa-an.a.run.app</code></td></tr>
+<tr><td>updateReservation</td><td><code>https://updatereservation-6ry33ad4oa-an.a.run.app</code></td></tr>
+<tr><td>cancelReservation</td><td><code>https://cancelreservation-6ry33ad4oa-an.a.run.app</code></td></tr>
+<tr><td>futamiDays</td><td><code>https://futamidays-6ry33ad4oa-an.a.run.app</code></td></tr>
+<tr><td>health</td><td><code>https://health-6ry33ad4oa-an.a.run.app</code></td></tr>
+</table>
+
+<h3>デプロイコマンド</h3>
+<div class="url-box">
+<strong>バックエンド更新時：</strong><br>
+<code>cd 00_projects/futami_reservation/functions && npm run build && cd .. && firebase deploy --only functions</code>
+</div>
+
+<h3>セキュリティ設定</h3>
+<table>
+<tr><th>項目</th><th>状態</th></tr>
+<tr><td>CORS許可オリジン</td><td><code>yoyaku.fureai-iyosasaeru.com</code> / <code>hid0707no-a11y.github.io</code> / localhost</td></tr>
+<tr><td>POST /createReservation</td><td>認証なし（CORS＋将来レート制限）</td></tr>
+<tr><td>スタッフAPI（list/update/cancel）</td><td>APIキー必須（現状 <code>dev-key-change-me</code>・要強化）</td></tr>
+<tr><td>Firestore Security Rules</td><td>全拒否（Cloud Functions 経由のみ）</td></tr>
+<tr><td>min_instances</td><td>0（コールドスタート許容・無料）</td></tr>
+</table>
+
+</div>
+
+<!-- ===== Firestore 構造 ===== -->
+<h2>💾 Firestore データ構造</h2>
+<div class="section">
+
+<h3>reservations/{id}</h3>
+<table>
+<tr><th>フィールド</th><th>型</th><th>説明</th></tr>
+<tr><td>planId</td><td>string</td><td>プランID（stay_6, plan_sauna_futami 等）</td></tr>
+<tr><td>roomIds</td><td>string[]</td><td>占有部屋IDリスト（複数部屋OK）</td></tr>
+<tr><td>slots</td><td>string[]</td><td>占有スロットキーの配列</td></tr>
+<tr><td>startDate / endDate</td><td>string</td><td>YYYY-MM-DD</td></tr>
+<tr><td>nights</td><td>number</td><td>0=日帰り、1=1泊...</td></tr>
+<tr><td>customer</td><td>object</td><td>{name, phone, email, isMember}</td></tr>
+<tr><td>guests</td><td>object</td><td>{adult, elementary, child}</td></tr>
+<tr><td>guestCount</td><td>number</td><td>ふたみの日サウナの人数</td></tr>
+<tr><td>status</td><td>string</td><td>confirmed / checked_in / cancelled</td></tr>
+<tr><td>isFutamiDay</td><td>bool</td><td>ふたみの日フラグ</td></tr>
+<tr><td>isTennis</td><td>bool</td><td>テニスフラグ</td></tr>
+</table>
+
+<h3>slots / shared_slots / tennis_slots</h3>
+<table>
+<tr><th>コレクション</th><th>キー形式</th><th>用途</th></tr>
+<tr><td><code>slots</code></td><td><code>roomId|YYYY-MM-DD|hour</code></td><td>通常予約（1時間単位）</td></tr>
+<tr><td><code>shared_slots</code></td><td><code>sauna_share|YYYY-MM-DD|hour</code></td><td>ふたみの日サウナ（capacity:8 / used:N カウンタ）</td></tr>
+<tr><td><code>tennis_slots</code></td><td><code>court_X|YYYY-MM-DD|HHMM</code></td><td>テニス30分単位</td></tr>
+</table>
+
+<h3>config/special_days</h3>
+<div class="url-box">
+  <code>{ sauna_capacity_days: ["2026-04-23", "2026-05-23", ...] }</code><br>
+  ふたみの日リスト（24ヶ月分・自動生成）。手動追加・削除可能。
+</div>
+
+</div>
+
+<!-- ===== 部屋IDマッピング ===== -->
+<h2>🏠 部屋IDマッピング</h2>
+<div class="section">
+<table>
+<tr><th>カレンダー記載</th><th>システムID</th><th>正式名称</th><th>備考</th></tr>
+<tr><td>1号室</td><td><code>room_27</code></td><td>1号室（大部屋・27畳）</td><td>定員多人数</td></tr>
+<tr><td>2号室</td><td><code>room_6_1</code></td><td>2号室（6畳）</td><td>定員3名</td></tr>
+<tr><td>3号室</td><td><code>room_6_2</code></td><td>3号室（6畳）</td><td>定員3名</td></tr>
+<tr><td>5号室</td><td><code>room_6_3</code></td><td>5号室（6畳）</td><td>定員3名</td></tr>
+<tr><td>6号室</td><td><code>room_6_4</code></td><td>6号室（6畳）</td><td>定員3名・※4号室は欠番</td></tr>
+<tr><td>体験学習室</td><td><code>room_exp</code></td><td>体験学習室（25畳）</td><td>定員多人数</td></tr>
+<tr><td>研修室</td><td><code>room_train</code></td><td>研修室</td><td></td></tr>
+<tr><td>厨房・食堂</td><td><code>room_kitchen</code></td><td>厨房・食堂</td><td>宿泊者と共用ルール</td></tr>
+<tr><td>A〜Eコート</td><td><code>court_1〜court_5</code></td><td>テニスコート</td><td>30分単位予約</td></tr>
+<tr><td>みどりの広場</td><td><code>midori</code></td><td>みどりの広場</td><td>3コマ制</td></tr>
+<tr><td>サンセットサウナ</td><td><code>sauna</code></td><td>サウナ通常</td><td>貸切型</td></tr>
+<tr><td>サウナ（ふたみの日）</td><td><code>sauna_share</code></td><td>サウナふたみの日</td><td>capacity:8人カウンタ型</td></tr>
+<tr><td>キャンプ場</td><td><code>camp</code></td><td>潮風キャンプ場</td><td></td></tr>
+<tr><td>ロッジ</td><td><code>lodge_a/b</code></td><td>潮風ロッジA/B</td><td></td></tr>
+</table>
+</div>
+
+<!-- ===== 特殊ルール ===== -->
+<h2>📋 特殊ルール</h2>
+<div class="section">
+
+<h3>🌅 ふたみの日（毎月23日）</h3>
+<ul>
+  <li><strong>料金</strong>：1名2,300円（税込）</li>
+  <li><strong>定員</strong>：1枠最大8名（複数組同時予約OK）</li>
+  <li><strong>対象時間枠</strong>：A 10-12 / B 12:30-14:30 / C 15-17 / D 17:30-19:30</li>
+  <li><strong>振替ルール</strong>：23日が火曜なら前日（22日）に振替（火曜定休のため）</li>
+  <li><strong>管理</strong>：Firestoreの <code>config/special_days</code> で柔軟に変更可能</li>
+</ul>
+
+<h3>🎾 テニス</h3>
+<ul>
+  <li><strong>30分刻み開始</strong>：9:00, 9:30, 10:00, 10:30...</li>
+  <li><strong>1時間単位の予約</strong>：1予約 = 30分×2スロット</li>
+  <li><strong>重複防止</strong>：自分の選択枠と重なる時間は自動でグレーアウト</li>
+  <li><strong>火曜定休</strong>：管理画面で「定休日」と表示</li>
+</ul>
+
+<h3>🧖 サウナ通常</h3>
+<ul>
+  <li><strong>4枠制</strong>：A 10-12 / B 12:30-14:30 / C 15-17 / D 17:30-19:30</li>
+  <li><strong>料金</strong>：12,000円/グループ（貸切型）</li>
+  <li><strong>23日のみ</strong>：ふたみの日プランに自動切替</li>
+</ul>
+
+</div>
+
+<!-- ===== 運用フロー ===== -->
+<h2>🔄 運用フロー</h2>
+<div class="section">
+
+<h3>4/9（水）並行運用</h3>
+<ol>
+  <li>カレンダー＋新システムの両方に予約入力</li>
+  <li>差分・違和感を上村さんから収集</li>
+  <li><code>docs/feedback_log.md</code> に記録</li>
+</ol>
+
+<h3>4/10（木）本番稼働</h3>
+<ol>
+  <li>朝一動作確認</li>
+  <li>新システム単独運用へ切替</li>
+  <li>Googleカレンダー側は参照のみ</li>
+</ol>
+
+<h3>フィードバック反映ループ</h3>
+<ol>
+  <li>現場 → 社長 → <code>feedback_log.md</code></li>
+  <li>修正実装（src/編集）</li>
+  <li>~/futami-reservation/ にコピー → git push</li>
+  <li>GitHub Pages で自動反映</li>
+  <li>CHANGELOG に v1.x として追記</li>
+</ol>
+
+</div>
+
+<!-- ===== コスト ===== -->
+<h2>💰 コスト</h2>
+<div class="section">
+<table>
+<tr><th>項目</th><th>想定</th><th>実績/月</th></tr>
+<tr><td>Firestore</td><td>無料枠（5万読込/2万書込/日）</td><td>0円</td></tr>
+<tr><td>Cloud Functions</td><td>無料枠（200万実行/月）</td><td>0円</td></tr>
+<tr><td>min_instances</td><td>0台（コールドスタート許容）</td><td>0円</td></tr>
+<tr><td>GitHub Pages</td><td>無料</td><td>0円</td></tr>
+<tr><td>カスタムドメイン</td><td>既存ドメイン使用</td><td>0円</td></tr>
+<tr><td><strong>合計</strong></td><td></td><td><strong>0円</strong></td></tr>
+</table>
+<div class="note">スケール時の分岐：月予約3,000件超 or 同時アクセス急増 → 月数百〜数千円程度の見込み</div>
+</div>
+
+<!-- ===== 残課題 ===== -->
+<h2>📝 残課題</h2>
+<div class="section">
+<table>
+<tr><th>優先度</th><th>項目</th><th>目安</th></tr>
+<tr><td><span class="pill orange">中</span></td><td>APIキー強化（現状 dev-key-change-me）</td><td>稼働後</td></tr>
+<tr><td><span class="pill orange">中</span></td><td>営業カレンダー機能（夏休み無休等）</td><td>夏まで</td></tr>
+<tr><td><span class="pill green">低</span></td><td>reCAPTCHA 導入</td><td>稼働安定後</td></tr>
+<tr><td><span class="pill green">低</span></td><td>min_instances 復活検討（コールドスタート気になれば）</td><td>稼働後判断</td></tr>
+<tr><td><span class="pill green">低</span></td><td>Airペイ オンライン決済連携</td><td>4月後半〜</td></tr>
+<tr><td><span class="pill green">低</span></td><td>Wix 埋め込み</td><td>後日</td></tr>
+</table>
+</div>
+
+<footer style="text-align:center; margin-top: 40px; padding: 20px; color: #6b7280; font-size: 12px; border-top: 1px solid var(--gray-200);">
+  ふたみ予約システム v1.0 / 2026-04-08 / 髙橋 × Claude Code
+</footer>
+
+</div>
+</body>
+</html>

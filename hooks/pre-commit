@@ -1,0 +1,78 @@
+#!/bin/sh
+# Nissho futami-reservation pre-commit hook
+# 1. マージコンフリクトマーカー検出
+# 2. HTML 内 inline script の JS syntax チェック
+# 3. 平文 credential の簡易検出（STAFF_API_KEY 等）
+#
+# Bypass: `git commit --no-verify` (非推奨・PR レビュー必須)
+
+set -e
+
+FAIL=0
+
+# ===== 1. merge conflict marker check =====
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$STAGED" ]; then
+  for f in $STAGED; do
+    if [ -f "$f" ]; then
+      if grep -nE '^(<{7}|={7}|>{7})( |$)' "$f" > /tmp/_pc_conflict.txt; then
+        echo "❌ merge conflict marker found in: $f"
+        cat /tmp/_pc_conflict.txt
+        FAIL=1
+      fi
+    fi
+  done
+  rm -f /tmp/_pc_conflict.txt
+fi
+
+# ===== 2. HTML inline script syntax check =====
+HTML_FILES=$(echo "$STAGED" | grep -E '\.html$' || true)
+if [ -n "$HTML_FILES" ]; then
+  for f in $HTML_FILES; do
+    [ -f "$f" ] || continue
+    node -e "
+      const fs = require('fs');
+      const html = fs.readFileSync('$f', 'utf8');
+      const re = /<script(?![^>]*\bsrc=)(?![^>]*\btype=\"module\")[^>]*>([\\s\\S]*?)<\\/script>/g;
+      let m, i = 0, errors = 0;
+      while ((m = re.exec(html)) !== null) {
+        i++;
+        try { new Function('\"use strict\";\n' + m[1]); }
+        catch (e) {
+          errors++;
+          console.error('❌ $f script#' + i + ': ' + e.message);
+        }
+      }
+      if (errors > 0) process.exit(1);
+    " || FAIL=1
+  done
+fi
+
+# ===== 3. credential leak simple scan =====
+# STAFF_API_KEY 相当の 64 桁 hex が HTML/JS に含まれていないか
+if [ -n "$STAGED" ]; then
+  for f in $STAGED; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      *.html|*.js|*.ts|*.md)
+        if grep -nE "'[a-f0-9]{64}'" "$f" > /tmp/_pc_leak.txt 2>/dev/null; then
+          # 許容リスト（過去の commit に残っている参考値など）がないなら警告
+          echo "⚠️  possible 64-hex credential in: $f"
+          cat /tmp/_pc_leak.txt
+          echo "   → Firebase Auth 化後の今、平文の長い16進キーは不要のはず。"
+          echo "   → 本当に必要なら --no-verify でバイパス可"
+          FAIL=1
+        fi
+        ;;
+    esac
+  done
+  rm -f /tmp/_pc_leak.txt
+fi
+
+if [ $FAIL -ne 0 ]; then
+  echo ""
+  echo "pre-commit hook failed. Fix the issues above, or run with --no-verify if you really know what you're doing."
+  exit 1
+fi
+
+exit 0
