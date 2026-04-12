@@ -1,0 +1,100 @@
+{
+  "_comment": "ふたみ潮風ふれあい公園 料金表の機械可読版 (SSOT)。物理料金表との照合テストの正解データとして使う。更新時は docs/pricing.md と料金表原本 PDF も揃えて更新。",
+  "source": "伊予市 ふたみ潮風ふれあい公園 料金表（現場掲示版・2026-04 時点）",
+  "lastVerified": "2026-04-12",
+  "verifiedBy": "高橋秀典（株式会社日昇）",
+
+  "tennis": {
+    "full": {
+      "label": "テニスコート 一面貸切",
+      "unit": "1面1時間",
+      "resident": 630,
+      "nonResident": 760
+    },
+    "half": {
+      "label": "テニスコート 半面（練習用）",
+      "unit": "1人1時間",
+      "resident": 240,
+      "nonResident": 280,
+      "maxGuests": 6
+    },
+    "lighting": {
+      "label": "夜間照明（器具レンタル）",
+      "unit": "1時間1面",
+      "price": 630,
+      "weekdayDiscountApplies": false,
+      "_note": "平日割は使用料のみ対象、器具レンタルは全額（要市担当確認中）"
+    },
+    "weekdayDiscount": {
+      "label": "平日割",
+      "enabled": true,
+      "days": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      "excludeJapaneseHolidays": true,
+      "timeWindow": "08:30-17:00",
+      "slotMustFitFully": true,
+      "rate": 0.5,
+      "_note": "料金表文言: 『土曜/日曜/祝日を除く、平日のみ。8:30-17:00 時間帯にご利用可能。大会時はご利用いただけません』"
+    }
+  },
+
+  "midori": {
+    "am": {
+      "label": "みどりの広場 午前",
+      "timeRange": "08:30-12:00",
+      "hours": 4,
+      "resident": 1890,
+      "nonResident": 2200,
+      "studentResident": 1050,
+      "studentNonResident": 1260
+    },
+    "pm": {
+      "label": "みどりの広場 午後",
+      "timeRange": "12:00-17:00",
+      "hours": 5,
+      "resident": 2730,
+      "nonResident": 3250,
+      "studentResident": 1580,
+      "studentNonResident": 1890
+    },
+    "eve": {
+      "label": "みどりの広場 夜間",
+      "timeRange": "17:00-22:00",
+      "hours": 5,
+      "resident": 2730,
+      "nonResident": 3250,
+      "studentResident": 1580,
+      "studentNonResident": 1890
+    },
+    "lighting": {
+      "label": "夜間照明（器具レンタル・みどりの広場）",
+      "unit": "1時間",
+      "price": 1890,
+      "maxHours": 5,
+      "optional": true,
+      "_note": "夜間スロット (17:00-22:00) でのみ任意追加可能。0〜5時間で指定"
+    }
+  },
+
+  "pendingConfirmation": [
+    {
+      "question": "平日割の円未満端数処理",
+      "options": ["切り上げ", "切り捨て", "四捨五入"],
+      "currentImpl": "Math.ceil (切り上げ)",
+      "status": "日昇担当確認中（2026-04-12）"
+    },
+    {
+      "question": "平日割 8:30-17:00 境界の解釈",
+      "cases": [
+        "8:00-9:00 開始枠 → 現状 false（対象外）",
+        "16:30-17:30 開始枠 → 現状 false（対象外）"
+      ],
+      "currentImpl": "枠が完全に 8:30-17:00 に収まる場合のみ対象",
+      "status": "日昇担当確認中（2026-04-12）"
+    },
+    {
+      "question": "夜間照明への平日割適用",
+      "currentImpl": "適用しない（使用料のみ対象）",
+      "status": "日昇担当確認中（2026-04-12）"
+    }
+  ]
+}

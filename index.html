@@ -1620,24 +1620,41 @@ function isJapaneseHoliday(dateStr) {
   return false;
 }
 
-// 平日割（テニスコート）: 以下をすべて満たすスロットのみ半額
+// 平日割判定（汎用版）
+// - opts.startMin / opts.endMin で時間帯の開始上限・終了下限（分単位）を指定
+// - opts.slotMinutes でスロットの長さ（分）、デフォルト 60
+// - 判定ロジック:
 //   1. 月〜金（土日除外）
 //   2. 日本の祝日でない
-//   3. スロット開始 8:30-16:00（終端 17:00 までに収まる）
-// 料金表文言: 「土曜/日曜/祝日を除く、平日のみ。8:30-17:00 時間帯にご利用可能。大会時はご利用いただけません」
-// ⚠️ 大会日はシステム側で管理していない。現場運用での対応となる。
-function isTennisWeekdayDiscountSlot(dateStr, startKey) {
+//   3. スロット全体が [startMin, endMin] に完全に収まる
+//     （開始時刻 >= startMin かつ 開始+slotMinutes <= endMin）
+// - 前提: dateStr は YYYY-MM-DD、startKey は "0900" 形式 HHMM 文字列
+// ⚠️ 大会日はシステム側で管理していない。現場運用での対応。
+function isWeekdayDiscountSlot(dateStr, startKey, opts) {
   if (!dateStr) return false;
   const d = new Date(dateStr + 'T00:00:00');
   const dow = d.getDay();
-  if (dow === 0 || dow === 6) return false; // 土日除外
-  if (isJapaneseHoliday(dateStr)) return false; // 祝日除外
+  if (dow === 0 || dow === 6) return false;
+  if (isJapaneseHoliday(dateStr)) return false;
   if (typeof startKey !== 'string' || !/^\d{4}$/.test(startKey)) return false;
   const h = parseInt(startKey.slice(0, 2), 10);
   const m = parseInt(startKey.slice(2), 10);
-  const startMin = h * 60 + m;
-  // 8:30 (510 分) 以上かつ 16:00 (960 分) 以下 → 終端は 17:00 まで
-  return startMin >= 510 && startMin <= 960;
+  const slotStart = h * 60 + m;
+  const slotLen = (opts && opts.slotMinutes) || 60;
+  const slotEnd = slotStart + slotLen;
+  const windowStart = opts ? opts.startMin : 0;
+  const windowEnd = opts ? opts.endMin : 24 * 60;
+  return slotStart >= windowStart && slotEnd <= windowEnd;
+}
+
+// テニスコートの平日割: 平日 8:30-17:00 / 1時間枠 / 祝日除外
+// 後方互換のためのシンタックスシュガー
+function isTennisWeekdayDiscountSlot(dateStr, startKey) {
+  return isWeekdayDiscountSlot(dateStr, startKey, {
+    startMin: 8 * 60 + 30, // 08:30
+    endMin: 17 * 60,       // 17:00
+    slotMinutes: 60,
+  });
 }
 
 function getPlanDisplayPrice(plan) {
@@ -3086,8 +3103,25 @@ function proceedToConfirm() {
   } else if (pt === 'day_all' || pt === 'day_slot') {
     timeStr = dateStr + ' ' + (plan.timeRange || '');
   } else if (pt === 'hourly') {
-    const sorted = [...state.selectedHours].sort((a, b) => a - b);
-    const labels = sorted.map(h => (h < 10 ? '0' : '') + h + ':00');
+    // テニスは selectedHours が "0900","0930" 等の HHMM 文字列、
+    // ロッジ等は 10, 11 などの時間数値。両方対応する。
+    const isTennisHours = state.selectedHours.every(h => typeof h === 'string' && /^\d{4}$/.test(h));
+    const sorted = [...state.selectedHours].sort((a, b) => {
+      const av = typeof a === 'string' ? parseInt(a, 10) : a;
+      const bv = typeof b === 'string' ? parseInt(b, 10) : b;
+      return av - bv;
+    });
+    const labels = sorted.map(h => {
+      if (isTennisHours) {
+        const sH = h.slice(0, 2);
+        const sM = h.slice(2);
+        const totalMin = parseInt(sH, 10) * 60 + parseInt(sM, 10) + 60;
+        const eH = String(Math.floor(totalMin / 60)).padStart(2, '0');
+        const eM = String(totalMin % 60).padStart(2, '0');
+        return sH + ':' + sM + '〜' + eH + ':' + eM;
+      }
+      return (h < 10 ? '0' : '') + h + ':00';
+    });
     timeStr = dateStr + ' ' + labels.join(', ');
   } else if (pt === 'sauna') {
     timeStr = dateStr + ' ' + plan.timeRange;

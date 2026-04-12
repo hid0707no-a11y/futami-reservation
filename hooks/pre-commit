@@ -2,7 +2,8 @@
 # Nissho futami-reservation pre-commit hook
 # 1. マージコンフリクトマーカー検出
 # 2. HTML 内 inline script の JS syntax チェック
-# 3. 平文 credential の簡易検出（STAFF_API_KEY 等）
+# 3. 料金表 SSOT 照合テスト（scripts/verify_pricing.js）
+# 4. 平文 credential の簡易検出（STAFF_API_KEY 等）
 #
 # Bypass: `git commit --no-verify` (非推奨・PR レビュー必須)
 
@@ -48,7 +49,19 @@ if [ -n "$HTML_FILES" ]; then
   done
 fi
 
-# ===== 3. credential leak simple scan =====
+# ===== 3. 料金表 SSOT 照合テスト =====
+# index.html / docs/pricing.json / scripts/verify_pricing.js のいずれかが
+# ステージされた場合のみ実行（通常のコミットは軽量化）
+if echo "$STAGED" | grep -qE '(^|/)(index\.html|docs/pricing\.json|scripts/verify_pricing\.js)$'; then
+  if ! node scripts/verify_pricing.js > /tmp/_pc_pricing.txt 2>&1; then
+    echo "❌ 料金表 SSOT 照合テスト失敗"
+    cat /tmp/_pc_pricing.txt
+    FAIL=1
+  fi
+  rm -f /tmp/_pc_pricing.txt
+fi
+
+# ===== 4. credential leak simple scan =====
 # STAFF_API_KEY 相当の 64 桁 hex が HTML/JS に含まれていないか
 if [ -n "$STAGED" ]; then
   for f in $STAGED; do

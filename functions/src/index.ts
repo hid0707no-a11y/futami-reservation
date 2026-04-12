@@ -1,4 +1,5 @@
 import { onRequest } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
 
@@ -196,6 +197,41 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+// ===== 認証失敗専用レートリミット =====
+// 通常の checkRateLimit は全呼び出しをカウントするが、認証失敗はもっと厳しく
+// 絞りたい（ブルートフォース / 監査ログスパム対策）。
+// 失敗時のみカウントし、IP 単位で 1 分あたり 10 回を超えると 429 を返す。
+const AUTH_FAIL_WINDOW_MS = 60 * 1000;
+const AUTH_FAIL_LIMIT = 10;
+
+function checkAuthFailRateLimit(req: any, res: any): boolean {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
+  const key = `auth_fail:${ip}`;
+  const now = Date.now();
+  const entry = rateLimitStore.get(key);
+  if (!entry || entry.resetAt <= now) return true; // 初回 or ウィンドウ切れ
+  if (entry.count >= AUTH_FAIL_LIMIT) {
+    auditLog('auth.rate_limited', { ip, count: entry.count }, req);
+    const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+    res.set('Retry-After', String(retryAfter));
+    res.status(429).json({ error: 'too_many_auth_failures', retryAfter });
+    return false;
+  }
+  return true;
+}
+
+function recordAuthFailure(req: any): void {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
+  const key = `auth_fail:${ip}`;
+  const now = Date.now();
+  let entry = rateLimitStore.get(key);
+  if (!entry || entry.resetAt <= now) {
+    entry = { count: 0, resetAt: now + AUTH_FAIL_WINDOW_MS };
+    rateLimitStore.set(key, entry);
+  }
+  entry.count++;
+}
+
 // ===== 冪等性チェック（二重予約防止） =====
 async function checkIdempotency(req: any, res: any): Promise<boolean> {
   const key = req.headers['x-idempotency-key'];
@@ -252,6 +288,10 @@ function setCors(req: any, res: any): boolean {
  *    ただし email_verified が true のものに限る）
  */
 async function requireStaffAuth(req: any, res: any): Promise<boolean> {
+  // 認証失敗系のレートリミット（IP 単位で 1 分 10 回）
+  // 失敗が連続した IP は一定時間 429 で弾く（ブルートフォース / ログスパム対策）
+  if (!checkAuthFailRateLimit(req, res)) return false;
+
   const authHeader = req.headers.authorization || '';
   if (authHeader.startsWith('Bearer ')) {
     try {
@@ -277,6 +317,7 @@ async function requireStaffAuth(req: any, res: any): Promise<boolean> {
         ? decoded.email.replace(/^(.{2}).*?(@.+)$/, '$1***$2')
         : null;
       auditLog('auth.forbidden', { uid: decoded.uid, emailMasked }, req);
+      recordAuthFailure(req);
       res.status(403).json({ error: 'forbidden_not_staff' });
       return false;
     } catch (e) {
@@ -285,6 +326,7 @@ async function requireStaffAuth(req: any, res: any): Promise<boolean> {
   }
 
   auditLog('auth.failed', { method: req.method, path: req.path }, req);
+  recordAuthFailure(req);
   res.status(401).json({ error: 'unauthorized' });
   return false;
 }
@@ -1122,5 +1164,135 @@ export const health = onRequest(
   async (req, res) => {
     if (setCors(req, res)) return;
     res.status(200).json({ ok: true, time: new Date().toISOString() });
+  }
+);
+
+/**
+ * ===== スタッフ画面 Uptime 監視（スケジュール実行）=====
+ *
+ * 目的:
+ *  - staff.html が 401/500 等を silent に握りつぶす設計なので、
+ *    外部から毎日定期的に「スタッフ画面で予約一覧が取れるか」を検証
+ *  - 失敗が一定回数を超えたらスタッフ宛に SMTP で警告メールを送る
+ *
+ * 検証項目（Admin SDK レベル）:
+ *  1. Firestore 接続（config/business_calendar を読む）
+ *  2. 予約コレクション（reservations）への list クエリが通る
+ *  3. tennis_slots コレクションが読める
+ *  4. Firebase Auth から staff claim 付きユーザーが 1 人以上存在する
+ *
+ * 頻度: 毎日 08:30 JST (営業開始時刻)
+ * 通知先: STAFF_EMAIL + hid0707no@gmail.com
+ */
+const MONITOR_NOTIFY_EMAILS = [
+  STAFF_EMAIL,
+  'hid0707no@gmail.com',
+];
+
+async function sendMonitorAlert(subject: string, body: string): Promise<void> {
+  if (!transporter) {
+    console.error('[monitor] transporter 未設定のためメール通知スキップ');
+    return;
+  }
+  try {
+    await transporter.sendMail({
+      from: STAFF_EMAIL,
+      to: MONITOR_NOTIFY_EMAILS.join(','),
+      subject,
+      text: body,
+    });
+    console.log('[monitor] alert email sent');
+  } catch (e) {
+    console.error('[monitor] alert email failed:', e);
+  }
+}
+
+export const staffHealthMonitor = onSchedule(
+  {
+    schedule: '30 8 * * *', // 毎朝 08:30
+    timeZone: 'Asia/Tokyo',
+    region: 'asia-northeast1',
+  },
+  async () => {
+    const failures: string[] = [];
+    const checks: Record<string, boolean> = {};
+
+    // --- Check 1: Firestore 接続 ---
+    try {
+      const doc = await db.doc('config/business_calendar').get();
+      checks.firestore_business_calendar = doc.exists;
+      if (!doc.exists) failures.push('config/business_calendar が存在しません');
+    } catch (e: any) {
+      checks.firestore_business_calendar = false;
+      failures.push(`Firestore business_calendar read エラー: ${e.message || e}`);
+    }
+
+    // --- Check 2: reservations コレクション ---
+    try {
+      const snap = await db.collection('reservations').limit(1).get();
+      checks.firestore_reservations = true;
+      console.log(`[monitor] reservations サンプル: ${snap.size}件`);
+    } catch (e: any) {
+      checks.firestore_reservations = false;
+      failures.push(`reservations クエリエラー: ${e.message || e}`);
+    }
+
+    // --- Check 3: tennis_slots コレクション ---
+    try {
+      const snap = await db.collection('tennis_slots').limit(1).get();
+      checks.firestore_tennis_slots = true;
+      console.log(`[monitor] tennis_slots サンプル: ${snap.size}件`);
+    } catch (e: any) {
+      checks.firestore_tennis_slots = false;
+      failures.push(`tennis_slots クエリエラー: ${e.message || e}`);
+    }
+
+    // --- Check 4: Firebase Auth に staff claim ユーザーが 1人以上いる ---
+    try {
+      const list = await admin.auth().listUsers(1000);
+      const staffUsers = list.users.filter(u => (u.customClaims as any)?.staff === true);
+      checks.firebase_auth_staff_count = staffUsers.length > 0;
+      console.log(`[monitor] staff users: ${staffUsers.length}名`);
+      if (staffUsers.length === 0) {
+        failures.push('Firebase Auth に staff:true claim 付きユーザーが 1 人もいません');
+      }
+    } catch (e: any) {
+      checks.firebase_auth_staff_count = false;
+      failures.push(`Firebase Auth listUsers エラー: ${e.message || e}`);
+    }
+
+    // --- 判定 + 通知 ---
+    console.log(JSON.stringify({
+      severity: 'INFO',
+      audit: true,
+      action: 'monitor.staff_health',
+      timestamp: new Date().toISOString(),
+      checks,
+      failures,
+      ok: failures.length === 0,
+    }));
+
+    if (failures.length > 0) {
+      const body = [
+        'ふたみ予約システムのスタッフ機能ヘルスチェックで問題を検知しました。',
+        '',
+        `検証日時: ${new Date().toISOString()}`,
+        '',
+        '【失敗項目】',
+        ...failures.map(f => '  - ' + f),
+        '',
+        '【全チェック結果】',
+        JSON.stringify(checks, null, 2),
+        '',
+        '対応:',
+        '  - https://hid0707no-a11y.github.io/futami-reservation/staff.html を開いて動作確認',
+        '  - Firebase Console (https://console.firebase.google.com/project/futami-yoyaku-492607) でログ確認',
+        '',
+        'このメールは staffHealthMonitor Cloud Function が自動送信しています。',
+      ].join('\n');
+      await sendMonitorAlert('[ふたみ予約] スタッフ機能ヘルスチェック失敗', body);
+    } else {
+      console.log('[monitor] all checks passed');
+    }
   }
 );
