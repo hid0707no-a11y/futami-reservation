@@ -1248,7 +1248,7 @@ const PLANS = [
     priceDisplay: '市民2,730円/市外3,250円',
     lightingPrice: 1890, lightingLabel: '夜間照明（1時間 1,890円）', lightingHours: 5,
     badge: '夜間', badgeColor: '#8b5cf6',
-    note: '夜間利用の場合、夜間照明（1時間 1,890円）を任意で追加できます' },
+    note: '夜間利用の場合、夜間照明を 0〜5 時間の範囲で任意追加できます（1時間 1,890円）' },
 
   // ===== サウナ（4枠制：A 10-12 / B 12:30-14:30 / C 15-17 / D 17:30-19:30）=====
   { id: 'sauna_1', name: 'A 10:00-12:00', planType: 'sauna', category: 'sauna',
@@ -1334,8 +1334,10 @@ const state = {
   selectedHours: [],
   // テニス半面（練習用）利用人数
   tennisHalfGuests: 1,
-  // 夜間照明オプション（任意・対象プランのみ）
+  // 夜間照明オプション（テニス: 選択枠すべてに適用するON/OFF）
   useLighting: false,
+  // みどり夜間 の夜間照明: 0〜5時間を任意で選択
+  midoriLightingHours: 0,
   // テニスコマ選択（みどり等複数コマ選択）
   selectedSlotPlans: [],
   // 計算結果
@@ -1776,6 +1778,7 @@ function selectPlanFromSearch(planId) {
   state.selectedHours = [];
   state.tennisHalfGuests = 1;
   state.useLighting = false;
+  state.midoriLightingHours = 0;
 
   // 空いている部屋を自動選択
   const available = getAvailableRooms(plan, state.selectedDate);
@@ -2098,6 +2101,7 @@ function selectPlan(planId) {
   state.selectedSlotPlans = [];
   state.tennisHalfGuests = 1;
   state.useLighting = false;
+  state.midoriLightingHours = 0;
 
   const dateInput = document.getElementById('plan-select-date');
   state.selectedDate = dateInput ? dateInput.value : '';
@@ -2121,7 +2125,9 @@ function showRoomBooking() {
   // プラン切替時の state 整合性保証:
   // 当該プランに無関係な追加オプションは強制リセット
   if (plan.id !== 'tennis_half') state.tennisHalfGuests = 1;
-  if (!plan.lightingPrice) state.useLighting = false;
+  if (!plan.lightingPrice) { state.useLighting = false; state.midoriLightingHours = 0; }
+  if (plan.id !== 'midori_eve') state.midoriLightingHours = 0;
+  if (plan.id === 'midori_eve') state.useLighting = false; // midori は stepper を使うため toggle は常に false
 
   let html = '<div class="section-title">' + (room ? room.icon : '') + ' ' + plan.name + '</div>';
   if (room) html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
@@ -2186,14 +2192,32 @@ function showRoomBooking() {
       html += '<button class="stepper-btn" onclick="stepTennisHalfGuests(1)">+</button>';
       html += '</div></div></div>';
     }
-    // 夜間照明トグル（対象プランのみ）
+    // 夜間照明オプション（対象プランのみ）
     if (plan.lightingPrice) {
-      html += '<div class="card"><div class="toggle-row">';
-      html += '<span class="toggle-label">' + (plan.lightingLabel || '夜間照明を利用') + '</span>';
-      html += '<div style="display:flex;align-items:center">';
-      html += '<label class="toggle-switch"><input type="checkbox" ' + (state.useLighting ? 'checked' : '') + ' onchange="toggleLighting(this.checked)"><span class="toggle-slider"></span></label>';
-      html += '<span class="toggle-status" id="lighting-status">' + (state.useLighting ? '利用する' : '利用しない') + '</span>';
-      html += '</div></div></div>';
+      if (plan.id === 'midori_eve') {
+        // みどり夜間は 5 時間の固定ブロックなので、何時間ぶん照明を使うかを
+        // 0-5 の範囲で選ばせる。0 = 使わない。
+        const maxH = plan.lightingHours || 5;
+        html += '<div class="card">';
+        html += '<div class="form-group">';
+        html += '<label class="form-label">' + (plan.lightingLabel || '夜間照明') + '（0〜' + maxH + '時間で選択・0で無料）</label>';
+        html += '<div class="stepper">';
+        html += '<button class="stepper-btn" onclick="stepMidoriLighting(-1)">-</button>';
+        html += '<span class="stepper-value" id="midori-lighting-count">' + state.midoriLightingHours + '</span>';
+        html += '<span class="stepper-unit">時間</span>';
+        html += '<button class="stepper-btn" onclick="stepMidoriLighting(1)">+</button>';
+        html += '</div>';
+        html += '<div class="text-muted mt-8">※ 夕方の利用で照明不要な時間帯がある場合は短く設定してください</div>';
+        html += '</div></div>';
+      } else {
+        // テニスは selectedHours に追従する ON/OFF 方式
+        html += '<div class="card"><div class="toggle-row">';
+        html += '<span class="toggle-label">' + (plan.lightingLabel || '夜間照明を利用') + '</span>';
+        html += '<div style="display:flex;align-items:center">';
+        html += '<label class="toggle-switch"><input type="checkbox" ' + (state.useLighting ? 'checked' : '') + ' onchange="toggleLighting(this.checked)"><span class="toggle-slider"></span></label>';
+        html += '<span class="toggle-status" id="lighting-status">' + (state.useLighting ? '利用する' : '利用しない') + '</span>';
+        html += '</div></div></div>';
+      }
     }
   }
 
@@ -2444,6 +2468,15 @@ function stepTennisHalfGuests(delta) {
   state.tennisHalfGuests = Math.max(1, Math.min(6, state.tennisHalfGuests + delta));
   const el = document.getElementById('tennis-half-count');
   if (el) el.textContent = state.tennisHalfGuests;
+  updateBookingPriceSummary();
+}
+
+function stepMidoriLighting(delta) {
+  const plan = state.selectedPlan;
+  const maxH = (plan && plan.lightingHours) || 5;
+  state.midoriLightingHours = Math.max(0, Math.min(maxH, state.midoriLightingHours + delta));
+  const el = document.getElementById('midori-lighting-count');
+  if (el) el.textContent = state.midoriLightingHours;
   updateBookingPriceSummary();
 }
 
@@ -2916,10 +2949,9 @@ function calculateTotal() {
 
   if (pt === 'day_all' || pt === 'day_slot') {
     let total = getPlanDisplayPrice(plan);
-    // みどり夜間など、ライティングオプション付きプランに任意で照明料を加算
-    if (state.useLighting && plan.lightingPrice) {
-      const hours = plan.lightingHours || (Array.isArray(plan.slots) ? plan.slots.length : 1);
-      total += plan.lightingPrice * hours;
+    // みどり夜間: 夜間照明を任意の時間数（0-5）で加算
+    if (plan.id === 'midori_eve' && state.midoriLightingHours > 0 && plan.lightingPrice) {
+      total += plan.lightingPrice * state.midoriLightingHours;
     }
     return total;
   }
@@ -3102,15 +3134,21 @@ function proceedToConfirm() {
     }
   }
   // 夜間照明
-  if (plan.lightingPrice && state.useLighting) {
+  // - テニス: state.useLighting ON なら selectedHours 全枠分課金
+  // - みどり夜間: state.midoriLightingHours (0-5) 時間分課金
+  {
     let lightHours = 0;
-    if (plan.planType === 'hourly') {
-      lightHours = state.selectedHours.length;
-    } else if (plan.planType === 'day_slot') {
-      lightHours = plan.lightingHours || (Array.isArray(plan.slots) ? plan.slots.length : 1);
+    if (plan.lightingPrice) {
+      if (plan.id === 'midori_eve') {
+        lightHours = state.midoriLightingHours || 0;
+      } else if (state.useLighting && plan.planType === 'hourly') {
+        lightHours = state.selectedHours.length;
+      }
     }
-    const lightTotal = plan.lightingPrice * lightHours;
-    html += '<div class="summary-row"><span class="summary-label">夜間照明</span><span class="summary-value">' + plan.lightingPrice.toLocaleString() + '円 × ' + lightHours + '時間 (' + lightTotal.toLocaleString() + '円)</span></div>';
+    if (lightHours > 0) {
+      const lightTotal = plan.lightingPrice * lightHours;
+      html += '<div class="summary-row"><span class="summary-label">夜間照明</span><span class="summary-value">' + plan.lightingPrice.toLocaleString() + '円 × ' + lightHours + '時間 (' + lightTotal.toLocaleString() + '円)</span></div>';
+    }
   }
 
   // オプション
@@ -3224,6 +3262,15 @@ async function submitBooking() {
           lightingFee: (state.useLighting && plan.lightingPrice) ? plan.lightingPrice * (state.selectedHours || []).length : 0,
         };
       }
+      // みどり夜間 向け付帯情報（照明時間数）
+      let midoriPricingInfo = null;
+      if (plan.id === 'midori_eve') {
+        midoriPricingInfo = {
+          slot: 'eve',
+          lightingHours: state.midoriLightingHours || 0,
+          lightingFee: plan.lightingPrice ? plan.lightingPrice * (state.midoriLightingHours || 0) : 0,
+        };
+      }
       const payload = {
         planId: isFutamiSauna ? 'plan_sauna_futami' : plan.id,
         roomIds: [isFutamiSauna ? 'sauna_share' : state.selectedRoomId],
@@ -3233,7 +3280,7 @@ async function submitBooking() {
         nights: state.selectedNights || 0,
         customer: { name, phone, email, isMember: !!state.isResident },
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
-        pricing: { basePrice: 0, personFee: 0, optionFee: 0, total: state.totalPrice || 0, tennis: tennisPricingInfo },
+        pricing: { basePrice: 0, personFee: 0, optionFee: 0, total: state.totalPrice || 0, tennis: tennisPricingInfo, midori: midoriPricingInfo },
         note,
         createdBy: 'web',
       };
