@@ -1198,16 +1198,34 @@ const PLANS = [
     badge: '日帰り', badgeColor: '#f59e0b' },
 
   // ===== テニス =====
-  { id: 'tennis', name: 'テニスコート', planType: 'hourly', category: 'sport',
+  // 一面貸切: 市民 630円 / 市外 760円（1面/1時間）
+  { id: 'tennis_full', name: 'テニスコート（一面貸切）', planType: 'hourly', category: 'sport',
     rooms: ['court_1','court_2','court_3','court_4','court_5'],
     slots: 'hourly',
     hourlyRange: { start: 8, end: 22 },
     basePrice: 630,
     residentPrice: 630, nonResidentPrice: 760,
-    lightResident: 240, lightNonResident: 280,
-    priceDisplay: '市民630円/市外760円/面/時',
-    badge: 'テニス', badgeColor: '#0ea5e9',
-    note: '17時以降は照明料金が加算されます（伊予市民240円/市外280円・1面1時間）' },
+    priceUnit: '面/時',
+    priceDisplay: '市民630円/市外760円（1面/1時間）',
+    weekdayDiscount: true,
+    lightingPrice: 630, lightingLabel: '夜間照明（1時間 630円）',
+    badge: '一面貸切', badgeColor: '#0ea5e9',
+    note: '平日 8:30〜17:00 は使用料が半額（土日祝・大会日除く）／夜間照明は任意（1時間 630円）' },
+
+  // 半面練習用: 市民 240円 / 市外 280円（1人/1時間）
+  { id: 'tennis_half', name: 'テニスコート（半面・練習用）', planType: 'hourly', category: 'sport',
+    rooms: ['court_1','court_2','court_3','court_4','court_5'],
+    slots: 'hourly',
+    hourlyRange: { start: 8, end: 22 },
+    basePrice: 240,
+    residentPrice: 240, nonResidentPrice: 280,
+    priceUnit: '人/時',
+    priceDisplay: '市民240円/市外280円（1人/1時間）',
+    perPerson: true,
+    weekdayDiscount: true,
+    lightingPrice: 630, lightingLabel: '夜間照明（1時間 630円・コート単位）',
+    badge: '半面練習', badgeColor: '#0284c7',
+    note: '練習用（1人1時間単価）／平日 8:30〜17:00 は使用料が半額（土日祝・大会日除く）／夜間照明は任意（1時間 630円・コート単位）' },
 
   // ===== みどりの広場 =====
   { id: 'midori_am', name: 'みどりの広場 午前', planType: 'day_slot', category: 'sport',
@@ -1228,7 +1246,9 @@ const PLANS = [
     slots: [17,18,19,20,21], timeRange: '17:00-22:00',
     basePrice: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890,
     priceDisplay: '市民2,730円/市外3,250円',
-    badge: '夜間', badgeColor: '#8b5cf6' },
+    lightingPrice: 1890, lightingLabel: '夜間照明（1時間 1,890円）', lightingHours: 5,
+    badge: '夜間', badgeColor: '#8b5cf6',
+    note: '夜間利用の場合、夜間照明（1時間 1,890円）を任意で追加できます' },
 
   // ===== サウナ（4枠制：A 10-12 / B 12:30-14:30 / C 15-17 / D 17:30-19:30）=====
   { id: 'sauna_1', name: 'A 10:00-12:00', planType: 'sauna', category: 'sauna',
@@ -1276,7 +1296,7 @@ const FACILITY_GROUPS = [
   { id: 'fg_lodge', name: 'ロッジ', icon: '\u{1F3D5}\uFE0F', category: 'outdoor',
     plans: ['lodge_stay','lodge_day'] },
   { id: 'fg_tennis', name: 'テニスコート', icon: '\u{1F3BE}', category: 'sport',
-    plans: ['tennis'] },
+    plans: ['tennis_full', 'tennis_half'] },
   { id: 'fg_midori', name: 'みどりの広場', icon: '\u26BE', category: 'sport',
     plans: ['midori_am','midori_pm','midori_eve'] },
   { id: 'fg_sauna', name: 'ふたみサンセットサウナ', icon: '\u{1F9D6}', category: 'sauna',
@@ -1312,6 +1332,10 @@ const state = {
   isResident: true,
   isStudent: false,
   selectedHours: [],
+  // テニス半面（練習用）利用人数
+  tennisHalfGuests: 1,
+  // 夜間照明オプション（任意・対象プランのみ）
+  useLighting: false,
   // テニスコマ選択（みどり等複数コマ選択）
   selectedSlotPlans: [],
   // 計算結果
@@ -1534,8 +1558,23 @@ function availBadge(level) {
 /* ================================================================
    PRICE HELPERS
    ================================================================ */
+// 平日割（テニスコート）: 月〜金 かつ スロット開始 8:30 以降〜16:00 以前（終端 17:00 まで）なら半額
+// 祝日・大会日は対象外（窓口対応のため本システムでは平日扱いになる点に注意）
+function isTennisWeekdayDiscountSlot(dateStr, startKey) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return false; // 土日除外
+  if (typeof startKey !== 'string' || !/^\d{4}$/.test(startKey)) return false;
+  const h = parseInt(startKey.slice(0, 2), 10);
+  const m = parseInt(startKey.slice(2), 10);
+  const startMin = h * 60 + m;
+  // 8:30 (510 分) 以上かつ 16:00 (960 分) 以下 → 終端は 17:00 まで
+  return startMin >= 510 && startMin <= 960;
+}
+
 function getPlanDisplayPrice(plan) {
-  if (plan.id === 'tennis') {
+  if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
     return state.isResident ? plan.residentPrice : plan.nonResidentPrice;
   }
   if (plan.id.startsWith('midori')) {
@@ -1670,6 +1709,8 @@ function selectPlanFromSearch(planId) {
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
   state.selectedHours = [];
+  state.tennisHalfGuests = 1;
+  state.useLighting = false;
 
   // 空いている部屋を自動選択
   const available = getAvailableRooms(plan, state.selectedDate);
@@ -1990,6 +2031,8 @@ function selectPlan(planId) {
   state.saunaTowels = 0;
   state.selectedHours = [];
   state.selectedSlotPlans = [];
+  state.tennisHalfGuests = 1;
+  state.useLighting = false;
 
   const dateInput = document.getElementById('plan-select-date');
   state.selectedDate = dateInput ? dateInput.value : '';
@@ -2051,7 +2094,7 @@ function showRoomBooking() {
   }
 
   // 市民トグル（テニス・みどり）
-  if (plan.id === 'tennis' || plan.id.startsWith('midori')) {
+  if (plan.id.startsWith('tennis') || plan.id.startsWith('midori')) {
     html += renderResidentToggle();
     if (plan.id.startsWith('midori')) {
       html += '<div class="card"><div class="toggle-row">';
@@ -2059,6 +2102,27 @@ function showRoomBooking() {
       html += '<div style="display:flex;align-items:center">';
       html += '<label class="toggle-switch"><input type="checkbox" ' + (state.isStudent ? 'checked' : '') + ' onchange="toggleStudent(this.checked)"><span class="toggle-slider"></span></label>';
       html += '<span class="toggle-status" id="student-status">' + (state.isStudent ? '学生' : '一般') + '</span>';
+      html += '</div></div></div>';
+    }
+    // テニス半面: 利用人数ステッパー
+    if (plan.id === 'tennis_half') {
+      html += '<div class="card">';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">ご利用人数（半面練習・1人1時間単位）</label>';
+      html += '<div class="stepper">';
+      html += '<button class="stepper-btn" onclick="stepTennisHalfGuests(-1)">-</button>';
+      html += '<span class="stepper-value" id="tennis-half-count">' + state.tennisHalfGuests + '</span>';
+      html += '<span class="stepper-unit">名</span>';
+      html += '<button class="stepper-btn" onclick="stepTennisHalfGuests(1)">+</button>';
+      html += '</div></div></div>';
+    }
+    // 夜間照明トグル（対象プランのみ）
+    if (plan.lightingPrice) {
+      html += '<div class="card"><div class="toggle-row">';
+      html += '<span class="toggle-label">' + (plan.lightingLabel || '夜間照明を利用') + '</span>';
+      html += '<div style="display:flex;align-items:center">';
+      html += '<label class="toggle-switch"><input type="checkbox" ' + (state.useLighting ? 'checked' : '') + ' onchange="toggleLighting(this.checked)"><span class="toggle-slider"></span></label>';
+      html += '<span class="toggle-status" id="lighting-status">' + (state.useLighting ? '利用する' : '利用しない') + '</span>';
       html += '</div></div></div>';
     }
   }
@@ -2177,6 +2241,9 @@ function showRoomBooking() {
     html += '利用時間: ' + (plan.timeRange || '') + '<br>';
     html += '料金: <strong>' + getPlanDisplayPrice(plan).toLocaleString() + '円</strong>';
     html += '</div>';
+    if (plan.note) {
+      html += '<div class="text-muted mt-8">※ ' + plan.note + '</div>';
+    }
     html += '</div>'; // close .card
 
   } else if (pt === 'hourly') {
@@ -2292,6 +2359,20 @@ function toggleStudent(checked) {
   state.isStudent = checked;
   const statusEl = document.getElementById('student-status');
   if (statusEl) statusEl.textContent = checked ? '学生' : '一般';
+  updateBookingPriceSummary();
+}
+
+function toggleLighting(checked) {
+  state.useLighting = checked;
+  const statusEl = document.getElementById('lighting-status');
+  if (statusEl) statusEl.textContent = checked ? '利用する' : '利用しない';
+  updateBookingPriceSummary();
+}
+
+function stepTennisHalfGuests(delta) {
+  state.tennisHalfGuests = Math.max(1, Math.min(20, state.tennisHalfGuests + delta));
+  const el = document.getElementById('tennis-half-count');
+  if (el) el.textContent = state.tennisHalfGuests;
   updateBookingPriceSummary();
 }
 
@@ -2763,18 +2844,30 @@ function calculateTotal() {
   }
 
   if (pt === 'day_all' || pt === 'day_slot') {
-    return getPlanDisplayPrice(plan);
+    let total = getPlanDisplayPrice(plan);
+    // みどり夜間など、ライティングオプション付きプランに任意で照明料を加算
+    if (state.useLighting && plan.lightingPrice) {
+      const hours = plan.lightingHours || (Array.isArray(plan.slots) ? plan.slots.length : 1);
+      total += plan.lightingPrice * hours;
+    }
+    return total;
   }
 
   if (pt === 'hourly') {
-    if (plan.id === 'tennis') {
-      const courtPrice = state.isResident ? plan.residentPrice : plan.nonResidentPrice;
-      const lightPrice = state.isResident ? plan.lightResident : plan.lightNonResident;
+    if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
+      const unitPrice = state.isResident ? plan.residentPrice : plan.nonResidentPrice;
+      const isHalf = plan.id === 'tennis_half';
+      const persons = isHalf ? Math.max(1, state.tennisHalfGuests || 1) : 1;
       let total = 0;
       state.selectedHours.forEach(h => {
-        total += courtPrice;
-        if (h >= 17) total += lightPrice;
+        const discounted = (plan.weekdayDiscount && isTennisWeekdayDiscountSlot(state.selectedDate, h)) ? 0.5 : 1;
+        // 円未満は切上げ（自治体運用に合わせて整数化）
+        total += Math.ceil(unitPrice * persons * discounted);
       });
+      // 夜間照明（任意・コート単位で 1 時間あたり定額）
+      if (state.useLighting && plan.lightingPrice) {
+        total += plan.lightingPrice * state.selectedHours.length;
+      }
       return total;
     }
     return plan.basePrice * state.selectedHours.length;
@@ -2923,8 +3016,30 @@ function proceedToConfirm() {
       html += '<div class="summary-row"><span class="summary-label">テント追加</span><span class="summary-value">' + state.campTents + '張</span></div>';
     }
   }
-  if (plan.id === 'tennis' || plan.id.startsWith('midori')) {
+  if (plan.id.startsWith('tennis') || plan.id.startsWith('midori')) {
     html += '<div class="summary-row"><span class="summary-label">利用者区分</span><span class="summary-value">' + (state.isResident ? '伊予市民' : '市外') + (state.isStudent ? '（学生）' : '') + '</span></div>';
+  }
+  // テニス半面: 利用人数
+  if (plan.id === 'tennis_half') {
+    html += '<div class="summary-row"><span class="summary-label">利用人数</span><span class="summary-value">' + state.tennisHalfGuests + '名</span></div>';
+  }
+  // テニス平日割の適用表示
+  if (plan.weekdayDiscount && Array.isArray(state.selectedHours)) {
+    const discounted = state.selectedHours.filter(h => isTennisWeekdayDiscountSlot(state.selectedDate, h));
+    if (discounted.length > 0) {
+      html += '<div class="summary-row"><span class="summary-label">平日割</span><span class="summary-value" style="color:#0ea5e9;font-weight:700">' + discounted.length + '枠 半額適用</span></div>';
+    }
+  }
+  // 夜間照明
+  if (plan.lightingPrice && state.useLighting) {
+    let lightHours = 0;
+    if (plan.planType === 'hourly') {
+      lightHours = state.selectedHours.length;
+    } else if (plan.planType === 'day_slot') {
+      lightHours = plan.lightingHours || (Array.isArray(plan.slots) ? plan.slots.length : 1);
+    }
+    const lightTotal = plan.lightingPrice * lightHours;
+    html += '<div class="summary-row"><span class="summary-label">夜間照明</span><span class="summary-value">' + plan.lightingPrice.toLocaleString() + '円 × ' + lightHours + '時間 (' + lightTotal.toLocaleString() + '円)</span></div>';
   }
 
   // オプション
@@ -3024,6 +3139,20 @@ async function submitBooking() {
         : startDate;
       // ふたみの日サウナの場合は人数を guestCount に。state.guests がサウナの人数。
       const futamiSeats = isFutamiSauna ? (state.guests || 1) : null;
+      // テニス向け付帯情報（平日割/照明/半面人数）
+      let tennisPricingInfo = null;
+      if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
+        const weekdaySlots = (state.selectedHours || []).filter(h => isTennisWeekdayDiscountSlot(state.selectedDate, h));
+        tennisPricingInfo = {
+          courtType: plan.id === 'tennis_half' ? 'half' : 'full',
+          isResident: !!state.isResident,
+          halfGuests: plan.id === 'tennis_half' ? (state.tennisHalfGuests || 1) : null,
+          totalHours: (state.selectedHours || []).length,
+          weekdayDiscountHours: weekdaySlots.length,
+          useLighting: !!state.useLighting,
+          lightingFee: (state.useLighting && plan.lightingPrice) ? plan.lightingPrice * (state.selectedHours || []).length : 0,
+        };
+      }
       const payload = {
         planId: isFutamiSauna ? 'plan_sauna_futami' : plan.id,
         roomIds: [isFutamiSauna ? 'sauna_share' : state.selectedRoomId],
@@ -3033,7 +3162,7 @@ async function submitBooking() {
         nights: state.selectedNights || 0,
         customer: { name, phone, email, isMember: !!state.isResident },
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
-        pricing: { basePrice: 0, personFee: 0, optionFee: 0, total: state.totalPrice || 0 },
+        pricing: { basePrice: 0, personFee: 0, optionFee: 0, total: state.totalPrice || 0, tennis: tennisPricingInfo },
         note,
         createdBy: 'web',
       };
