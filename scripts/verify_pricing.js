@@ -66,6 +66,8 @@ function extractPlan(planId) {
     studentNonResidentPrice: numField('studentNonResidentPrice'),
     lightingPrice: numField('lightingPrice'),
     lightingHours: numField('lightingHours'),
+    weekdayDiscountResident: numField('weekdayDiscountResident'),
+    weekdayDiscountNonResident: numField('weekdayDiscountNonResident'),
   };
 }
 
@@ -96,6 +98,8 @@ run('tennis_full (一面貸切)', () => {
     check('nonResidentPrice', spec.nonResident, plan.nonResidentPrice),
     check('basePrice', spec.resident, plan.basePrice),
     check('lightingPrice', pricing.tennis.lighting.price, plan.lightingPrice),
+    check('weekdayDiscountResident', spec.weekdayDiscount.resident, plan.weekdayDiscountResident),
+    check('weekdayDiscountNonResident', spec.weekdayDiscount.nonResident, plan.weekdayDiscountNonResident),
   ].every(Boolean);
 });
 
@@ -108,6 +112,8 @@ run('tennis_half (半面練習)', () => {
     check('nonResidentPrice', spec.nonResident, plan.nonResidentPrice),
     check('basePrice', spec.resident, plan.basePrice),
     check('lightingPrice', pricing.tennis.lighting.price, plan.lightingPrice),
+    check('weekdayDiscountResident', spec.weekdayDiscount.resident, plan.weekdayDiscountResident),
+    check('weekdayDiscountNonResident', spec.weekdayDiscount.nonResident, plan.weekdayDiscountNonResident),
   ].every(Boolean);
 });
 
@@ -150,24 +156,49 @@ run('midori_eve (みどり夜間)', () => {
   ].every(Boolean);
 });
 
-// === 平日割の定数確認 ===
-run('平日割の rate 確認', () => {
-  // calculateTotal 内に `? 0.5 : 1` のハードコードがあるか
-  const has05 = /\?\s*0\.5\s*:\s*1\b/.test(html);
-  if (has05) {
-    console.log('  ✅ 平日割 rate = 0.5 (hardcoded in calculateTotal)');
+// === 平日割の実装確認 ===
+run('平日割の実装確認', () => {
+  // 新実装: 料金表の固定値を使う。PLANS に weekdayDiscountResident/weekdayDiscountNonResident が設定され、
+  // calculateTotal で discountPrice として読み取っているか確認する。
+  const hasFixedFields = /weekdayDiscountResident:\s*\d+/.test(html)
+    && /weekdayDiscountNonResident:\s*\d+/.test(html);
+  const usesFixedFields = /plan\.weekdayDiscountResident/.test(html)
+    && /plan\.weekdayDiscountNonResident/.test(html);
+  // フォールバックロジックも検証（範囲外の為の保険）
+  const hasFallback = /Math\.ceil\(\s*normalPrice\s*\*\s*0\.5\s*\/\s*10\s*\)\s*\*\s*10/.test(html);
+  const ok1 = hasFixedFields;
+  const ok2 = usesFixedFields;
+  const ok3 = hasFallback;
+  if (ok1 && ok2 && ok3) {
+    console.log('  ✅ 平日割の固定値テーブル + フォールバック実装を確認');
     return true;
   }
-  console.error('  ❌ calculateTotal に 0.5 倍の平日割実装が見つからない');
+  console.error('  ❌ 平日割の実装パターンが変化している可能性');
+  console.error('     hasFixedFields=' + ok1 + ' usesFixedFields=' + ok2 + ' hasFallback=' + ok3);
   return false;
 });
 
-// === 半面人数上限 ===
-run('半面人数上限', () => {
-  const spec = pricing.tennis.half.maxGuests;
-  const m = html.match(/stepTennisHalfGuests[\s\S]*?Math\.min\((\d+)/);
-  const actual = m ? parseInt(m[1], 10) : null;
-  return check('tennisHalfGuests max', spec, actual);
+// === 利用人数目安の上限 ===
+// 空間貸し運用で料金には影響しないが、行政報告用に入力を受け付けている。
+// プラン定義に guestEstimateMax が正しく設定されているかを確認する。
+run('利用人数目安の上限設定', () => {
+  const tennisFull = extractPlan('tennis_full');
+  const tennisHalf = extractPlan('tennis_half');
+  const midoriAm = extractPlan('midori_am');
+  const midoriPm = extractPlan('midori_pm');
+  const midoriEve = extractPlan('midori_eve');
+  // extractPlan に guestEstimateMax を追加していないのでここは block 直接 grep
+  const parseMax = (p) => {
+    const m = p.block.match(/guestEstimateMax:\s*(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  };
+  return [
+    check('tennis_full.guestEstimateMax', 10, parseMax(tennisFull)),
+    check('tennis_half.guestEstimateMax', 10, parseMax(tennisHalf)),
+    check('midori_am.guestEstimateMax', 50, parseMax(midoriAm)),
+    check('midori_pm.guestEstimateMax', 50, parseMax(midoriPm)),
+    check('midori_eve.guestEstimateMax', 50, parseMax(midoriEve)),
+  ].every(Boolean);
 });
 
 console.log(`\n========================================`);
