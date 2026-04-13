@@ -49,6 +49,7 @@ interface MailData {
   isCamp?: boolean;
   isFutamiDay?: boolean;
   isTennis?: boolean;
+  saunaOptionsText?: string;
 }
 
 async function sendConfirmationEmail(data: MailData): Promise<void> {
@@ -64,7 +65,7 @@ async function sendConfirmationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 ━━━━━━━━━━━━━━━━━━
 
 ※このメールは自動送信です。
@@ -99,7 +100,7 @@ async function sendStaffNotification(data: MailData, type: 'new' | 'cancel'): Pr
 メール：${data.customerEmail || 'なし'}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 `;
 
     await transporter.sendMail({
@@ -691,6 +692,7 @@ export const createReservation = onRequest(
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', note: note || '',
             reservationId: result, guestCount: seats, isFutamiDay: true,
+            saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
           };
           sendConfirmationEmail(mailData).catch(() => {});
           sendStaffNotification(mailData, 'new').catch(() => {});
@@ -862,6 +864,7 @@ export const createReservation = onRequest(
         customerName: customer.name, customerPhone: customer.phone,
         customerEmail: customer.email || '', note: note || '',
         reservationId: result,
+        saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
       };
       sendConfirmationEmail(mailData).catch(() => {});
       sendStaffNotification(mailData, 'new').catch(() => {});
@@ -1341,6 +1344,7 @@ interface ReservationRow {
   weekdayDiscountHours: number;
   isResident: string;
   createdBy: string;
+  saunaOptions: string;
   note: string;
 }
 
@@ -1383,7 +1387,17 @@ function reservationToRow(id: string, data: any): ReservationRow {
     isResident: customer.isMember === true ? '市民' : '市外',
     createdBy: data.createdBy || '',
     note: (data.note || '').toString().slice(0, 500),
+    saunaOptions: formatSaunaOptions(pricing.saunaOptions),
   };
+}
+
+function formatSaunaOptions(opts: any): string {
+  if (!opts) return '';
+  const parts: string[] = [];
+  if (opts.towels > 0) parts.push(`タオル×${opts.towels}`);
+  if (opts.tarpTent > 0) parts.push('タープテント');
+  if (opts.ice20kg > 0) parts.push(`氷${opts.ice20kg * 20}kg`);
+  return parts.join('／');
 }
 
 const SHEET_HEADERS = [
@@ -1392,7 +1406,7 @@ const SHEET_HEADERS = [
   'お名前', '電話番号', 'メール',
   '大人', '小学生', '未就学児', '利用予定人数(目安)',
   '合計金額', '照明料金', '平日割適用枠数',
-  '市民区分', '予約経路', '備考',
+  '市民区分', '予約経路', 'サウナオプション', '備考',
 ];
 
 function rowToArray(r: ReservationRow): (string | number)[] {
@@ -1402,7 +1416,7 @@ function rowToArray(r: ReservationRow): (string | number)[] {
     r.customerName, r.customerPhone, r.customerEmail,
     r.guestsAdult, r.guestsElementary, r.guestsChild, r.guestsSportEstimate,
     r.pricingTotal, r.pricingLightingFee, r.weekdayDiscountHours,
-    r.isResident, r.createdBy, r.note,
+    r.isResident, r.createdBy, r.saunaOptions, r.note,
   ];
 }
 

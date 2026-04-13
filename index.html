@@ -1267,25 +1267,37 @@ const PLANS = [
     timeRange: '10:00-12:00', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
-    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+    extras: [
+      { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
+      { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
+      { id: 'ice', name: '氷（水風呂用）', price: 4400, unit: '20kg', max: 5 }] },
   { id: 'sauna_2', name: 'B 12:30-14:30', planType: 'sauna', category: 'sauna',
     rooms: ['sauna'], slots: [12,13,14],
     timeRange: '12:30-14:30', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
-    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+    extras: [
+      { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
+      { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
+      { id: 'ice', name: '氷（水風呂用）', price: 4400, unit: '20kg', max: 5 }] },
   { id: 'sauna_3', name: 'C 15:00-17:00', planType: 'sauna', category: 'sauna',
     rooms: ['sauna'], slots: [15,16],
     timeRange: '15:00-17:00', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
-    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+    extras: [
+      { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
+      { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
+      { id: 'ice', name: '氷（水風呂用）', price: 4400, unit: '20kg', max: 5 }] },
   { id: 'sauna_4', name: 'D 17:30-19:30', planType: 'sauna', category: 'sauna',
     rooms: ['sauna'], slots: [17,18,19],
     timeRange: '17:30-19:30', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
-    extras: [{ id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' }] },
+    extras: [
+      { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
+      { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
+      { id: 'ice', name: '氷（水風呂用）', price: 4400, unit: '20kg', max: 5 }] },
 ];
 
 // 施設グルーピング（UI表示用）: 同じ物理部屋を持つプランをまとめて「施設」として見せる
@@ -1337,8 +1349,10 @@ const state = {
   campTents: 0,
   // ロッジシーツ
   lodgeSheets: 0,
-  // サウナタオル
+  // サウナオプション
   saunaTowels: 0,
+  saunaTarpTent: 0,
+  saunaIce: 0,
   // テニス/みどり
   isResident: true,
   isStudent: false,
@@ -1804,6 +1818,8 @@ function selectPlanFromSearch(planId) {
   state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
+  state.saunaTarpTent = 0;
+  state.saunaIce = 0;
   state.selectedHours = [];
   state.sportGuestCount = 0;
   state.useLighting = false;
@@ -2126,6 +2142,8 @@ function selectPlan(planId) {
   state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
+  state.saunaTarpTent = 0;
+  state.saunaIce = 0;
   state.selectedHours = [];
   state.selectedSlotPlans = [];
   state.sportGuestCount = 0;
@@ -2627,6 +2645,8 @@ function getExtraCount(extraId) {
   if (extraId === 'tent') return state.campTents;
   if (extraId === 'sheet') return state.lodgeSheets;
   if (extraId === 'towel') return state.saunaTowels;
+  if (extraId === 'tarp_tent') return state.saunaTarpTent;
+  if (extraId === 'ice') return state.saunaIce;
   return 0;
 }
 
@@ -2645,6 +2665,16 @@ function stepExtra(extraId, delta) {
     state.saunaTowels = Math.max(0, Math.min(8, state.saunaTowels + delta));
     const el = document.getElementById('extra-towel-count');
     if (el) el.textContent = state.saunaTowels;
+  }
+  if (extraId === 'tarp_tent') {
+    state.saunaTarpTent = Math.max(0, Math.min(1, state.saunaTarpTent + delta));
+    const el = document.getElementById('extra-tarp_tent-count');
+    if (el) el.textContent = state.saunaTarpTent;
+  }
+  if (extraId === 'ice') {
+    state.saunaIce = Math.max(0, Math.min(5, state.saunaIce + delta));
+    const el = document.getElementById('extra-ice-count');
+    if (el) el.textContent = state.saunaIce;
   }
   updateSimplePriceInfo();
   updateBookingPriceSummary();
@@ -3025,6 +3055,8 @@ function calculateTotal() {
       total = plan.basePrice;
     }
     total += state.saunaTowels * 550;
+    total += state.saunaTarpTent * 1100;
+    total += state.saunaIce * 4400;
     return total;
   }
 
@@ -3214,7 +3246,9 @@ function proceedToConfirm() {
     plan.extras.forEach(ex => {
       const cnt = getExtraCount(ex.id);
       if (cnt > 0) {
-        html += '<div class="summary-row"><span class="summary-label">' + ex.name + '</span><span class="summary-value">' + cnt + ex.unit + ' (' + (ex.price * cnt).toLocaleString() + '円)</span></div>';
+        let qtyLabel = cnt + ex.unit;
+        if (ex.id === 'ice') qtyLabel = (cnt * 20) + 'kg';
+        html += '<div class="summary-row"><span class="summary-label">' + ex.name + '</span><span class="summary-value">' + qtyLabel + ' (' + (ex.price * cnt).toLocaleString() + '円)</span></div>';
       }
     });
   }
@@ -3341,7 +3375,13 @@ async function submitBooking() {
         nights: state.selectedNights || 0,
         customer: { name, phone, email, isMember: !!state.isResident },
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
-        pricing: { basePrice: 0, personFee: 0, optionFee: 0, total: state.totalPrice || 0, tennis: tennisPricingInfo, midori: midoriPricingInfo, sportGuestEstimate },
+        pricing: {
+          basePrice: 0, personFee: 0,
+          optionFee: (state.saunaTowels * 550) + (state.saunaTarpTent * 1100) + (state.saunaIce * 4400) + (state.campTents * 50) + (state.lodgeSheets * 340),
+          total: state.totalPrice || 0,
+          tennis: tennisPricingInfo, midori: midoriPricingInfo, sportGuestEstimate,
+          saunaOptions: plan.planType === 'sauna' ? { towels: state.saunaTowels, tarpTent: state.saunaTarpTent, ice20kg: state.saunaIce } : undefined,
+        },
         note,
         createdBy: 'web',
       };
@@ -3391,6 +3431,8 @@ async function submitBooking() {
     campTents: state.campTents,
     lodgeSheets: state.lodgeSheets,
     saunaTowels: state.saunaTowels,
+    saunaTarpTent: state.saunaTarpTent,
+    saunaIce: state.saunaIce,
     isFutamiDay: state.selectedPlan && state.selectedPlan.planType === 'sauna' && isFutamiDay(state.selectedDate),
     selectedHours: state.selectedHours,
     isResident: state.isResident,

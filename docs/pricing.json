@@ -86,6 +86,25 @@
     }
   },
 
+  "sauna": {
+    "base": {
+      "label": "サンセットサウナ",
+      "unit": "1グループ1枠（2時間）",
+      "price": 13200
+    },
+    "futamiDay": {
+      "label": "ふたみの日サウナ",
+      "unit": "1人",
+      "price": 2300,
+      "_note": "毎月23日（火曜なら前日22日振替）。2〜8人・1予約で完売"
+    },
+    "options": {
+      "towel": { "label": "タオルオプション", "unit": "1セット", "price": 550, "max": 8 },
+      "tarpTent": { "label": "タープテント", "unit": "1張", "priceTaxExcluded": 1000, "price": 1100, "max": 1 },
+      "ice": { "label": "氷（水風呂用）", "unit": "20kg", "priceTaxExcluded": 4000, "price": 4400, "max": 5, "_note": "20kg単位、最大100kg" }
+    }
+  },
+
   "resolvedConfirmations": [
     {
       "question": "平日割の円未満端数処理",

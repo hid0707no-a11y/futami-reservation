@@ -201,6 +201,23 @@ run('利用人数目安の上限設定', () => {
   ].every(Boolean);
 });
 
+// === サウナ基本料金 + オプション ===
+run('sauna (サウナ料金・オプション)', () => {
+  const plan = extractPlan('sauna_1');
+  const spec = pricing.sauna;
+  const ok1 = check('basePrice', spec.base.price, plan.basePrice);
+  // extras からオプション料金を取得
+  const parseExtra = (id) => {
+    const re = new RegExp(`id:\\s*'${id}'[^}]*price:\\s*(\\d+)`);
+    const m = plan.block.match(re);
+    return m ? parseInt(m[1], 10) : null;
+  };
+  const ok2 = check('towel', spec.options.towel.price, parseExtra('towel'));
+  const ok3 = check('tarpTent', spec.options.tarpTent.price, parseExtra('tarp_tent'));
+  const ok4 = check('ice', spec.options.ice.price, parseExtra('ice'));
+  return [ok1, ok2, ok3, ok4].every(Boolean);
+});
+
 console.log(`\n========================================`);
 console.log(`結果: ${pass} passed, ${fail} failed`);
 if (fail > 0) {
