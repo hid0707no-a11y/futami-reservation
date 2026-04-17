@@ -32,6 +32,9 @@ _fbAuth.onAuthStateChanged(function(user) {
       else if (++_tryCount < 50) { setTimeout(tryLoad, 100); }
     }
     tryLoad();
+  } else {
+    var ov = document.getElementById('login-overlay');
+    if (ov) ov.style.display = 'flex';
   }
 });
 async function getAuthHeader() {
@@ -641,7 +644,7 @@ td.block-start-td + td.block-mid { border-left: none; }
 <body>
 
 <!-- ログインオーバーレイ -->
-<div id="login-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0f3460;z-index:99999;display:flex;align-items:center;justify-content:center;">
+<div id="login-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0f3460;z-index:99999;display:none;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:12px;padding:32px;width:320px;text-align:center;">
     <h2 style="color:#0f3460;margin-bottom:16px;font-size:18px;">ふたみ予約管理</h2>
     <p style="font-size:13px;color:#666;margin-bottom:16px;">スタッフログイン</p>
