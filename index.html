@@ -1510,19 +1510,17 @@ async function submitReservation(payload) {
   return data;
 }
 
-// ふたみの日サウナの残席チェック（プランの全スロットでの最小残席数を返す）
-function getFutamiSaunaRemaining(plan, dateStr) {
-  if (!plan || plan.planType !== 'sauna') return 8;
+// ふたみの日サウナ：1予約で完売。occupied_slotsにあるかで判定
+function isFutamiSaunaSoldOut(plan, dateStr) {
+  if (!plan || plan.planType !== 'sauna') return false;
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
-  if (slots.length === 0) return 8;
-  let minRemain = 8;
+  if (slots.length === 0) return false;
+  // いずれか1つのスロットでもoccupiedなら完売
   for (const h of slots) {
     const key = `sauna_share|${dateStr}|${h}`;
-    const info = SHARED_SLOTS[key];
-    const remain = info ? info.remaining : 8;
-    if (remain < minRemain) minRemain = remain;
+    if (OCCUPIED_SLOTS.has(key)) return true;
   }
-  return Math.max(0, minRemain);
+  return false;
 }
 
 // 特定の部屋+日付+時間スロットが空いているか
@@ -1558,12 +1556,9 @@ function getAvailableRooms(plan, date) {
 function getAvailabilityLevel(plan, date) {
   if (!date) return 'ok';
 
-  // ふたみの日サウナは shared_slots の残席で判定
+  // ふたみの日サウナは1予約で完売（occupied_slotsで判定）
   if (plan.planType === 'sauna' && isFutamiDay(date)) {
-    const remain = getFutamiSaunaRemaining(plan, date);
-    if (remain <= 0) return 'none';
-    if (remain <= 2) return 'few';
-    return 'ok';
+    return isFutamiSaunaSoldOut(plan, date) ? 'none' : 'ok';
   }
 
   const available = getAvailableRooms(plan, date);
@@ -2107,7 +2102,9 @@ function renderPlanCard(plan, dateStr) {
   if (plan.checkin) html += '<div class="plan-detail">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
   if (plan.note) html += '<div class="plan-detail">' + plan.note + '</div>';
   const isFutami = plan.planType === 'sauna' && dateStr && isFutamiDay(dateStr);
-  if (isFutami) {
+  if (isFutami && isFull) {
+    html += '<div class="plan-price" style="color:#c62828">&#x274C; ふたみの日 完売</div>';
+  } else if (isFutami) {
     html += '<div class="plan-price" style="color:#e65100">&#x1F389; ふたみの日 2,300円/人</div>';
   } else {
     html += '<div class="plan-price">' + plan.priceDisplay + '</div>';
@@ -2168,6 +2165,9 @@ function showRoomBooking() {
   const room = ROOMS.find(r => r.id === state.selectedRoomId);
   const pt = plan.planType;
   const el = document.getElementById('room-booking-content');
+  // ふたみの日判定（サウナ以外でも参照するためここで定義）
+  const futamiDay = pt === 'sauna' && isFutamiDay(state.selectedDate);
+  const futamiSoldOut = futamiDay ? isFutamiSaunaSoldOut(plan, state.selectedDate) : false;
 
   // プラン切替時の state 整合性保証:
   // 当該プランに無関係な追加オプションは強制リセット
@@ -2403,20 +2403,22 @@ function showRoomBooking() {
     html += '</div>'; // close .card
 
   } else if (pt === 'sauna') {
-    const futamiDay = isFutamiDay(state.selectedDate);
-    const futamiRemain = futamiDay ? getFutamiSaunaRemaining(plan, state.selectedDate) : 8;
-
     if (futamiDay) {
       html += '<div style="background:#fff3e0;border:2px solid #f5a623;border-radius:12px;padding:12px 14px;margin-bottom:12px;text-align:center">';
       html += '<div style="font-size:1.1rem;font-weight:700;color:#e65100">&#x1F389; Futami Special Day</div>';
       html += '<div style="font-size:0.85rem;color:#bf360c;margin-top:4px">毎月23日は「ふたみの日」！おひとり様 2,300円（税込）でサウナ体験</div>';
-      html += '<div style="font-size:0.9rem;color:#bf360c;margin-top:6px;font-weight:700">この時間帯の残席：' + futamiRemain + ' / 8 名</div>';
+      html += '<div style="font-size:0.85rem;color:#bf360c;margin-top:4px">2〜8名の貸切プライベートサウナ</div>';
+      if (futamiSoldOut) {
+        html += '<div style="font-size:1rem;color:#c62828;margin-top:6px;font-weight:700">&#x274C; この時間帯は完売です</div>';
+      } else {
+        html += '<div style="font-size:1rem;color:#2e7d32;margin-top:6px;font-weight:700">&#x2B55; 予約可能</div>';
+      }
       html += '</div>';
     }
 
     html += '<div class="form-group">';
     if (futamiDay) {
-      html += '<label class="form-label">ご利用人数（残席' + futamiRemain + '名まで）</label>';
+      html += '<label class="form-label">ご利用人数（2〜8名）</label>';
     } else {
       html += '<label class="form-label">ご利用人数（8名まで）</label>';
     }
@@ -2454,6 +2456,8 @@ function showRoomBooking() {
     html += '上記に同意します</label>';
     html += '</div>';
     html += '<button class="btn btn-primary mt-16" id="confirm-btn" onclick="proceedToConfirm()" disabled style="opacity:0.4;cursor:not-allowed">予約内容の確認へ</button>';
+  } else if (futamiDay && futamiSoldOut) {
+    html += '<button class="btn btn-primary mt-16" id="confirm-btn" disabled style="opacity:0.4;cursor:not-allowed">この時間帯は完売です</button>';
   } else {
     html += '<button class="btn btn-primary mt-16" id="confirm-btn" onclick="proceedToConfirm()">予約内容の確認へ</button>';
   }
