@@ -2048,6 +2048,7 @@ function showPlanSelectWithDate(fgId, dateStr) {
     html += renderPlanCard(plan, dateStr);
   });
   html += '</div>';
+  html += '<div id="futami-appeal" data-cat="' + fg.category + '">' + renderFutamiDayAppeal(dateStr, fg.category) + '</div>';
 
   el.innerHTML = html;
   navigate('screen-plan-select');
@@ -2077,6 +2078,7 @@ function showPlanSelect(fgId) {
     html += renderPlanCard(plan, '');
   });
   html += '</div>';
+  html += '<div id="futami-appeal" data-cat="' + fg.category + '"></div>';
 
   el.innerHTML = html;
 
@@ -2086,6 +2088,28 @@ function showPlanSelect(fgId) {
   dateInput.value = state.searchDate || '';
 
   navigate('screen-plan-select');
+}
+
+function renderFutamiDayAppeal(dateStr, category) {
+  if (!dateStr || !isFutamiDay(dateStr) || category !== 'sauna') return '';
+  let html = '<div style="margin-top:16px;background:linear-gradient(135deg,#fff8e1,#fff3e0);border:2px solid #f5a623;border-radius:16px;padding:20px;text-align:center">';
+  html += '<div style="font-size:1.3rem;font-weight:700;color:#e65100;margin-bottom:8px">&#x1F525; ふたみの日がお得な理由</div>';
+  html += '<div style="font-size:0.9rem;color:#5d4037;line-height:1.8;text-align:left;margin-bottom:12px">';
+  html += '通常 <strong style="font-size:1.1rem">13,200円</strong>（グループ貸切料金）のサウナが<br>';
+  html += 'ふたみの日なら <strong style="font-size:1.2rem;color:#e65100">2,300円/人</strong> で体験できます！';
+  html += '</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:12px">';
+  html += '<tr style="background:#fff;border-bottom:1px solid #ffe0b2"><td style="padding:8px;text-align:left">&#x1F46B; 2名</td><td style="padding:8px;text-align:right;text-decoration:line-through;color:#999">13,200円</td><td style="padding:8px;text-align:right;font-weight:700;color:#e65100">4,600円</td><td style="padding:8px;text-align:right;color:#2e7d32;font-weight:700">65%OFF</td></tr>';
+  html += '<tr style="background:#fff;border-bottom:1px solid #ffe0b2"><td style="padding:8px;text-align:left">&#x1F46A; 4名</td><td style="padding:8px;text-align:right;text-decoration:line-through;color:#999">13,200円</td><td style="padding:8px;text-align:right;font-weight:700;color:#e65100">9,200円</td><td style="padding:8px;text-align:right;color:#2e7d32;font-weight:700">30%OFF</td></tr>';
+  html += '<tr style="background:#fff"><td style="padding:8px;text-align:left">&#x1F3C6; 8名</td><td style="padding:8px;text-align:right;text-decoration:line-through;color:#999">13,200円</td><td style="padding:8px;text-align:right;font-weight:700;color:#e65100">18,400円</td><td style="padding:8px;text-align:right;color:#999;font-size:0.8rem">定価超</td></tr>';
+  html += '</table>';
+  html += '<div style="font-size:0.85rem;color:#5d4037;line-height:1.6">';
+  html += '&#x2705; 他のグループは入れない<strong>完全貸切</strong><br>';
+  html += '&#x2705; 2名からOK！少人数ほどお得<br>';
+  html += '&#x2705; 毎月23日だけの特別プライス';
+  html += '</div>';
+  html += '</div>';
+  return html;
 }
 
 function renderPlanCard(plan, dateStr) {
@@ -2125,6 +2149,8 @@ function updatePlanAvailability(fgId) {
     html += renderPlanCard(plan, dateStr);
   });
   container.innerHTML = html;
+  const appealEl = document.getElementById('futami-appeal');
+  if (appealEl) appealEl.innerHTML = renderFutamiDayAppeal(dateStr, appealEl.dataset.cat);
 }
 
 function selectPlan(planId) {
