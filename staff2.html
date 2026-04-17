@@ -64,6 +64,8 @@ body {
   background: var(--gray-100);
   color: var(--gray-700);
   font-size: 14px;
+  overflow: hidden;
+  height: 100vh;
 }
 .header {
   background: var(--navy);
@@ -128,7 +130,7 @@ body {
 
 .scroll-wrapper {
   overflow: auto;
-  max-height: calc(100vh - 200px);
+  height: calc(100vh - 155px);
   background: #fff;
 }
 .month-table {
@@ -136,14 +138,15 @@ body {
   background: #fff;
   font-size: 12px;
   white-space: nowrap;
+  width: 100%;
+  table-layout: fixed;
 }
 .month-table th, .month-table td {
   border: 1px solid var(--gray-200);
   text-align: center;
   padding: 0;
   height: 32px;
-  min-width: 32px;
-  max-width: 32px;
+  overflow: hidden;
 }
 .month-table thead th {
   background: var(--gray-50);
@@ -152,7 +155,7 @@ body {
   top: 0;
   z-index: 20;
   font-size: 11px;
-  padding: 6px 0;
+  padding: 4px 0;
 }
 .month-table thead th.weekend-sat { color: #2563eb; background: #eff6ff; }
 .month-table thead th.weekend-sun { color: #dc2626; background: #fef2f2; }
@@ -162,33 +165,35 @@ body {
 }
 .month-table thead th.futami::after { content: '★'; display: block; font-size: 9px; }
 .month-table thead th.col-room {
-  min-width: 130px;
-  max-width: 130px;
+  width: 120px;
+  min-width: 120px;
   text-align: left;
-  padding: 6px 10px;
+  padding: 6px 8px;
   position: sticky;
   left: 0;
   z-index: 30;
 }
 .month-table .room-name {
   text-align: left;
-  padding: 6px 10px;
+  padding: 4px 8px;
   font-weight: 600;
   background: var(--gray-50);
   position: sticky;
   left: 0;
-  min-width: 130px;
-  max-width: 130px;
+  width: 120px;
+  min-width: 120px;
   z-index: 10;
-  font-size: 12px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .month-table .building-row td {
   background: #dbeafe;
   font-weight: 700;
   text-align: left;
-  padding: 6px 12px;
+  padding: 4px 8px;
   color: var(--navy);
-  font-size: 13px;
+  font-size: 12px;
   position: sticky;
   left: 0;
   z-index: 10;
