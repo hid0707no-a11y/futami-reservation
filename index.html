@@ -2389,6 +2389,11 @@ function showRoomBooking() {
     html += '<div class="night-info" id="stay-price-info"></div>';
     html += '</div>'; // close .card
 
+    // 場内マップ（ロッジA/Bの位置確認用）
+    if (plan.id === 'lodge_stay') {
+      html += renderSiteMap('lodge');
+    }
+
   } else if (pt === 'camp') {
     html += '<div class="form-group">';
     html += '<label class="form-label">泊数</label>';
@@ -2414,6 +2419,9 @@ function showRoomBooking() {
 
     html += '<div class="night-info" id="stay-price-info"></div>';
     html += '</div>'; // close .card
+
+    // 場内マップ（区画①〜⑧の位置確認用）
+    html += renderSiteMap('camp');
 
   } else if (pt === 'day_all') {
     html += '<div class="night-info">';
@@ -2684,6 +2692,28 @@ function renderExtras(plan) {
     html += '<button class="stepper-btn" onclick="stepExtra(\'' + extra.id + '\', 1)">+</button>';
     html += '</div></div>';
   });
+  return html;
+}
+
+// 場内マップ（キャンプ場の区画①〜⑧、ロッジA/B、調理場、駐車場、トイレ位置を案内）
+// context: 'camp' でキャンプ場視点の注釈、'lodge' でロッジ視点の注釈
+function renderSiteMap(context) {
+  let html = '<div class="card" style="margin-top:12px;background:#fafafa;border:1px solid #e5e7eb">';
+  html += '<div style="font-weight:700;margin-bottom:8px;font-size:14px;color:#374151">📍 場内マップ</div>';
+  html += '<img src="images/site_map.jpg" alt="ふたみ潮風ふれあい公園 場内マップ（キャンプ場区画・ロッジA/B位置）" style="width:100%;height:auto;border-radius:8px;display:block;cursor:zoom-in" loading="lazy" onclick="window.open(this.src, \'_blank\')">';
+  if (context === 'camp') {
+    html += '<div style="font-size:12px;color:#6b7280;margin-top:8px;line-height:1.6">';
+    html += '※ 区画位置（①〜⑧）は当日のご案内となります<br>';
+    html += '※ 駐車場（4台）・調理場・トイレ（約100m）の場所は上図ご参照ください';
+    html += '</div>';
+  } else if (context === 'lodge') {
+    html += '<div style="font-size:12px;color:#6b7280;margin-top:8px;line-height:1.6">';
+    html += '※ ロッジA・B はキャンプ場下方、駐車場すぐ近くに位置しています<br>';
+    html += '※ ロッジAは平屋（ピンク）、ロッジBは平屋（水色）でご確認ください';
+    html += '</div>';
+  }
+  html += '<div style="font-size:11px;color:#9ca3af;margin-top:6px">タップで拡大表示</div>';
+  html += '</div>';
   return html;
 }
 
