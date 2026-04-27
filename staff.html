@@ -740,9 +740,9 @@ td.block-start-td + td.block-mid { border-left: none; }
   </div>
   <div class="form-group">
     <label>住所（宿泊系は記入推奨：台帳記入＋キャンセル料請求書送付用）</label>
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-      <input type="text" id="addZip" placeholder="799-1471" inputmode="numeric" maxlength="8" style="width:120px;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px">
-      <button type="button" class="btn-cancel" onclick="lookupAddAddress()" style="padding:8px 12px;background:#e8eef3;color:#333;border:1px solid #c7d3dd;border-radius:6px;font-size:13px;white-space:nowrap">住所検索</button>
+    <div style="display:flex;gap:6px;align-items:stretch;margin-bottom:6px">
+      <input type="text" id="addZip" placeholder="例：799-1471" inputmode="numeric" maxlength="8" style="flex:1 1 0;min-width:0;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:15px">
+      <button type="button" onclick="lookupAddAddress()" style="flex:0 0 auto;padding:8px 18px;background:#e8eef3;color:#333;border:1px solid #c7d3dd;border-radius:6px;font-size:14px;font-weight:600;white-space:nowrap;cursor:pointer">住所検索</button>
     </div>
     <input type="text" id="addAddress1" placeholder="都道府県・市区町村・町名" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-bottom:6px">
     <input type="text" id="addAddress2" placeholder="番地・建物名" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px">

@@ -980,9 +980,9 @@ body {
       <!-- 住所欄（宿泊系プランは必須・宿泊業の台帳要件＋キャンセル料請求書送付用） -->
       <div class="form-group" id="address-group">
         <label class="form-label" for="confirm-zip"><span id="address-label">郵便番号 / 住所</span></label>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <input type="text" class="form-input" id="confirm-zip" placeholder="799-1471" inputmode="numeric" maxlength="8" style="flex:1;max-width:160px">
-          <button type="button" class="btn" id="zip-lookup-btn" onclick="lookupAddress()" style="padding:10px 14px;background:#e8eef3;color:#333;border:1px solid #c7d3dd;border-radius:8px;font-size:14px;white-space:nowrap">住所検索</button>
+        <div style="display:flex;gap:8px;align-items:stretch;margin-bottom:8px">
+          <input type="text" class="form-input" id="confirm-zip" placeholder="例：799-1471" inputmode="numeric" maxlength="8" style="flex:1 1 0;min-width:0">
+          <button type="button" class="btn" id="zip-lookup-btn" onclick="lookupAddress()" style="flex:0 0 auto;padding:0 18px;background:#e8eef3;color:#333;border:1px solid #c7d3dd;border-radius:8px;font-size:14px;font-weight:600;white-space:nowrap;cursor:pointer">住所検索</button>
         </div>
         <div id="zip-status" style="font-size:12px;margin:4px 0 8px;display:none"></div>
         <input type="text" class="form-input" id="confirm-address1" placeholder="都道府県・市区町村・町名（例：愛媛県伊予市双海町高岸甲）" style="margin-bottom:8px">
