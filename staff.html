@@ -929,6 +929,11 @@ let LAST_SYNC_AT = null;
 
 // API レスポンスの予約 → staff用形式に変換（複数部屋なら複数レコード）
 function convertApiReservation(r) {
+  // 該当プランの定義からチェックイン時刻を取得（slots[0]＝チェックイン時刻）
+  const planDef = PLANS.find(p => p.id === r.planId);
+  const planCheckinHour = (planDef && Array.isArray(planDef.slots) && planDef.slots.length > 0)
+    ? planDef.slots[0]
+    : 14;
   // 部屋一覧（重複排除＋sauna_share→sauna 変換）
   const allRooms = new Set();
   if (Array.isArray(r.roomIds)) {
@@ -971,8 +976,8 @@ function convertApiReservation(r) {
       }
     }
     // 宿泊系は「チェックイン時刻順（午後→深夜→翌朝）」でソート
-    // チェックイン時刻を推定（todayHoursの最大値付近がチェックイン）
-    const checkinHour = todayHours.length > 0 ? Math.max(...todayHours.filter(h => h >= 12)) || 14 : 14;
+    // チェックイン時刻はプラン定義の slots[0]（camp=14, stay=16 等）を使用
+    const checkinHour = planCheckinHour;
     todayHours.sort((a, b) => {
       const aAdj = a < checkinHour ? a + 24 : a;
       const bAdj = b < checkinHour ? b + 24 : b;
