@@ -1070,6 +1070,7 @@ const PLANS = [
     rooms: ['room_6_1','room_6_2','room_6_3','room_6_4'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     checkin: '16:00', checkout: '10:00',
+    requireAddress: true, // 宿泊業の台帳記入義務
     // 宿泊料金体系
     basePrice: 2310, basePriceLabel: '基本料金/室/泊',
     extraAdult: 1580, extraChild: 1050, extraInfant: 790,
@@ -1080,6 +1081,7 @@ const PLANS = [
     rooms: ['room_27'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     checkin: '16:00', checkout: '10:00',
+    requireAddress: true,
     basePrice: 9430, basePriceLabel: '基本料金/室/泊',
     extraAdult: 1580, extraChild: 1050, extraInfant: 790,
     priceDisplay: '9,430円/室/泊 +人数加算',
@@ -1089,6 +1091,7 @@ const PLANS = [
     rooms: ['room_exp'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     checkin: '16:00', checkout: '10:00',
+    requireAddress: true,
     basePrice: 9430, basePriceLabel: '基本料金/室/泊',
     extraAdult: 1580, extraChild: 1050, extraInfant: 790,
     priceDisplay: '9,430円/室/泊 +人数加算',
@@ -1103,6 +1106,7 @@ const PLANS = [
     maxCapacity: 52, // 6畳×4(12) + 27畳(20) + 体験学習室(20)
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     checkin: '16:00', checkout: '10:00',
+    requireAddress: true,
     basePrice: 28100, basePriceLabel: '6部屋一括基本料金/泊',
     extraAdult: 1580, extraChild: 1050, extraInfant: 790,
     priceDisplay: '28,100円/泊 +人数加算',
@@ -1188,6 +1192,7 @@ const PLANS = [
     rooms: ['camp'],
     slots: [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12],
     checkin: '14:00', checkout: '翌13:00',
+    requireAddress: true,
     basePrice: 790, priceDisplay: '790円/区画/泊',
     badge: 'キャンプ', badgeColor: '#059669',
     extras: [{ id: 'tent', name: 'テント追加', price: 50, unit: '1張' }] },
@@ -1197,6 +1202,7 @@ const PLANS = [
     rooms: ['lodge_a','lodge_b'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     checkin: '16:00', checkout: '10:00',
+    requireAddress: true,
     basePrice: 4720, priceDisplay: '4,720円/棟/泊',
     badge: '宿泊', badgeColor: '#6366f1',
     extras: [{ id: 'sheet', name: 'シーツ', price: 340, unit: '1組' }] },
@@ -3306,10 +3312,9 @@ function proceedToConfirm() {
 }
 
 // 宿泊業の台帳記入義務がある＝住所必須プラン判定
-// 対象: 宿泊全般（stay/stay_simple）+ キャンプ泊（camp）
+// 各プラン定義の requireAddress: true で宣言する（PLANS配列を真実の唯一の源とする）
 function isLodgingPlan(plan) {
-  if (!plan) return false;
-  return plan.planType === 'stay' || plan.planType === 'stay_simple' || plan.planType === 'camp';
+  return !!(plan && plan.requireAddress);
 }
 
 function configureAddressRequirement(plan) {
@@ -3334,6 +3339,8 @@ async function lookupAddress() {
     statusEl.textContent = '郵便番号は7桁で入力してください（例：799-1471）';
     return;
   }
+  // 検索成否によらず、入力された7桁を XXX-XXXX 形式に正規化
+  zipEl.value = raw.slice(0, 3) + '-' + raw.slice(3);
   statusEl.style.display = 'block';
   statusEl.style.color = '#666';
   statusEl.textContent = '住所を検索中...';
@@ -3349,8 +3356,6 @@ async function lookupAddress() {
       addr1El.value = (r.address1 || '') + (r.address2 || '') + (r.address3 || '');
       statusEl.style.color = '#0a7c2f';
       statusEl.textContent = '住所を入力しました。番地・建物名は下の欄にご記入ください。';
-      // ハイフン挿入
-      zipEl.value = raw.slice(0, 3) + '-' + raw.slice(3);
     } else {
       statusEl.style.color = '#e94560';
       statusEl.textContent = '該当する住所が見つかりません。お手数ですが直接ご記入ください。';

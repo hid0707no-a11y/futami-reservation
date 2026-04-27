@@ -54,12 +54,14 @@ interface MailData {
 }
 
 // customer.{zip,address1,address2} を1行の住所文字列に整形
+// zipのみ入力されていても住所本体（address1/address2）が無ければ空文字を返す
+// （郵便番号だけメール本文に出ても請求書送付に使えないため）
 function formatCustomerAddress(c: any): string {
   if (!c) return '';
   const zip = (c.zip || '').toString().trim();
   const a1 = (c.address1 || '').toString().trim();
   const a2 = (c.address2 || '').toString().trim();
-  if (!zip && !a1 && !a2) return '';
+  if (!a1 && !a2) return '';
   const zipPart = zip ? `〒${zip} ` : '';
   return `${zipPart}${a1}${a2 ? ' ' + a2 : ''}`.trim();
 }

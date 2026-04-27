@@ -813,6 +813,9 @@ const PLANS = [
   { id: 'stay_exp', name: '宿泊（体験学習室）', rooms: ['room_exp'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     price: '9,430円/室/泊 +人数加算', badge: '\uD83C\uDF19 宿泊', color: '#6366f1' },
+  { id: 'stay_all', name: '全室貸切パック（最大52名）', rooms: ['room_6_1','room_6_2','room_6_3','room_6_4','room_27','room_exp'],
+    slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
+    price: '28,100円/泊 +人数加算', badge: '\uD83C\uDFE0 全室貸切', color: '#dc2626' },
 
   // ふれあいの館 - 日帰り
   { id: 'day_6_all', name: '日帰り通し（6畳）', rooms: ['room_6_1','room_6_2','room_6_3','room_6_4'],
@@ -1701,6 +1704,8 @@ async function lookupAddAddress() {
     statusEl.textContent = '郵便番号は7桁で入力してください（例：799-1471）';
     return;
   }
+  // 検索成否によらずハイフン整形
+  zipEl.value = raw.slice(0, 3) + '-' + raw.slice(3);
   statusEl.style.display = 'block';
   statusEl.style.color = '#666';
   statusEl.textContent = '住所を検索中...';
@@ -1715,7 +1720,6 @@ async function lookupAddAddress() {
       addr1El.value = (r.address1 || '') + (r.address2 || '') + (r.address3 || '');
       statusEl.style.color = '#0a7c2f';
       statusEl.textContent = '住所を入力しました。番地・建物名は下の欄にご記入ください。';
-      zipEl.value = raw.slice(0, 3) + '-' + raw.slice(3);
     } else {
       statusEl.style.color = '#dc2626';
       statusEl.textContent = '該当する住所が見つかりません。直接ご記入ください。';
