@@ -2233,7 +2233,9 @@ function showRoomBooking() {
   if (plan.id === 'midori_eve') state.useLighting = false; // midori は stepper を使うため toggle は常に false
 
   let html = '<div class="section-title">' + (room ? room.icon : '') + ' ' + plan.name + '</div>';
-  if (room) html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
+  // キャンプは複数区画選択方式なので、特定の1区画名をサブヘッダに出さない
+  if (room && plan.planType !== 'camp') html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
+  else if (plan.planType === 'camp') html += '<div class="text-muted mb-16">キャンプ場（区画①〜⑧）</div>';
 
   // 全室パック: 6部屋を一覧表示（選択不可・占有確認のみ）
   if (plan.requiresAllRooms) {
@@ -2254,7 +2256,8 @@ function showRoomBooking() {
     html += '</div>';
   }
   // 部屋が複数ある場合は選択UI（全室パック以外）
-  else if (plan.rooms.length > 1) {
+  else if (plan.rooms.length > 1 && plan.planType !== 'camp') {
+    // キャンプは下の renderCampSitePicker で複数選択UIを出すのでここは出さない
     html += '<div class="card">';
     html += '<div class="form-group"><label class="form-label">部屋を選択</label>';
     plan.rooms.forEach(rid => {
