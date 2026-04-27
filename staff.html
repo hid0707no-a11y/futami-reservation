@@ -786,7 +786,14 @@ const ROOMS = [
   { id: 'room_exp', name: '体験学習室（25畳）', building: 'ふれあいの館', icon: '\uD83C\uDFE0' },
   { id: 'room_train', name: '研修室', building: 'ふれあいの館', icon: '\uD83C\uDFE0' },
   { id: 'room_kitchen', name: '厨房・食堂', building: 'ふれあいの館', icon: '\uD83C\uDFE0' },
-  { id: 'camp', name: 'キャンプ場', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_1', name: 'キャンプ区画①', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_2', name: 'キャンプ区画②', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_3', name: 'キャンプ区画③', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_4', name: 'キャンプ区画④', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_5', name: 'キャンプ区画⑤', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_6', name: 'キャンプ区画⑥', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_7', name: 'キャンプ区画⑦', building: 'アウトドア', icon: '\u26FA' },
+  { id: 'camp_8', name: 'キャンプ区画⑧', building: 'アウトドア', icon: '\u26FA' },
   { id: 'lodge_a', name: 'ロッジA', building: 'アウトドア', icon: '\uD83C\uDFD5\uFE0F' },
   { id: 'lodge_b', name: 'ロッジB', building: 'アウトドア', icon: '\uD83C\uDFD5\uFE0F' },
   { id: 'court_1', name: 'コート1', building: 'テニス', icon: '\uD83C\uDFBE' },
@@ -849,9 +856,9 @@ const PLANS = [
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21], price: '2,310円', badge: '\u2600\uFE0F 通し', color: '#f59e0b' },
 
   // キャンプ（14:00〜翌12:59）
-  { id: 'camp_stay', name: 'キャンプ泊', rooms: ['camp'],
+  { id: 'camp_stay', name: 'キャンプ泊', rooms: ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8'],
     slots: [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12],
-    price: '790円/区画', badge: '\u26FA キャンプ', color: '#059669' },
+    price: '790円/区画/泊', badge: '\u26FA キャンプ', color: '#059669' },
   // ロッジ
   { id: 'lodge_stay', name: 'ロッジ宿泊', rooms: ['lodge_a','lodge_b'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
@@ -1154,7 +1161,7 @@ function generateDummyData() {
       name: '\u5C11\u5E74\u91CE\u7403\u30C1\u30FC\u30E0', phone: '090-7890-1234', guests: 25, note: '\u5927\u4F1A\u7DF4\u7FD2',
       checkedIn: true },
     // キャンプ
-    { id: 'r8', planId: 'camp_stay', roomId: 'camp', date: today,
+    { id: 'r8', planId: 'camp_stay', roomId: 'camp_1', date: today,
       name: '\u9AD8\u6A4B\u69D8', phone: '090-8901-2345', guests: 4, note: '\u30C6\u30F3\u30C82\u5F35',
       checkedIn: false },
     // 研修室 午後

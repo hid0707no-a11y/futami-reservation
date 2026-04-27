@@ -358,11 +358,14 @@ function checkOrigin(req: any, res: any): boolean {
 }
 
 // ===== 入力バリデーション =====
+// camp_1〜camp_8: 2026-04-28〜 8区画個別管理に移行（旧 'camp' は廃止）
 const VALID_ROOM_IDS = new Set([
   'room_27','room_6_1','room_6_2','room_6_3','room_6_4',
   'room_exp','room_train','room_kitchen',
   'court_1','court_2','court_3','court_4','court_5',
-  'midori','sauna','sauna_share','camp','lodge_a','lodge_b',
+  'midori','sauna','sauna_share',
+  'camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8',
+  'lodge_a','lodge_b',
 ]);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -459,8 +462,7 @@ function validateReservationInput(body: any, res: any): boolean {
  * - sauna_capacity_days: 配列で日付を保持
  * - 30秒キャッシュ
  */
-const SHARED_SLOT_CAPACITY = 8; // ふたみの日サウナ・キャンプ共通
-const CAMP_CAPACITY = 8;
+const SHARED_SLOT_CAPACITY = 8; // ふたみの日サウナ専用（キャンプは2026-04-28〜個別管理に移行）
 let _futamiDaysCache: { dates: Set<string>; expiresAt: number } | null = null;
 const FUTAMI_CACHE_TTL_MS = 30 * 1000;
 
@@ -742,102 +744,10 @@ export const createReservation = onRequest(
         }
       }
 
-      // ===== キャンプ場（shared_slots使用・容量8区画）=====
-      const isCamp = roomIds[0] === 'camp';
-      if (isCamp) {
-        const sites = Number(guestCount || 1);
-        if (sites < 1 || sites > CAMP_CAPACITY) {
-          res.status(400).json({ error: 'invalid_guest_count', detail: `1〜${CAMP_CAPACITY}区画` });
-          return;
-        }
-
-        try {
-          const result = await db.runTransaction(async tx => {
-            const slotRefs = slots.map((key: string) => db.collection('shared_slots').doc(key));
-            const slotDocs = await Promise.all(slotRefs.map((ref: any) => tx.get(ref)));
-
-            const fullSlots: string[] = [];
-            slotDocs.forEach((d: any, i: number) => {
-              const data = d.exists ? d.data() : { capacity: CAMP_CAPACITY, used: 0 };
-              const remaining = (data.capacity || CAMP_CAPACITY) - (data.used || 0);
-              if (remaining < sites) fullSlots.push(slots[i]);
-            });
-            if (fullSlots.length > 0) {
-              throw { code: 'capacity_exceeded', fullSlots, requested: sites };
-            }
-
-            const resRef = db.collection('reservations').doc();
-            const now = admin.firestore.FieldValue.serverTimestamp();
-            tx.set(resRef, {
-              planId,
-              roomIds: ['camp'],
-              slots,
-              startDate,
-              endDate,
-              nights,
-              customer,
-              guests: guests || null,
-              guestCount: sites,
-              pricing: pricing || null,
-              payment: { method: 'onsite', status: 'unpaid' },
-              status: 'confirmed',
-              note: note || null,
-              createdAt: now,
-              createdBy,
-              updatedAt: now,
-              isCamp: true,
-            });
-
-            slotDocs.forEach((d: any, i: number) => {
-              const ref = slotRefs[i];
-              const key = slots[i];
-              const [, date, hourStr] = key.split('|');
-              if (d.exists) {
-                tx.update(ref, {
-                  used: admin.firestore.FieldValue.increment(sites),
-                  reservationIds: admin.firestore.FieldValue.arrayUnion(resRef.id),
-                  updatedAt: now,
-                });
-              } else {
-                tx.set(ref, {
-                  slotKey: key,
-                  roomId: 'camp',
-                  date,
-                  hour: parseInt(hourStr, 10),
-                  capacity: CAMP_CAPACITY,
-                  used: sites,
-                  reservationIds: [resRef.id],
-                  createdAt: now,
-                  updatedAt: now,
-                });
-              }
-            });
-
-            return resRef.id;
-          });
-          const mailData: MailData = {
-            planName: planId, roomName: 'キャンプ場', startDate, endDate,
-            customerName: customer.name, customerPhone: customer.phone,
-            customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
-            note: note || '',
-            reservationId: result, guestCount: sites, isCamp: true,
-          };
-          sendConfirmationEmail(mailData).catch(() => {});
-          sendStaffNotification(mailData, 'new').catch(() => {});
-          auditLog('reservation.create', { reservationId: result, planId, roomIds, startDate, customerName: customer.name, type: 'camp', sites }, req);
-          const campResp = { reservationId: result, status: 'confirmed', isCamp: true, sites };
-          saveIdempotencyKey(req, campResp).catch(() => {});
-
-          res.status(201).json(campResp);
-          return;
-        } catch (e: any) {
-          if (e?.code === 'capacity_exceeded') {
-            res.status(409).json({ error: 'capacity_exceeded', fullSlots: e.fullSlots, requested: e.requested });
-            return;
-          }
-          throw e;
-        }
-      }
+      // ===== キャンプ場（2026-04-28〜 8区画個別管理に移行）=====
+      // 旧 shared_slots 方式は廃止。各 camp_N|date|hour スロットを個別占有する通常ルートに統合。
+      // フロントから複数区画選択時は roomIds = ['camp_1','camp_3',...] で送信される。
+      const isCamp = roomIds.every((r: string) => r.startsWith('camp_'));
 
       // ===== 通常プラン（既存の slots collection）=====
       // トランザクションで競合検出＋書込
@@ -866,6 +776,7 @@ export const createReservation = onRequest(
           nights,
           customer,
           guests: guests || null,
+          ...(isCamp ? { guestCount: roomIds.length, isCamp: true } : {}),
           pricing: pricing || null,
           payment: { method: 'onsite', status: 'unpaid' },
           status: 'confirmed',
@@ -891,18 +802,23 @@ export const createReservation = onRequest(
         return resRef.id;
       });
 
+      // キャンプ予約はメール本文の roomName を「区画①②③」形式に整形
+      const roomNameForMail = isCamp
+        ? roomIds.map((r: string) => '区画' + ['①','②','③','④','⑤','⑥','⑦','⑧'][parseInt(r.split('_')[1], 10) - 1]).join('・')
+        : roomIds.join(', ');
       const mailData: MailData = {
-        planName: planId, roomName: roomIds.join(', '), startDate, endDate,
+        planName: planId, roomName: roomNameForMail, startDate, endDate,
         customerName: customer.name, customerPhone: customer.phone,
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '',
         reservationId: result,
+        ...(isCamp ? { isCamp: true, guestCount: roomIds.length } : {}),
         saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
       };
       sendConfirmationEmail(mailData).catch(() => {});
       sendStaffNotification(mailData, 'new').catch(() => {});
-      auditLog('reservation.create', { reservationId: result, planId, roomIds, startDate, customerName: customer.name, type: 'normal' }, req);
-      const normalResp = { reservationId: result, status: 'confirmed' };
+      auditLog('reservation.create', { reservationId: result, planId, roomIds, startDate, customerName: customer.name, type: isCamp ? 'camp' : 'normal' }, req);
+      const normalResp = { reservationId: result, status: 'confirmed', ...(isCamp ? { isCamp: true, sites: roomIds.length } : {}) };
       saveIdempotencyKey(req, normalResp).catch(() => {});
 
       res.status(201).json(normalResp);
@@ -1032,19 +948,19 @@ export const cancelReservation = onRequest(
         const isTennisRes = !!data.isTennis;
         const seats = data.guestCount || 1;
 
-        // キャンプ: shared_slots を取得・更新
-        if (isCampRes) {
+        // 旧キャンプ予約（2026-04-27以前・shared_slots方式）の互換維持
+        // 新方式（2026-04-28〜）はキー先頭が camp_N なので個別 slots collection を使う
+        const isLegacySharedCamp = isCampRes && slotKeys.length > 0 && slotKeys[0].startsWith('camp|');
+        if (isLegacySharedCamp) {
           const sharedRefs = slotKeys.map(k => db.collection('shared_slots').doc(k));
           const sharedDocs = await Promise.all(sharedRefs.map(r => tx.get(r)));
 
-          // reservation を cancelled に
           tx.update(resRef, {
             status: 'cancelled',
             cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-          // shared_slots の used を減らす
           sharedDocs.forEach((d, i) => {
             if (!d.exists) return;
             const cur = d.data() as any;
@@ -1062,7 +978,7 @@ export const cancelReservation = onRequest(
           return;
         }
 
-        // 通常: slots を物理削除（テニスは tennis_slots）
+        // 通常: slots を物理削除（テニスは tennis_slots／新方式キャンプも slots）
         const collection = isTennisRes ? 'tennis_slots' : 'slots';
         tx.update(resRef, {
           status: 'cancelled',

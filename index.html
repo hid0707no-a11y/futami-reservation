@@ -1043,7 +1043,16 @@ const ROOMS = [
   { id: 'room_exp', name: '体験学習室（25畳）', fullName: '体験学習室【25畳】', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 20 },
   { id: 'room_train', name: '研修室', fullName: '1階 研修室', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 30 },
   { id: 'room_kitchen', name: '厨房・食堂', fullName: '1階 厨房・食堂', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 20 },
-  { id: 'camp', name: 'キャンプ場', fullName: 'キャンプサイト', building: 'アウトドア', icon: '\u26FA', capacity: 99 },
+  // キャンプ場：8区画個別管理（2026-04-28〜）
+  // 各区画は独立した予約単位。複数選択時は同期間で最大3区画まで（plan.maxSites）。
+  { id: 'camp_1', name: 'キャンプ区画①', fullName: 'キャンプ場 区画①', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
+  { id: 'camp_2', name: 'キャンプ区画②', fullName: 'キャンプ場 区画②', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
+  { id: 'camp_3', name: 'キャンプ区画③', fullName: 'キャンプ場 区画③', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
+  { id: 'camp_4', name: 'キャンプ区画④', fullName: 'キャンプ場 区画④', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
+  { id: 'camp_5', name: 'キャンプ区画⑤', fullName: 'キャンプ場 区画⑤', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
+  { id: 'camp_6', name: 'キャンプ区画⑥', fullName: 'キャンプ場 区画⑥', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
+  { id: 'camp_7', name: 'キャンプ区画⑦', fullName: 'キャンプ場 区画⑦', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
+  { id: 'camp_8', name: 'キャンプ区画⑧', fullName: 'キャンプ場 区画⑧', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
   { id: 'lodge_a', name: 'ロッジA', fullName: 'ロッジA', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
   { id: 'lodge_b', name: 'ロッジB', fullName: 'ロッジB', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
   { id: 'court_1', name: 'コート1', fullName: 'テニスコート1', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
@@ -1189,7 +1198,9 @@ const PLANS = [
 
   // ===== キャンプ =====
   { id: 'camp_stay', name: 'キャンプ泊', planType: 'camp', category: 'outdoor',
-    rooms: ['camp'],
+    rooms: ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8'],
+    maxSites: 3,    // 一度に予約できる区画数の上限（それ以上は分けて予約）
+    maxNights: 3,   // 連泊上限（4泊以上は分けて予約）
     slots: [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12],
     checkin: '14:00', checkout: '翌13:00',
     requireAddress: true,
@@ -1361,7 +1372,9 @@ const state = {
   // 非宿泊用: 単純人数
   guests: 2,
   // キャンプ
-  campSites: 1,
+  // selectedCampSites: 利用者が選択した区画ID配列（例: ['camp_1','camp_3']）
+  // 空配列＝未選択。最大3区画まで（plan.maxSites で制限）
+  selectedCampSites: [],
   campTents: 0,
   // ロッジシーツ
   lodgeSheets: 0,
@@ -1550,13 +1563,14 @@ function isSlotFree(roomId, date, hour) {
   return !OCCUPIED_SLOTS.has(roomId + '|' + date + '|' + hour);
 }
 
-// プランの全スロットが空いているか（指定部屋）
-function isPlanAvailableForRoom(plan, roomId, date) {
+// プランの全スロットが空いているか（指定部屋・nights泊分まとめて判定）
+// nights省略時は1泊のみ。連泊（キャンプ含む）は呼び出し側でnightsを渡す。
+function isPlanAvailableForRoom(plan, roomId, date, nights) {
   if (!date) return true;
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
   if (slots.length === 0) return true;
-  // 宿泊は翌日にまたがるスロット(0-9)をexpandStaySlotsで正しい日付に変換
-  const expanded = expandStaySlots(plan, date, 1);
+  const n = (typeof nights === 'number' && nights > 0) ? nights : 1;
+  const expanded = expandStaySlots(plan, date, n);
   for (const s of expanded) {
     if (!isSlotFree(roomId, s.date, s.hour)) return false;
   }
@@ -1825,7 +1839,7 @@ function selectPlanFromSearch(planId) {
   state.guestsAdult = 1;
   state.guestsChild = 0;
   state.guestsInfant = 0;
-  state.campSites = 1;
+  state.selectedCampSites = [];
   state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
@@ -2177,7 +2191,7 @@ function selectPlan(planId) {
   state.guestsChild = 0;
   state.guestsInfant = 0;
   state.guests = 2;
-  state.campSites = 1;
+  state.selectedCampSites = [];
   state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
@@ -2396,22 +2410,15 @@ function showRoomBooking() {
 
   } else if (pt === 'camp') {
     html += '<div class="form-group">';
-    html += '<label class="form-label">泊数</label>';
+    html += '<label class="form-label">泊数（最大' + (plan.maxNights || 3) + '泊）</label>';
     html += '<div class="stepper">';
     html += '<button class="stepper-btn" onclick="stepNights(-1)">-</button>';
     html += '<span class="stepper-value" id="nights-count">' + state.selectedNights + '</span>';
     html += '<span class="stepper-unit">泊</span>';
     html += '<button class="stepper-btn" onclick="stepNights(1)">+</button>';
-    html += '</div></div>';
-
-    html += '<div class="form-group">';
-    html += '<label class="form-label">区画数</label>';
-    html += '<div class="stepper">';
-    html += '<button class="stepper-btn" onclick="stepCampSites(-1)">-</button>';
-    html += '<span class="stepper-value" id="camp-sites-count">' + state.campSites + '</span>';
-    html += '<span class="stepper-unit">区画</span>';
-    html += '<button class="stepper-btn" onclick="stepCampSites(1)">+</button>';
-    html += '</div></div>';
+    html += '</div>';
+    html += '<div class="text-muted" style="font-size:11px;margin-top:4px">※ ' + (plan.maxNights || 3) + '泊を超える場合は分けてご予約ください</div>';
+    html += '</div>';
 
     html += '<div class="text-muted">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
 
@@ -2419,6 +2426,9 @@ function showRoomBooking() {
 
     html += '<div class="night-info" id="stay-price-info"></div>';
     html += '</div>'; // close .card
+
+    // 区画選択UI（マップ参照型・最大3区画まで・空き連動）
+    html += renderCampSitePicker(plan);
 
     // 場内マップ（区画①〜⑧の位置確認用）
     html += renderSiteMap('camp');
@@ -2695,6 +2705,75 @@ function renderExtras(plan) {
   return html;
 }
 
+// キャンプ区画選択UI（最大 plan.maxSites 個まで・各区画の空き状況連動）
+// 連泊期間（state.selectedDate〜+selectedNights）全日において空きの区画のみ選択可
+function renderCampSitePicker(plan) {
+  const max = plan.maxSites || 3;
+  const date = state.selectedDate;
+  const nights = state.selectedNights || 1;
+  let html = '<div class="card" style="margin-top:12px">';
+  html += '<div style="font-weight:700;margin-bottom:8px;font-size:14px">⛺ ご利用区画を選択（最大' + max + '区画）</div>';
+  html += '<div class="text-muted" style="font-size:12px;margin-bottom:10px">下の場内マップで位置をご確認ください。' + (max + 1) + '区画以上ご希望の場合は分けてご予約ください。</div>';
+  html += '<div id="camp-site-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
+  for (let i = 1; i <= 8; i++) {
+    const roomId = 'camp_' + i;
+    const labelNum = ['①','②','③','④','⑤','⑥','⑦','⑧'][i - 1];
+    const selected = state.selectedCampSites.indexOf(roomId) !== -1;
+    const avail = date ? isPlanAvailableForRoom(plan, roomId, date, nights) : true;
+    let bg, color, border, opacity;
+    if (selected) {
+      bg = '#059669'; color = '#fff'; border = '#047857'; opacity = '1';
+    } else if (!avail) {
+      bg = '#f3f4f6'; color = '#9ca3af'; border = '#e5e7eb'; opacity = '0.6';
+    } else {
+      bg = '#fff'; color = '#1f2937'; border = '#d1d5db'; opacity = '1';
+    }
+    const onclick = avail ? 'onclick="toggleCampSite(\'' + roomId + '\')"' : '';
+    const cursor = avail ? 'pointer' : 'not-allowed';
+    html += '<button type="button" ' + onclick + ' style="padding:14px 4px;background:' + bg + ';color:' + color + ';border:2px solid ' + border + ';border-radius:8px;font-size:18px;font-weight:700;cursor:' + cursor + ';opacity:' + opacity + ';min-height:60px">';
+    html += '<div>' + labelNum + '</div>';
+    if (!avail) html += '<div style="font-size:10px;font-weight:400">予約済</div>';
+    else if (selected) html += '<div style="font-size:10px;font-weight:400">選択中</div>';
+    html += '</button>';
+  }
+  html += '</div>';
+  html += '<div id="camp-site-summary" style="margin-top:10px;font-size:13px;color:#6b7280">';
+  if (state.selectedCampSites.length === 0) {
+    html += '区画を1つ以上お選びください';
+  } else {
+    const labels = state.selectedCampSites
+      .slice()
+      .sort()
+      .map(rid => ['①','②','③','④','⑤','⑥','⑦','⑧'][parseInt(rid.split('_')[1], 10) - 1])
+      .join('・');
+    html += '選択中：' + labels + '（' + state.selectedCampSites.length + '区画）';
+  }
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+// 区画チェックボックス操作。最大 plan.maxSites を超えたらアラート。
+function toggleCampSite(roomId) {
+  const plan = state.selectedPlan;
+  if (!plan) return;
+  const max = plan.maxSites || 3;
+  const idx = state.selectedCampSites.indexOf(roomId);
+  if (idx === -1) {
+    if (state.selectedCampSites.length >= max) {
+      alert(max + '区画までです。これ以上ご利用の場合は、お手数ですが分けてご予約ください。');
+      return;
+    }
+    state.selectedCampSites.push(roomId);
+  } else {
+    state.selectedCampSites.splice(idx, 1);
+  }
+  // 互換性: 単一選択APIを使う既存処理向けに先頭IDを残す
+  state.selectedRoomId = state.selectedCampSites[0] || null;
+  showRoomBooking();
+  updateBookingPriceSummary();
+}
+
 // 場内マップ（キャンプ場の区画①〜⑧、ロッジA/B、調理場、駐車場、トイレ位置を案内）
 // context: 'camp' でキャンプ場視点の注釈、'lodge' でロッジ視点の注釈
 function renderSiteMap(context) {
@@ -2830,26 +2909,38 @@ function isClosedDay(dateStr) {
 
 function getMaxNights() {
   const plan = state.selectedPlan;
-  const roomId = state.selectedRoomId;
   const baseDate = state.selectedDate;
-  if (!plan || !roomId || !baseDate) return 14;
+  if (!plan || !baseDate) return 14;
+
+  // プラン側の連泊上限（キャンプは3泊・分けて予約推奨）
+  const planCap = (typeof plan.maxNights === 'number' && plan.maxNights > 0) ? plan.maxNights : 14;
+
+  // キャンプは複数区画選択方式: 選択中の全区画に対して連泊チェック
+  // 区画未選択時は単純に planCap までは試算可
+  const isCamp = plan.planType === 'camp';
+  const checkRoomIds = isCamp
+    ? (state.selectedCampSites && state.selectedCampSites.length > 0 ? state.selectedCampSites : ['camp_1'])
+    : [state.selectedRoomId];
 
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
-  if (slots.length === 0) return 14;
+  if (slots.length === 0) return planCap;
+  if (!checkRoomIds[0]) return planCap;
 
   let max = 0;
-  for (let n = 0; n < 14; n++) {
-    // n泊目の宿泊日（チェックイン日からn日後）が定休日なら泊まれない
+  for (let n = 0; n < planCap; n++) {
     const stayDate = addDays(baseDate, n);
-    if (n > 0 && isClosedDay(stayDate)) break; // チェックイン当日は除く（チェックアウト日=翌日なのでOK）
+    if (n > 0 && isClosedDay(stayDate)) break;
 
     const expanded = expandStaySlots(plan, baseDate, n + 1);
     let allFree = true;
-    for (const s of expanded) {
-      if (!isSlotFree(roomId, s.date, s.hour)) {
-        allFree = false;
-        break;
+    for (const rid of checkRoomIds) {
+      for (const s of expanded) {
+        if (!isSlotFree(rid, s.date, s.hour)) {
+          allFree = false;
+          break;
+        }
       }
+      if (!allFree) break;
     }
     if (!allFree) break;
     max = n + 1;
@@ -2896,13 +2987,7 @@ function checkNightsAvailability() {
   }
 }
 
-function stepCampSites(delta) {
-  state.campSites = Math.max(1, Math.min(8, state.campSites + delta));
-  const el = document.getElementById('camp-sites-count');
-  if (el) el.textContent = state.campSites;
-  updateSimplePriceInfo();
-  updateBookingPriceSummary();
-}
+// 旧ステッパー（区画数のみ指定方式）は廃止 — 区画選択UI（toggleCampSite）に置換
 
 /* ================================================================
    BOOKING DATE CHANGE
@@ -3045,12 +3130,18 @@ function updateSimplePriceInfo() {
   }
 
   if (pt === 'camp') {
-    const siteTotal = plan.basePrice * state.campSites * state.selectedNights;
+    const siteCount = state.selectedCampSites.length;
+    const siteTotal = plan.basePrice * siteCount * state.selectedNights;
     const tentTotal = state.campTents * 50;
     const total = siteTotal + tentTotal;
-    let info = plan.basePrice.toLocaleString() + '円 x ' + state.campSites + '区画 x ' + state.selectedNights + '泊 = ' + siteTotal.toLocaleString() + '円';
-    if (tentTotal > 0) info += '<br>テント追加: 50円 x ' + state.campTents + '張 = ' + tentTotal.toLocaleString() + '円';
-    info += '<br><strong>合計: ' + total.toLocaleString() + '円</strong>';
+    let info;
+    if (siteCount === 0) {
+      info = '<span style="color:#9ca3af">区画を選択してください</span>';
+    } else {
+      info = plan.basePrice.toLocaleString() + '円 x ' + siteCount + '区画 x ' + state.selectedNights + '泊 = ' + siteTotal.toLocaleString() + '円';
+      if (tentTotal > 0) info += '<br>テント追加: 50円 x ' + state.campTents + '張 = ' + tentTotal.toLocaleString() + '円';
+      info += '<br><strong>合計: ' + total.toLocaleString() + '円</strong>';
+    }
     el.innerHTML = info;
   }
 }
@@ -3081,7 +3172,8 @@ function calculateTotal() {
   }
 
   if (pt === 'camp') {
-    let total = plan.basePrice * state.campSites * state.selectedNights;
+    const siteCount = state.selectedCampSites.length;
+    let total = plan.basePrice * siteCount * state.selectedNights;
     total += state.campTents * 50;
     return total;
   }
@@ -3205,11 +3297,31 @@ function proceedToConfirm() {
     return;
   }
 
+  // キャンプ: 区画選択チェック
+  if (pt === 'camp') {
+    if (state.selectedCampSites.length === 0) {
+      alert('ご利用になる区画を1つ以上選択してください');
+      return;
+    }
+    const maxN = plan.maxNights || 3;
+    if (state.selectedNights > maxN) {
+      alert(maxN + '泊までです。これ以上は分けてご予約ください。');
+      return;
+    }
+  }
+
   // 泊数分の空きチェック（宿泊・ロッジ・キャンプ）— 翌朝またがり対応
   if (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') {
     const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights);
-    // 全室パックは全部屋をチェック、それ以外は選択中の1部屋
-    const checkRooms = plan.requiresAllRooms ? plan.rooms : [state.selectedRoomId];
+    // 全室パック=全部屋／キャンプ=選択した区画群／その他=選択中の1部屋
+    let checkRooms;
+    if (plan.requiresAllRooms) {
+      checkRooms = plan.rooms;
+    } else if (pt === 'camp') {
+      checkRooms = state.selectedCampSites;
+    } else {
+      checkRooms = [state.selectedRoomId];
+    }
     for (const rid of checkRooms) {
       for (const s of expanded) {
         if (!isSlotFree(rid, s.date, s.hour)) {
@@ -3264,6 +3376,11 @@ function proceedToConfirm() {
   html += '<div class="summary-row"><span class="summary-label">プラン</span><span class="summary-value">' + plan.name + '</span></div>';
   if (plan.requiresAllRooms) {
     html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">全6部屋（6畳×4＋27畳＋体験学習室）</span></div>';
+  } else if (pt === 'camp') {
+    const labels = state.selectedCampSites.slice().sort()
+      .map(rid => ['①','②','③','④','⑤','⑥','⑦','⑧'][parseInt(rid.split('_')[1], 10) - 1])
+      .join('・');
+    html += '<div class="summary-row"><span class="summary-label">区画</span><span class="summary-value">' + labels + '</span></div>';
   } else {
     html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + (room ? room.fullName : '') + '</span></div>';
   }
@@ -3280,7 +3397,7 @@ function proceedToConfirm() {
     }
   }
   if (pt === 'camp') {
-    html += '<div class="summary-row"><span class="summary-label">区画数</span><span class="summary-value">' + state.campSites + '区画</span></div>';
+    html += '<div class="summary-row"><span class="summary-label">区画数</span><span class="summary-value">' + state.selectedCampSites.length + '区画</span></div>';
     if (state.campTents > 0) {
       html += '<div class="summary-row"><span class="summary-label">テント追加</span><span class="summary-value">' + state.campTents + '張</span></div>';
     }
@@ -3479,6 +3596,14 @@ async function submitBooking() {
         }
       }
       slotKeys = Array.from(set);
+    } else if (isCamp) {
+      // キャンプ: 選択した区画 × 連泊スロットを全展開
+      const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
+      for (const rid of state.selectedCampSites) {
+        for (const s of expanded) {
+          slotKeys.push(rid + '|' + s.date + '|' + s.hour);
+        }
+      }
     } else {
       const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
       const roomId = isFutamiSauna ? 'sauna_share' : state.selectedRoomId;
@@ -3524,9 +3649,14 @@ async function submitBooking() {
       const sportGuestEstimate = (plan.category === 'sport' && plan.guestEstimateMax)
         ? (state.sportGuestCount || 0)
         : null;
+      // roomIds決定: キャンプは選択した複数区画、その他は単一
+      let payloadRoomIds;
+      if (isFutamiSauna) payloadRoomIds = ['sauna_share'];
+      else if (isCamp) payloadRoomIds = state.selectedCampSites.slice();
+      else payloadRoomIds = [state.selectedRoomId];
       const payload = {
         planId: isFutamiSauna ? 'plan_sauna_futami' : plan.id,
-        roomIds: [isFutamiSauna ? 'sauna_share' : state.selectedRoomId],
+        roomIds: payloadRoomIds,
         slots: slotKeys,
         startDate,
         endDate,
@@ -3544,13 +3674,14 @@ async function submitBooking() {
         createdBy: 'web',
       };
       if (isFutamiSauna) payload.guestCount = futamiSeats;
-      if (isCamp) payload.guestCount = state.campSites;
+      if (isCamp) payload.guestCount = state.selectedCampSites.length;
       const apiResult = await submitReservation(payload);
       apiResId = apiResult.reservationId;
       // 即座にローカルSetに反映（再ロードまで待たない）
       if (isTennis) {
         slotKeys.forEach(k => TENNIS_SLOTS.add(k));
-      } else if (!isFutamiSauna && !isCamp) {
+      } else if (!isFutamiSauna) {
+        // キャンプも個別slot方式に統一されたのでOCCUPIED_SLOTSへ反映
         slotKeys.forEach(k => OCCUPIED_SLOTS.add(k));
       }
     } catch (e) {
@@ -3560,7 +3691,7 @@ async function submitBooking() {
         return;
       }
       if (e && e.code === 'capacity_exceeded') {
-        alert('申し訳ありません、キャンプ場の空き区画が不足しています。区画数を減らすか、別の日程をお選びください。');
+        alert('申し訳ありません、選択した区画が満室です。別の区画または別の日程をお選びください。');
         await loadAvailabilityData();
         return;
       }
@@ -3585,7 +3716,8 @@ async function submitBooking() {
     guestsChild: state.guestsChild,
     guestsInfant: state.guestsInfant,
     guests: state.guests,
-    campSites: state.campSites,
+    campSites: state.selectedCampSites.length,
+    selectedCampSites: state.selectedCampSites.slice(),
     campTents: state.campTents,
     lodgeSheets: state.lodgeSheets,
     saunaTowels: state.saunaTowels,
