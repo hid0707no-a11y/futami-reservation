@@ -989,6 +989,7 @@ function convertApiReservation(r) {
       checkedIn: r.status === 'checked_in',
       isFutamiDay: !!r.isFutamiDay,
       guestCount: r.guestCount || null,
+      pricingTotal: (r.pricing && typeof r.pricing.total === 'number') ? r.pricing.total : null,
       note: r.note || '',
     });
   }
@@ -1381,7 +1382,8 @@ function showDetail(resId) {
     <div class="detail-row"><span class="label">\u30D7\u30E9\u30F3</span><span class="value">${plan ? plan.badge + ' ' + plan.name : '-'}</span></div>
     <div class="detail-row"><span class="label">\u6642\u9593</span><span class="value">${slotsText || '-'}</span></div>
     <div class="detail-row"><span class="label">\u4EBA\u6570</span><span class="value">${res.guests}\u540D</span></div>
-    <div class="detail-row"><span class="label">\u6599\u91D1</span><span class="value">${plan ? plan.price : '-'}</span></div>
+    <div class="detail-row" style="background:#fff8e1;margin:4px -16px;padding:12px 16px;border-radius:8px"><span class="label" style="color:#b45309;font-weight:700">\u3054\u8acb\u6c42\u91d1\u984d</span><span class="value" style="color:#dc2626;font-weight:800;font-size:1.15rem">${typeof res.pricingTotal === 'number' ? res.pricingTotal.toLocaleString() + '\u5186' : '\u2014'}</span></div>
+    <div class="detail-row"><span class="label">\u6599\u91D1\u4F53\u7CFB</span><span class="value" style="font-size:0.85rem;color:#666">${plan ? plan.price : '-'}</span></div>
     <div class="detail-row"><span class="label">\u5099\u8003</span><span class="value">${escapeHtml(res.note) || '---'}</span></div>
   `;
 
