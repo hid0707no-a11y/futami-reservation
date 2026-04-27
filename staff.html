@@ -1000,6 +1000,8 @@ function convertApiReservation(r) {
       isFutamiDay: !!r.isFutamiDay,
       guestCount: r.guestCount || null,
       pricingTotal: (r.pricing && typeof r.pricing.total === 'number') ? r.pricing.total : null,
+      isCamp: !!r.isCamp,
+      campRoomIds: Array.isArray(r.roomIds) ? r.roomIds.filter(x => typeof x === 'string' && x.startsWith('camp_')) : [],
       note: r.note || '',
     });
   }
@@ -1357,16 +1359,15 @@ function showDetail(resId) {
     `${room ? room.icon + ' ' + room.name : ''} - ${plan ? plan.name : ''}`;
 
   // スロット情報の表示
+  // チェックイン時刻（slots[0]）未満を翌日扱いとしてソート
+  // 例: stay=16時開始→0-9も翌日 / camp=14時開始→0-12も翌日
   let slotsText = '';
   if (plan) {
     const slots = res.slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
     if (slots.length > 0) {
-      const displaySlots = slots.filter(s => s >= 0).sort((a, b) => {
-        // 宿泊の場合、16以上を先に、0-9を後に
-        const aAdj = a < 10 ? a + 24 : a;
-        const bAdj = b < 10 ? b + 24 : b;
-        return aAdj - bAdj;
-      });
+      const checkinHour = slots[0];
+      const adj = (h) => h < checkinHour ? h + 24 : h;
+      const displaySlots = slots.filter(s => s >= 0).sort((a, b) => adj(a) - adj(b));
       if (displaySlots.length > 0) {
         const first = displaySlots[0];
         const last = displaySlots[displaySlots.length - 1];
@@ -1391,7 +1392,13 @@ function showDetail(resId) {
     <div class="detail-row"><span class="label">\u30E1\u30FC\u30EB</span><span class="value">${res.email ? escapeHtml(res.email) : '\u2014'}</span></div>
     <div class="detail-row"><span class="label">\u30D7\u30E9\u30F3</span><span class="value">${plan ? plan.badge + ' ' + plan.name : '-'}</span></div>
     <div class="detail-row"><span class="label">\u6642\u9593</span><span class="value">${slotsText || '-'}</span></div>
-    <div class="detail-row"><span class="label">\u4EBA\u6570</span><span class="value">${res.guests}\u540D</span></div>
+    ${res.isCamp ? `
+      <div class="detail-row"><span class="label">\u533A\u753B\u6570</span><span class="value">${(res.campRoomIds && res.campRoomIds.length) || res.guestCount || 1}\u533A\u753B</span></div>
+      <div class="detail-row"><span class="label">\u3054\u5229\u7528\u533A\u753B</span><span class="value">${(res.campRoomIds && res.campRoomIds.length > 0 ? res.campRoomIds.slice().sort().map(rid => '\u533A\u753B' + ['\u2460','\u2461','\u2462','\u2463','\u2464','\u2465','\u2466','\u2467'][parseInt(rid.split('_')[1], 10) - 1]).join('\u30FB') : '\u2014')}</span></div>
+      <div class="detail-row"><span class="label">\u6CCA\u6570</span><span class="value">${res.nights || 1}\u6CCA</span></div>
+    ` : `
+      <div class="detail-row"><span class="label">\u4EBA\u6570</span><span class="value">${res.guests}\u540D</span></div>
+    `}
     <div class="detail-row" style="background:#fff8e1;margin:4px -16px;padding:12px 16px;border-radius:8px"><span class="label" style="color:#b45309;font-weight:700">\u3054\u8acb\u6c42\u91d1\u984d</span><span class="value" style="color:#dc2626;font-weight:800;font-size:1.15rem">${typeof res.pricingTotal === 'number' ? res.pricingTotal.toLocaleString() + '\u5186' : '\u2014'}</span></div>
     <div class="detail-row"><span class="label">\u6599\u91D1\u4F53\u7CFB</span><span class="value" style="font-size:0.85rem;color:#666">${plan ? plan.price : '-'}</span></div>
     <div class="detail-row"><span class="label">\u5099\u8003</span><span class="value">${escapeHtml(res.note) || '---'}</span></div>
