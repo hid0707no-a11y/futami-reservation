@@ -43,6 +43,7 @@ interface MailData {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  customerAddress?: string;
   note: string;
   reservationId: string;
   guestCount?: number;
@@ -50,6 +51,17 @@ interface MailData {
   isFutamiDay?: boolean;
   isTennis?: boolean;
   saunaOptionsText?: string;
+}
+
+// customer.{zip,address1,address2} を1行の住所文字列に整形
+function formatCustomerAddress(c: any): string {
+  if (!c) return '';
+  const zip = (c.zip || '').toString().trim();
+  const a1 = (c.address1 || '').toString().trim();
+  const a2 = (c.address2 || '').toString().trim();
+  if (!zip && !a1 && !a2) return '';
+  const zipPart = zip ? `〒${zip} ` : '';
+  return `${zipPart}${a1}${a2 ? ' ' + a2 : ''}`.trim();
 }
 
 async function sendConfirmationEmail(data: MailData): Promise<void> {
@@ -65,7 +77,7 @@ async function sendConfirmationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 ━━━━━━━━━━━━━━━━━━
 
 ※このメールは自動送信です。
@@ -98,6 +110,7 @@ async function sendStaffNotification(data: MailData, type: 'new' | 'cancel'): Pr
 予約者：${data.customerName}
 電話：${data.customerPhone}
 メール：${data.customerEmail || 'なし'}
+ご住所：${data.customerAddress || 'なし'}
 プラン：${data.planName}
 施設：${data.roomName}
 日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
@@ -415,6 +428,20 @@ function validateReservationInput(body: any, res: any): boolean {
     res.status(400).json({ error: 'invalid_customer_email' });
     return false;
   }
+  // 住所（任意・宿泊系プランは UI 側で必須化）
+  // zip 10文字・address1 100文字・address2 100文字
+  if (customer.zip && (typeof customer.zip !== 'string' || customer.zip.length > 10)) {
+    res.status(400).json({ error: 'invalid_customer_zip' });
+    return false;
+  }
+  if (customer.address1 && (typeof customer.address1 !== 'string' || customer.address1.length > 100)) {
+    res.status(400).json({ error: 'invalid_customer_address1' });
+    return false;
+  }
+  if (customer.address2 && (typeof customer.address2 !== 'string' || customer.address2.length > 100)) {
+    res.status(400).json({ error: 'invalid_customer_address2' });
+    return false;
+  }
 
   // note: 500文字以内
   if (note && (typeof note !== 'string' || note.length > 500)) {
@@ -600,7 +627,8 @@ export const createReservation = onRequest(
           const mailData: MailData = {
             planName: planId, roomName: roomIds.join(', '), startDate, endDate,
             customerName: customer.name, customerPhone: customer.phone,
-            customerEmail: customer.email || '', note: note || '',
+            customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
+            note: note || '',
             reservationId: tennisResult, isTennis: true,
           };
           sendConfirmationEmail(mailData).catch(() => {});
@@ -690,7 +718,8 @@ export const createReservation = onRequest(
           const mailData: MailData = {
             planName: planId, roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
             customerName: customer.name, customerPhone: customer.phone,
-            customerEmail: customer.email || '', note: note || '',
+            customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
+            note: note || '',
             reservationId: result, guestCount: seats, isFutamiDay: true,
             saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
           };
@@ -787,7 +816,8 @@ export const createReservation = onRequest(
           const mailData: MailData = {
             planName: planId, roomName: 'キャンプ場', startDate, endDate,
             customerName: customer.name, customerPhone: customer.phone,
-            customerEmail: customer.email || '', note: note || '',
+            customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
+            note: note || '',
             reservationId: result, guestCount: sites, isCamp: true,
           };
           sendConfirmationEmail(mailData).catch(() => {});
@@ -862,7 +892,8 @@ export const createReservation = onRequest(
       const mailData: MailData = {
         planName: planId, roomName: roomIds.join(', '), startDate, endDate,
         customerName: customer.name, customerPhone: customer.phone,
-        customerEmail: customer.email || '', note: note || '',
+        customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
+        note: note || '',
         reservationId: result,
         saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
       };
@@ -1047,7 +1078,9 @@ export const cancelReservation = onRequest(
           planName: cancelledData.planId || '', roomName: (cancelledData.roomIds || []).join(', '),
           startDate: cancelledData.startDate || '', endDate: cancelledData.endDate || '',
           customerName: cancelledData.customer.name || '', customerPhone: cancelledData.customer.phone || '',
-          customerEmail: cancelledData.customer.email || '', note: cancelledData.note || '',
+          customerEmail: cancelledData.customer.email || '',
+          customerAddress: formatCustomerAddress(cancelledData.customer),
+          note: cancelledData.note || '',
           reservationId: id,
         };
         sendCancellationEmail(mailData).catch(() => {});
@@ -1335,6 +1368,8 @@ interface ReservationRow {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  customerZip: string;
+  customerAddress: string;
   guestsAdult: number;
   guestsElementary: number;
   guestsChild: number;
@@ -1377,6 +1412,8 @@ function reservationToRow(id: string, data: any): ReservationRow {
     customerName: customer.name || '',
     customerPhone: customer.phone || '',
     customerEmail: customer.email || '',
+    customerZip: customer.zip || '',
+    customerAddress: formatCustomerAddress(customer).replace(/^〒\S+\s*/, ''),
     guestsAdult: typeof guests.adult === 'number' ? guests.adult : 0,
     guestsElementary: typeof guests.elementary === 'number' ? guests.elementary : 0,
     guestsChild: typeof guests.child === 'number' ? guests.child : 0,
@@ -1403,7 +1440,7 @@ function formatSaunaOptions(opts: any): string {
 const SHEET_HEADERS = [
   '予約ID', '登録日時', 'ステータス', 'プランID', '部屋ID',
   '利用開始日', '利用終了日', '泊数', '時間帯',
-  'お名前', '電話番号', 'メール',
+  'お名前', '電話番号', 'メール', '郵便番号', '住所',
   '大人', '小学生', '未就学児', '利用予定人数(目安)',
   '合計金額', '照明料金', '平日割適用枠数',
   '市民区分', '予約経路', 'サウナオプション', '備考',
@@ -1413,7 +1450,7 @@ function rowToArray(r: ReservationRow): (string | number)[] {
   return [
     r.id, r.createdAt, r.status, r.planId, r.roomIds,
     r.startDate, r.endDate, r.nights, r.timeStr,
-    r.customerName, r.customerPhone, r.customerEmail,
+    r.customerName, r.customerPhone, r.customerEmail, r.customerZip, r.customerAddress,
     r.guestsAdult, r.guestsElementary, r.guestsChild, r.guestsSportEstimate,
     r.pricingTotal, r.pricingLightingFee, r.weekdayDiscountHours,
     r.isResident, r.createdBy, r.saunaOptions, r.note,

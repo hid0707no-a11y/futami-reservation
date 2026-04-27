@@ -977,6 +977,18 @@ body {
         <input type="email" class="form-input" id="confirm-email2" placeholder="もう一度入力してください">
         <div id="email-mismatch" style="color:#e94560;font-size:12px;margin-top:4px;display:none;">メールアドレスが一致しません</div>
       </div>
+      <!-- 住所欄（宿泊系プランは必須・宿泊業の台帳要件＋キャンセル料請求書送付用） -->
+      <div class="form-group" id="address-group">
+        <label class="form-label" for="confirm-zip"><span id="address-label">郵便番号 / 住所</span></label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input type="text" class="form-input" id="confirm-zip" placeholder="799-1471" inputmode="numeric" maxlength="8" style="flex:1;max-width:160px">
+          <button type="button" class="btn" id="zip-lookup-btn" onclick="lookupAddress()" style="padding:10px 14px;background:#e8eef3;color:#333;border:1px solid #c7d3dd;border-radius:8px;font-size:14px;white-space:nowrap">住所検索</button>
+        </div>
+        <div id="zip-status" style="font-size:12px;margin:4px 0 8px;display:none"></div>
+        <input type="text" class="form-input" id="confirm-address1" placeholder="都道府県・市区町村・町名（例：愛媛県伊予市双海町高岸甲）" style="margin-bottom:8px">
+        <input type="text" class="form-input" id="confirm-address2" placeholder="番地・建物名（例：1234-5 ○○マンション101）">
+        <div id="address-required-note" class="text-muted" style="font-size:12px;margin-top:4px;display:none">※ 宿泊業の台帳記入のため、ご住所のご記入をお願いしております</div>
+      </div>
       <div class="form-group">
         <label class="form-label" for="confirm-note">備考</label>
         <textarea class="form-input" id="confirm-note" rows="3" placeholder="ご要望があればご記入ください"></textarea>
@@ -3289,7 +3301,68 @@ function proceedToConfirm() {
   state.totalPrice = total;
   state.timeStr = timeStr;
 
+  // 住所欄の必須/任意切替（宿泊系プランのみ必須）
+  configureAddressRequirement(plan);
+
   navigate('screen-confirm');
+}
+
+// 宿泊業の台帳記入義務がある＝住所必須プラン判定
+// 対象: 宿泊全般（stay/stay_simple）+ キャンプ泊（camp）
+function isLodgingPlan(plan) {
+  if (!plan) return false;
+  return plan.planType === 'stay' || plan.planType === 'stay_simple' || plan.planType === 'camp';
+}
+
+function configureAddressRequirement(plan) {
+  const isLodging = isLodgingPlan(plan);
+  const labelEl = document.getElementById('address-label');
+  const noteEl = document.getElementById('address-required-note');
+  if (labelEl) labelEl.textContent = isLodging ? '郵便番号 / 住所 *' : '郵便番号 / 住所（任意）';
+  if (noteEl) noteEl.style.display = isLodging ? 'block' : 'none';
+}
+
+// zipcloud API（無料・APIキー不要）で郵便番号→住所自動補完。
+// 障害時は手入力できるよう、住所欄は常時編集可。
+async function lookupAddress() {
+  const zipEl = document.getElementById('confirm-zip');
+  const addr1El = document.getElementById('confirm-address1');
+  const statusEl = document.getElementById('zip-status');
+  const btnEl = document.getElementById('zip-lookup-btn');
+  const raw = (zipEl.value || '').replace(/[^0-9]/g, '');
+  if (raw.length !== 7) {
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#e94560';
+    statusEl.textContent = '郵便番号は7桁で入力してください（例：799-1471）';
+    return;
+  }
+  statusEl.style.display = 'block';
+  statusEl.style.color = '#666';
+  statusEl.textContent = '住所を検索中...';
+  if (btnEl) btnEl.disabled = true;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const resp = await fetch('https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + raw, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const json = await resp.json();
+    if (json && json.results && json.results.length > 0) {
+      const r = json.results[0];
+      addr1El.value = (r.address1 || '') + (r.address2 || '') + (r.address3 || '');
+      statusEl.style.color = '#0a7c2f';
+      statusEl.textContent = '住所を入力しました。番地・建物名は下の欄にご記入ください。';
+      // ハイフン挿入
+      zipEl.value = raw.slice(0, 3) + '-' + raw.slice(3);
+    } else {
+      statusEl.style.color = '#e94560';
+      statusEl.textContent = '該当する住所が見つかりません。お手数ですが直接ご記入ください。';
+    }
+  } catch (e) {
+    statusEl.style.color = '#e94560';
+    statusEl.textContent = '住所検索サービスに接続できません。お手数ですが直接ご記入ください。';
+  } finally {
+    if (btnEl) btnEl.disabled = false;
+  }
 }
 
 function showReview() {
@@ -3297,6 +3370,9 @@ function showReview() {
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
   const email2 = document.getElementById('confirm-email2').value.trim();
+  const zip = document.getElementById('confirm-zip').value.trim();
+  const address1 = document.getElementById('confirm-address1').value.trim();
+  const address2 = document.getElementById('confirm-address2').value.trim();
 
   if (!name) { alert('お名前を入力してください'); return; }
   if (!phone) { alert('電話番号を入力してください'); return; }
@@ -3307,6 +3383,18 @@ function showReview() {
   }
   document.getElementById('email-mismatch').style.display = 'none';
 
+  // 宿泊系プランは住所必須（宿泊業の台帳記入義務）
+  if (isLodgingPlan(state.selectedPlan)) {
+    if (!address1) {
+      alert('ご住所（都道府県・市区町村）を入力してください。郵便番号からの自動入力もご利用いただけます。');
+      return;
+    }
+    if (!address2) {
+      alert('番地・建物名を入力してください。');
+      return;
+    }
+  }
+
   function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
   var note = document.getElementById('confirm-note').value.trim();
   var html = document.getElementById('booking-summary').innerHTML;
@@ -3314,6 +3402,10 @@ function showReview() {
   html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + esc(name) + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + esc(phone) + '</span></div>';
   if (email) html += '<div class="summary-row"><span class="summary-label">メール</span><span class="summary-value">' + esc(email) + '</span></div>';
+  if (address1 || address2 || zip) {
+    var addrFull = (zip ? '〒' + zip + ' ' : '') + address1 + (address2 ? ' ' + address2 : '');
+    html += '<div class="summary-row"><span class="summary-label">住所</span><span class="summary-value">' + esc(addrFull) + '</span></div>';
+  }
   if (note) html += '<div class="summary-row"><span class="summary-label">備考</span><span class="summary-value">' + esc(note) + '</span></div>';
   html += '</div>';
   document.getElementById('review-summary').innerHTML = html;
@@ -3325,6 +3417,9 @@ async function submitBooking() {
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
   const note = document.getElementById('confirm-note').value.trim();
+  const zip = document.getElementById('confirm-zip').value.trim();
+  const address1 = document.getElementById('confirm-address1').value.trim();
+  const address2 = document.getElementById('confirm-address2').value.trim();
 
   const plan = state.selectedPlan;
 
@@ -3403,7 +3498,7 @@ async function submitBooking() {
         startDate,
         endDate,
         nights: state.selectedNights || 0,
-        customer: { name, phone, email, isMember: !!state.isResident },
+        customer: { name, phone, email, zip, address1, address2, isMember: !!state.isResident },
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
         pricing: {
           basePrice: 0, personFee: 0,
@@ -3501,6 +3596,11 @@ async function submitBooking() {
   document.getElementById('confirm-email').value = '';
   document.getElementById('confirm-email2').value = '';
   document.getElementById('confirm-note').value = '';
+  document.getElementById('confirm-zip').value = '';
+  document.getElementById('confirm-address1').value = '';
+  document.getElementById('confirm-address2').value = '';
+  var zipStatus = document.getElementById('zip-status');
+  if (zipStatus) { zipStatus.style.display = 'none'; zipStatus.textContent = ''; }
 
   navigate('screen-done');
 }

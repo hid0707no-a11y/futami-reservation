@@ -739,6 +739,16 @@ td.block-start-td + td.block-mid { border-left: none; }
     <input type="tel" id="addPhone" placeholder="090-xxxx-xxxx">
   </div>
   <div class="form-group">
+    <label>住所（宿泊系は記入推奨：台帳記入＋キャンセル料請求書送付用）</label>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <input type="text" id="addZip" placeholder="799-1471" inputmode="numeric" maxlength="8" style="width:120px;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px">
+      <button type="button" class="btn-cancel" onclick="lookupAddAddress()" style="padding:8px 12px;background:#e8eef3;color:#333;border:1px solid #c7d3dd;border-radius:6px;font-size:13px;white-space:nowrap">住所検索</button>
+    </div>
+    <input type="text" id="addAddress1" placeholder="都道府県・市区町村・町名" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-bottom:6px">
+    <input type="text" id="addAddress2" placeholder="番地・建物名" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px">
+    <div id="addZipStatus" style="font-size:12px;margin-top:4px;display:none"></div>
+  </div>
+  <div class="form-group">
     <label>人数</label>
     <input type="number" id="addCount" min="1" max="100" value="1">
   </div>
@@ -970,6 +980,10 @@ function convertApiReservation(r) {
       planId: r.planId,
       name: (r.customer && r.customer.name) || '',
       phone: (r.customer && r.customer.phone) || '',
+      email: (r.customer && r.customer.email) || '',
+      zip: (r.customer && r.customer.zip) || '',
+      address1: (r.customer && r.customer.address1) || '',
+      address2: (r.customer && r.customer.address2) || '',
       guests: guestsTotal,
       slotsOverride: combinedHours.length > 0 ? combinedHours : undefined,
       checkedIn: r.status === 'checked_in',
@@ -1355,9 +1369,15 @@ function showDetail(resId) {
     }
   }
 
+  // \u4F4F\u6240\u8868\u793A\u7528\uFF08\u90F5\u4FBF\u756A\u53F7 + \u4F4F\u6240\uFF09
+  const zipPart = res.zip ? '\u3012' + res.zip + ' ' : '';
+  const addrFull = (zipPart + (res.address1 || '') + (res.address2 ? ' ' + res.address2 : '')).trim();
+
   let html = `
     <div class="detail-row"><span class="label">\u4E88\u7D04\u8005</span><span class="value">${escapeHtml(res.name)}</span></div>
     <div class="detail-row"><span class="label">\u96FB\u8A71\u756A\u53F7</span><span class="value"><a href="tel:${escapeHtml(res.phone)}" style="color:var(--navy)">${escapeHtml(res.phone)}</a></span></div>
+    <div class="detail-row"><span class="label">\u4F4F\u6240</span><span class="value">${addrFull ? escapeHtml(addrFull) : '\u2014'}</span></div>
+    <div class="detail-row"><span class="label">\u30E1\u30FC\u30EB</span><span class="value">${res.email ? escapeHtml(res.email) : '\u2014'}</span></div>
     <div class="detail-row"><span class="label">\u30D7\u30E9\u30F3</span><span class="value">${plan ? plan.badge + ' ' + plan.name : '-'}</span></div>
     <div class="detail-row"><span class="label">\u6642\u9593</span><span class="value">${slotsText || '-'}</span></div>
     <div class="detail-row"><span class="label">\u4EBA\u6570</span><span class="value">${res.guests}\u540D</span></div>
@@ -1457,8 +1477,13 @@ function openAddForm() {
   document.getElementById('addDate').onchange = onRoomChange;
   document.getElementById('addName').value = '';
   document.getElementById('addPhone').value = '';
+  document.getElementById('addZip').value = '';
+  document.getElementById('addAddress1').value = '';
+  document.getElementById('addAddress2').value = '';
   document.getElementById('addCount').value = '1';
   document.getElementById('addNote').value = '';
+  var zs = document.getElementById('addZipStatus');
+  if (zs) { zs.style.display = 'none'; zs.textContent = ''; }
 
   document.getElementById('addOverlay').classList.add('show');
   document.getElementById('addModal').classList.add('show');
@@ -1662,11 +1687,51 @@ function closeAddForm() {
   document.getElementById('addModal').classList.remove('show');
 }
 
+// zipcloud API（無料）で郵便番号→住所を staff モーダルにも提供
+async function lookupAddAddress() {
+  const zipEl = document.getElementById('addZip');
+  const addr1El = document.getElementById('addAddress1');
+  const statusEl = document.getElementById('addZipStatus');
+  const raw = (zipEl.value || '').replace(/[^0-9]/g, '');
+  if (raw.length !== 7) {
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#dc2626';
+    statusEl.textContent = '郵便番号は7桁で入力してください（例：799-1471）';
+    return;
+  }
+  statusEl.style.display = 'block';
+  statusEl.style.color = '#666';
+  statusEl.textContent = '住所を検索中...';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const resp = await fetch('https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + raw, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const json = await resp.json();
+    if (json && json.results && json.results.length > 0) {
+      const r = json.results[0];
+      addr1El.value = (r.address1 || '') + (r.address2 || '') + (r.address3 || '');
+      statusEl.style.color = '#0a7c2f';
+      statusEl.textContent = '住所を入力しました。番地・建物名は下の欄にご記入ください。';
+      zipEl.value = raw.slice(0, 3) + '-' + raw.slice(3);
+    } else {
+      statusEl.style.color = '#dc2626';
+      statusEl.textContent = '該当する住所が見つかりません。直接ご記入ください。';
+    }
+  } catch (e) {
+    statusEl.style.color = '#dc2626';
+    statusEl.textContent = '住所検索サービスに接続できません。直接ご記入ください。';
+  }
+}
+
 async function submitReservation() {
   const roomIdFromSelect = document.getElementById('addRoom').value;
   const ds = document.getElementById('addDate').value;
   const name = document.getElementById('addName').value.trim();
   const phone = document.getElementById('addPhone').value.trim();
+  const zip = document.getElementById('addZip').value.trim();
+  const address1 = document.getElementById('addAddress1').value.trim();
+  const address2 = document.getElementById('addAddress2').value.trim();
   const guests = parseInt(document.getElementById('addCount').value) || 1;
   const note = document.getElementById('addNote').value.trim();
 
@@ -1740,7 +1805,7 @@ async function submitReservation() {
     startDate,
     endDate,
     nights: isStay ? 1 : 0,
-    customer: { name, phone, isMember: false },
+    customer: { name, phone, zip, address1, address2, isMember: false },
     guests: { adult: guests, elementary: 0, child: 0 },
     guestCount: isFutamiSauna ? guests : undefined,
     pricing: null,
