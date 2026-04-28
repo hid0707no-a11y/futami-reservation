@@ -1477,15 +1477,27 @@ async function cancelReservationApi(resId, name) {
 let _campChangeContext = null;
 
 async function openCampChangeModal(resId, currentCsv, startDate, nights) {
-  const current = (currentCsv || '').split(',').filter(Boolean);
-  _campChangeContext = { resId, current, selected: current.slice(), startDate, nights };
-
-  // 該当期間の他予約占有を取得（既存 GCAL_BOOKINGS から計算）
-  const occupied = computeCampOccupancyExcluding(resId, startDate, nights);
-
-  renderCampChangeModal(occupied);
-  document.getElementById('campChangeOverlay').classList.add('show');
-  document.getElementById('campChangeSheet').classList.add('show');
+  console.log('[changeCamp] open', { resId, currentCsv, startDate, nights });
+  try {
+    const current = (currentCsv || '').split(',').filter(Boolean);
+    _campChangeContext = { resId, current, selected: current.slice(), startDate, nights };
+    const occupied = computeCampOccupancyExcluding(resId, startDate, nights);
+    console.log('[changeCamp] occupied:', Array.from(occupied));
+    renderCampChangeModal(occupied);
+    const ov = document.getElementById('campChangeOverlay');
+    const sh = document.getElementById('campChangeSheet');
+    if (!ov || !sh) {
+      alert('変更モーダルが見つかりません。ページを再読み込みしてください。');
+      console.error('[changeCamp] missing elements', { ov: !!ov, sh: !!sh });
+      return;
+    }
+    ov.classList.add('show');
+    sh.classList.add('show');
+    console.log('[changeCamp] modal shown');
+  } catch (e) {
+    console.error('[changeCamp] open failed:', e);
+    alert('区画変更モーダルの起動に失敗: ' + (e && e.message ? e.message : e));
+  }
 }
 
 // 指定期間（startDate 〜 +nights）に他予約が占有している camp_N を返す
