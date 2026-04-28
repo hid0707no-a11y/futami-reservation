@@ -2,12 +2,18 @@
 /**
  * 既存キャンプ予約を camp_1〜camp_8 個別区画に移行
  *
+ * ⚠️ このスクリプトは 2026-04-28 に1度実行済み（migratedFrom フィールド付与済み）。
+ * 履歴として残しているが、再実行は冪等skipで既migration分には影響しない設計。
+ * 新規 'camp' 形式の予約は createReservation 側で発生しないので通常再実行不要。
+ *
  * Before: roomIds=['camp'], slots=['camp|YYYY-MM-DD|HH', ...], shared_slots/camp|...
  * After:  roomIds=['camp_N',...], slots=['camp_N|YYYY-MM-DD|HH', ...], slots/camp_N|...
  *
  * 割当ロジック（社長指示「①から埋めて」）:
  *   日付ごとに既存予約を createdAt 昇順でソートし、guestCount分だけ camp_1 から順に割当。
  *   日付ごとに使用済みの camp_N を追跡し、競合しないよう次の番号を採番。
+ *
+ * 冪等性: data.migratedFrom === 'shared_slots_camp' をスキップ条件として参照。
  *
  * Usage:
  *   node migrate_camp_to_individual_sites_20260428.js          # DRY-RUN
@@ -50,6 +56,12 @@ console.log('');
 
   const plans = [];
   for (const r of allRes) {
+    // 冪等性: 既にmigration済み（migratedFrom が記録されている）はスキップ
+    // 再実行時に既存の roomIds を上書きしてしまうのを防ぐ
+    if (r.data.migratedFrom === 'shared_slots_camp') {
+      console.log(`  ⏭ ${r.id} already migrated (migratedAt=${r.data.migratedAt && r.data.migratedAt.toDate ? r.data.migratedAt.toDate().toISOString() : '?'}), skip`);
+      continue;
+    }
     const oldSlots = r.data.slots || [];
     if (oldSlots.length === 0) continue;
     const sites = r.data.guestCount || 1;

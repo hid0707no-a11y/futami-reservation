@@ -749,6 +749,22 @@ export const createReservation = onRequest(
       // フロントから複数区画選択時は roomIds = ['camp_1','camp_3',...] で送信される。
       const isCamp = roomIds.every((r: string) => r.startsWith('camp_'));
 
+      // キャンプ予約の運用上限（社長指示2026-04-28：それ以上は分けて予約）
+      // クライアント側は plan.maxSites/maxNights で制限済みだが、サーバー側でも
+      // ハードリミットを掛けて API 直叩きでの予約成立を防止
+      const CAMP_MAX_SITES = 3;
+      const CAMP_MAX_NIGHTS = 3;
+      if (isCamp) {
+        if (roomIds.length > CAMP_MAX_SITES) {
+          res.status(400).json({ error: 'too_many_camp_sites', detail: `${CAMP_MAX_SITES}区画まで` });
+          return;
+        }
+        if (typeof nights === 'number' && nights > CAMP_MAX_NIGHTS) {
+          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで` });
+          return;
+        }
+      }
+
       // ===== 通常プラン（既存の slots collection）=====
       // トランザクションで競合検出＋書込
       const result = await db.runTransaction(async tx => {
@@ -935,8 +951,9 @@ export const changeCampSites = onRequest(
     const id = (req.body?.id || '').toString();
     const newCampSites: string[] = Array.isArray(req.body?.newCampSites) ? req.body.newCampSites : [];
     if (!id) { res.status(400).json({ error: 'id_required' }); return; }
-    if (newCampSites.length === 0 || newCampSites.length > 8) {
-      res.status(400).json({ error: 'invalid_camp_sites_count', detail: '1〜8区画' });
+    // 区画変更も createReservation と同じく最大3区画（社長指示2026-04-28）
+    if (newCampSites.length === 0 || newCampSites.length > 3) {
+      res.status(400).json({ error: 'invalid_camp_sites_count', detail: '1〜3区画' });
       return;
     }
     // 形式チェック：camp_1 〜 camp_8 のみ

@@ -1014,6 +1014,9 @@ function convertApiReservation(r) {
       pricingTotal: (r.pricing && typeof r.pricing.total === 'number') ? r.pricing.total : null,
       isCamp: !!r.isCamp,
       campRoomIds: Array.isArray(r.roomIds) ? r.roomIds.filter(x => typeof x === 'string' && x.startsWith('camp_')) : [],
+      // slots（API由来・slot key配列 'camp_N|YYYY-MM-DD|HH'）
+      // computeCampOccupancyExcluding で他予約の占有 camp_N 判定に使用
+      slots: Array.isArray(r.slots) ? r.slots.slice() : [],
       note: r.note || '',
     });
   }
