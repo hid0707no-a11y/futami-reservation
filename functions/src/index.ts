@@ -912,6 +912,188 @@ export const updateReservation = onRequest(
 );
 
 /**
+ * POST /changeCampSites
+ * キャンプ予約の利用区画を変更（例: ①② → ④⑤）
+ * - 旧slots削除 + 新slots作成 + 予約更新を1トランザクションでatomic実行
+ * - 同期間の他予約と重複する区画は409返却（強制上書き不可・社長指示2026-04-28）
+ * - 監査ログを reservations/{id}/audit_log サブコレクションに記録
+ *
+ * Body: { id: string, newCampSites: string[] (例: ['camp_3','camp_5']) }
+ */
+export const changeCampSites = onRequest(
+  { region: 'asia-northeast1', cors: false },
+  async (req, res) => {
+    if (setCors(req, res)) return;
+    if (!checkRateLimit(req, res, 'updateReservation')) return;
+    if (!(await requireStaffAuth(req, res))) return;
+    if (!checkOrigin(req, res)) return;
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'method_not_allowed' });
+      return;
+    }
+
+    const id = (req.body?.id || '').toString();
+    const newCampSites: string[] = Array.isArray(req.body?.newCampSites) ? req.body.newCampSites : [];
+    if (!id) { res.status(400).json({ error: 'id_required' }); return; }
+    if (newCampSites.length === 0 || newCampSites.length > 8) {
+      res.status(400).json({ error: 'invalid_camp_sites_count', detail: '1〜8区画' });
+      return;
+    }
+    // 形式チェック：camp_1 〜 camp_8 のみ
+    const validCamp = /^camp_[1-8]$/;
+    if (!newCampSites.every(c => validCamp.test(c))) {
+      res.status(400).json({ error: 'invalid_camp_site_id' });
+      return;
+    }
+    // 重複なし
+    if (new Set(newCampSites).size !== newCampSites.length) {
+      res.status(400).json({ error: 'duplicate_camp_sites' });
+      return;
+    }
+
+    try {
+      const result = await db.runTransaction(async tx => {
+        // 1. 既存予約取得
+        const resRef = db.collection('reservations').doc(id);
+        const resDoc = await tx.get(resRef);
+        if (!resDoc.exists) throw { code: 'not_found' };
+        const data = resDoc.data() as any;
+        if (data.status !== 'confirmed') throw { code: 'invalid_status', detail: data.status };
+        if (!data.isCamp) throw { code: 'not_camp_reservation' };
+        const oldRoomIds: string[] = Array.isArray(data.roomIds) ? data.roomIds : [];
+        const oldSlots: string[] = Array.isArray(data.slots) ? data.slots : [];
+        if (oldSlots.length === 0) throw { code: 'no_slots' };
+
+        // 2. 旧slots から date×hour ペアを抽出
+        const dateHourPairs: { date: string; hour: string }[] = [];
+        const dhSet = new Set<string>();
+        for (const k of oldSlots) {
+          const parts = k.split('|');
+          if (parts.length !== 3) continue;
+          const dh = `${parts[1]}|${parts[2]}`;
+          if (!dhSet.has(dh)) {
+            dhSet.add(dh);
+            dateHourPairs.push({ date: parts[1], hour: parts[2] });
+          }
+        }
+
+        // 3. 新slots生成
+        const newSlots: string[] = [];
+        for (const cid of newCampSites) {
+          for (const { date, hour } of dateHourPairs) {
+            newSlots.push(`${cid}|${date}|${hour}`);
+          }
+        }
+
+        // 4. 新slot keyの空き状況チェック（自分の旧slotsはskip）
+        const oldSlotSet = new Set(oldSlots);
+        const slotsToWrite = newSlots.filter(k => !oldSlotSet.has(k));
+        const newRefs = slotsToWrite.map(k => db.collection('slots').doc(k));
+        const newDocs = await Promise.all(newRefs.map(r => tx.get(r)));
+        const conflicts: string[] = [];
+        newDocs.forEach((d, i) => {
+          if (d.exists && (d.data() as any).reservationId !== id) {
+            conflicts.push(slotsToWrite[i]);
+          }
+        });
+        if (conflicts.length > 0) {
+          throw { code: 'slot_conflict', conflicts };
+        }
+
+        // 5. 旧slots削除（新slotsに含まれないもの）
+        const newSlotSet = new Set(newSlots);
+        const slotsToDelete = oldSlots.filter(k => !newSlotSet.has(k));
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        slotsToDelete.forEach(k => {
+          tx.delete(db.collection('slots').doc(k));
+        });
+
+        // 6. 新slots書込（既存自分のslotsはskip）
+        slotsToWrite.forEach((k, i) => {
+          const [roomId, date, hourStr] = k.split('|');
+          tx.set(newRefs[i], {
+            slotKey: k,
+            roomId,
+            date,
+            hour: parseInt(hourStr, 10),
+            reservationId: id,
+            createdAt: now,
+          });
+        });
+
+        // 7. 予約レコード更新
+        tx.update(resRef, {
+          roomIds: newCampSites,
+          slots: newSlots,
+          guestCount: newCampSites.length,
+          updatedAt: now,
+        });
+
+        // 8. 監査ログ追加
+        const logRef = resRef.collection('audit_log').doc();
+        tx.set(logRef, {
+          at: now,
+          actor: ((req as any).auth?.email) || 'unknown',
+          action: 'change_camp_sites',
+          before: { roomIds: oldRoomIds, sitesCount: oldRoomIds.length },
+          after: { roomIds: newCampSites, sitesCount: newCampSites.length },
+        });
+
+        return { newRoomIds: newCampSites, newSlots };
+      });
+
+      auditLog('reservation.change_camp_sites', { reservationId: id, newCampSites }, req);
+      res.status(200).json({ id, ...result });
+    } catch (e: any) {
+      if (e?.code === 'not_found') { res.status(404).json({ error: 'not_found' }); return; }
+      if (e?.code === 'invalid_status') { res.status(400).json({ error: 'invalid_status', detail: e.detail }); return; }
+      if (e?.code === 'not_camp_reservation') { res.status(400).json({ error: 'not_camp_reservation' }); return; }
+      if (e?.code === 'no_slots') { res.status(400).json({ error: 'no_slots' }); return; }
+      if (e?.code === 'slot_conflict') { res.status(409).json({ error: 'slot_conflict', conflicts: e.conflicts }); return; }
+      console.error(e);
+      res.status(500).json({ error: 'internal_error' });
+    }
+  }
+);
+
+/**
+ * GET /listAuditLog?id={reservationId}
+ * 予約変更履歴を返す（スタッフ向け・最新50件）
+ */
+export const listAuditLog = onRequest(
+  { region: 'asia-northeast1', cors: false },
+  async (req, res) => {
+    if (setCors(req, res)) return;
+    if (!checkRateLimit(req, res, 'listReservations')) return;
+    if (!(await requireStaffAuth(req, res))) return;
+    if (req.method !== 'GET') { res.status(405).json({ error: 'method_not_allowed' }); return; }
+
+    const id = (req.query.id as string) || '';
+    if (!id) { res.status(400).json({ error: 'id_required' }); return; }
+
+    try {
+      const snap = await db.collection('reservations').doc(id).collection('audit_log')
+        .orderBy('at', 'desc').limit(50).get();
+      const logs = snap.docs.map(d => {
+        const x = d.data() as any;
+        return {
+          id: d.id,
+          at: x.at && x.at.toDate ? x.at.toDate().toISOString() : null,
+          actor: x.actor || '',
+          action: x.action || '',
+          before: x.before || null,
+          after: x.after || null,
+        };
+      });
+      res.status(200).json({ logs });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: 'internal_error' });
+    }
+  }
+);
+
+/**
  * DELETE /reservations/:id
  * 予約キャンセル（statusを更新＋slotsを物理削除）
  */

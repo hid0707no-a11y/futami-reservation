@@ -762,6 +762,13 @@ td.block-start-td + td.block-mid { border-left: none; }
   </div>
 </div>
 
+<!-- キャンプ区画変更モーダル -->
+<div class="modal-overlay" id="campChangeOverlay" onclick="closeCampChangeModal()"></div>
+<div class="modal" id="campChangeSheet">
+  <div class="handle"></div>
+  <div id="campChangeContent"></div>
+</div>
+
 <!-- FAB -->
 <button class="fab" onclick="openAddForm()" aria-label="予約追加">+</button>
 
@@ -1415,8 +1422,18 @@ function showDetail(resId) {
     html += `<button class="checkin-btn do-checkin" onclick="toggleCheckin('${res.id}')">\u30C1\u30A7\u30C3\u30AF\u30A4\u30F3\u3059\u308B</button>`;
   }
 
+  // === キャンプ区画変更ボタン（キャンプ予約のみ） ===
+  const _origCampId = res._origId || res.id;
+  if (res.isCamp) {
+    const campCsv = (res.campRoomIds || []).join(',');
+    html += `<button class="checkin-btn" style="background:#ecfdf5;color:#047857;border:1px solid #6ee7b7;margin-top:8px" onclick="openCampChangeModal('${_origCampId}','${campCsv}','${res.startDate}',${res.nights || 1})">\u533A\u753B\u3092\u5909\u66F4</button>`;
+  }
+
+  // === 変更履歴ボタン ===
+  html += `<button class="checkin-btn" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;margin-top:8px" onclick="loadAuditLog('${_origCampId}')">\u5909\u66F4\u5C65\u6B74\u3092\u898B\u308B</button>`;
+  html += `<div id="auditLogArea" style="margin-top:10px"></div>`;
+
   // === キャンセルボタン（要API） ===
-  // 複数部屋予約の場合は _origId を使う
   const cancelId = res._origId || res.id;
   const safeName = escapeHtml((res.name||'').replace(/'/g,''));
   html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${cancelId}','${safeName}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
@@ -1452,6 +1469,192 @@ async function cancelReservationApi(resId, name) {
   } catch (e) {
     console.error('cancel error', e);
     showToast('\u901A\u4FE1\u30A8\u30E9\u30FC');
+  }
+}
+
+// ===== キャンプ区画変更モーダル =====
+// 同期間の他予約と重複する区画はdisabled（強制上書き不可・社長指示2026-04-28）
+let _campChangeContext = null;
+
+async function openCampChangeModal(resId, currentCsv, startDate, nights) {
+  const current = (currentCsv || '').split(',').filter(Boolean);
+  _campChangeContext = { resId, current, selected: current.slice(), startDate, nights };
+
+  // 該当期間の他予約占有を取得（既存 GCAL_BOOKINGS から計算）
+  const occupied = computeCampOccupancyExcluding(resId, startDate, nights);
+
+  renderCampChangeModal(occupied);
+  document.getElementById('campChangeOverlay').classList.add('show');
+  document.getElementById('campChangeSheet').classList.add('show');
+}
+
+// 指定期間（startDate 〜 +nights）に他予約が占有している camp_N を返す
+function computeCampOccupancyExcluding(excludeResId, startDate, nights) {
+  const dates = [];
+  const start = new Date(startDate + 'T00:00:00');
+  for (let i = 0; i < nights; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  const occupied = new Set();
+  for (const r of GCAL_BOOKINGS || []) {
+    if (r.id === excludeResId) continue;
+    if (r.status === 'cancelled') continue;
+    const slots = Array.isArray(r.slots) ? r.slots : [];
+    for (const k of slots) {
+      const parts = k.split('|');
+      if (parts.length !== 3) continue;
+      const roomId = parts[0];
+      const date = parts[1];
+      if (!roomId.startsWith('camp_')) continue;
+      if (dates.includes(date)) occupied.add(roomId);
+    }
+  }
+  return occupied;
+}
+
+function renderCampChangeModal(occupied) {
+  const ctx = _campChangeContext;
+  if (!ctx) return;
+  let html = '<h2>キャンプ区画を変更</h2>';
+  html += `<p style="font-size:13px;color:#6b7280;margin-bottom:8px">対象期間：${ctx.startDate} 〜 ${ctx.nights}泊</p>`;
+  html += `<p style="font-size:13px;margin-bottom:12px">現在：<strong>${ctx.current.map(idToLabel).join('・') || '—'}</strong></p>`;
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">';
+  for (let i = 1; i <= 8; i++) {
+    const cid = 'camp_' + i;
+    const label = idToLabel(cid);
+    const isSelected = ctx.selected.includes(cid);
+    const isOccupied = occupied.has(cid);
+    let bg, color, border, cursor, badge = '';
+    if (isSelected) {
+      bg = '#059669'; color = '#fff'; border = '#047857'; cursor = 'pointer';
+      badge = '<div style="font-size:10px;font-weight:400">選択中</div>';
+    } else if (isOccupied) {
+      bg = '#fef2f2'; color = '#dc2626'; border = '#fecaca'; cursor = 'not-allowed';
+      badge = '<div style="font-size:10px;font-weight:400">他予約あり</div>';
+    } else {
+      bg = '#fff'; color = '#1f2937'; border = '#d1d5db'; cursor = 'pointer';
+      badge = '<div style="font-size:10px;font-weight:400;color:#6b7280">空き</div>';
+    }
+    const onclick = isOccupied ? '' : `onclick="toggleCampChangeSite('${cid}')"`;
+    html += `<button type="button" ${onclick} style="padding:14px 4px;background:${bg};color:${color};border:2px solid ${border};border-radius:8px;font-size:18px;font-weight:700;cursor:${cursor};min-height:60px">`;
+    html += `<div>${label}</div>${badge}</button>`;
+  }
+  html += '</div>';
+  html += `<p style="font-size:13px;color:#374151;margin-bottom:8px">変更後：<strong>${ctx.selected.map(idToLabel).join('・') || '未選択'}</strong>（${ctx.selected.length}区画）</p>`;
+  html += '<div class="form-actions">';
+  html += '<button class="btn-cancel" onclick="closeCampChangeModal()">キャンセル</button>';
+  html += '<button class="btn-submit" onclick="saveCampChange()">変更を保存</button>';
+  html += '</div>';
+  document.getElementById('campChangeContent').innerHTML = html;
+}
+
+function idToLabel(cid) {
+  const n = parseInt(cid.split('_')[1], 10) - 1;
+  return '区画' + ['①','②','③','④','⑤','⑥','⑦','⑧'][n];
+}
+
+function toggleCampChangeSite(cid) {
+  const ctx = _campChangeContext;
+  if (!ctx) return;
+  const idx = ctx.selected.indexOf(cid);
+  if (idx === -1) {
+    if (ctx.selected.length >= 8) return;
+    ctx.selected.push(cid);
+  } else {
+    ctx.selected.splice(idx, 1);
+  }
+  const occupied = computeCampOccupancyExcluding(ctx.resId, ctx.startDate, ctx.nights);
+  renderCampChangeModal(occupied);
+}
+
+function closeCampChangeModal() {
+  document.getElementById('campChangeOverlay').classList.remove('show');
+  document.getElementById('campChangeSheet').classList.remove('show');
+  _campChangeContext = null;
+}
+
+async function saveCampChange() {
+  const ctx = _campChangeContext;
+  if (!ctx) return;
+  if (ctx.selected.length === 0) {
+    showToast('区画を1つ以上選択してください');
+    return;
+  }
+  // 変更がなければ閉じるだけ
+  const sortedNew = ctx.selected.slice().sort().join(',');
+  const sortedOld = ctx.current.slice().sort().join(',');
+  if (sortedNew === sortedOld) {
+    showToast('変更がありません');
+    closeCampChangeModal();
+    return;
+  }
+  try {
+    const res = await fetch(API_BASE + '/changeCampSites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+      body: JSON.stringify({ id: ctx.resId, newCampSites: ctx.selected }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.error === 'slot_conflict') {
+        showToast('他予約と重複しています：' + (data.conflicts || []).join(','));
+      } else {
+        showToast('変更失敗: ' + (data.error || res.status));
+      }
+      return;
+    }
+    showToast('区画を変更しました');
+    closeCampChangeModal();
+    closeDetail();
+    await loadGcalData();
+  } catch (e) {
+    console.error('change camp sites error', e);
+    showToast('通信エラー');
+  }
+}
+
+// ===== 変更履歴表示 =====
+async function loadAuditLog(resId) {
+  const area = document.getElementById('auditLogArea');
+  if (!area) return;
+  area.innerHTML = '<div style="font-size:12px;color:#6b7280">読込中…</div>';
+  try {
+    const res = await fetch(API_BASE + '/listAuditLog?id=' + encodeURIComponent(resId), {
+      headers: await getAuthHeader(),
+    });
+    if (!res.ok) {
+      area.innerHTML = '<div style="font-size:12px;color:#dc2626">履歴の取得に失敗しました</div>';
+      return;
+    }
+    const data = await res.json();
+    const logs = data.logs || [];
+    if (logs.length === 0) {
+      area.innerHTML = '<div style="font-size:12px;color:#6b7280">変更履歴はありません</div>';
+      return;
+    }
+    let html = '<div style="font-size:13px;font-weight:700;margin-bottom:6px">変更履歴（' + logs.length + '件）</div>';
+    html += '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px">';
+    for (const lg of logs) {
+      const dt = lg.at ? new Date(lg.at).toLocaleString('ja-JP') : '—';
+      html += '<div style="border-bottom:1px solid #e5e7eb;padding:6px 0;font-size:12px">';
+      html += '<div style="color:#374151;font-weight:600">' + dt + '</div>';
+      html += '<div style="color:#6b7280">担当：' + escapeHtml(lg.actor || '—') + '</div>';
+      if (lg.action === 'change_camp_sites' && lg.before && lg.after) {
+        const beforeLbl = (lg.before.roomIds || []).map(idToLabel).join('・');
+        const afterLbl = (lg.after.roomIds || []).map(idToLabel).join('・');
+        html += '<div style="color:#1f2937">区画変更：<strong>' + beforeLbl + '</strong> → <strong>' + afterLbl + '</strong></div>';
+      } else {
+        html += '<div style="color:#1f2937">' + escapeHtml(lg.action || '') + '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    area.innerHTML = html;
+  } catch (e) {
+    console.error('audit log error', e);
+    area.innerHTML = '<div style="font-size:12px;color:#dc2626">通信エラー</div>';
   }
 }
 
