@@ -1426,7 +1426,7 @@ function showDetail(resId) {
   const _origCampId = res._origId || res.id;
   if (res.isCamp) {
     const campCsv = (res.campRoomIds || []).join(',');
-    html += `<button class="checkin-btn" style="background:#ecfdf5;color:#047857;border:1px solid #6ee7b7;margin-top:8px" onclick="openCampChangeModal('${_origCampId}','${campCsv}','${res.startDate}',${res.nights || 1})">\u533A\u753B\u3092\u5909\u66F4</button>`;
+    html += `<button class="checkin-btn" style="background:#ecfdf5;color:#047857;border:1px solid #6ee7b7;margin-top:8px" onclick="openCampChangeModal('${_origCampId}','${campCsv}','${res.date}',${res.nights || 1})">\u533A\u753B\u3092\u5909\u66F4</button>`;
   }
 
   // === 変更履歴ボタン ===
