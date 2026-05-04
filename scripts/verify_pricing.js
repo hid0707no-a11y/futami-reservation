@@ -156,6 +156,38 @@ run('midori_eve (みどり夜間)', () => {
   ].every(Boolean);
 });
 
+// === みどり 日中 (2026-05-04 追加) ===
+run('midori_day (みどり日中通し)', () => {
+  const plan = extractPlan('midori_day');
+  const spec = pricing.midori.day;
+  return [
+    check('residentPrice', spec.resident, plan.basePrice),
+    check('nonResidentPrice', spec.nonResident, plan.nonResidentPrice),
+    check('studentResident', spec.studentResident, plan.studentPrice),
+    check('studentNonResident', spec.studentNonResident, plan.studentNonResidentPrice),
+    // 内部整合性: am + pm = day
+    check('day = am + pm (resident)', pricing.midori.am.resident + pricing.midori.pm.resident, spec.resident),
+    check('day = am + pm (nonResident)', pricing.midori.am.nonResident + pricing.midori.pm.nonResident, spec.nonResident),
+  ].every(Boolean);
+});
+
+// === 室別 日帰り日中 (2026-05-04 追加) ===
+run('day_xx_daytime (室別 日中通し 8:30-17:00)', () => {
+  const day27 = extractPlan('day_27_daytime');
+  const dayExp = extractPlan('day_exp_daytime');
+  const dayTrain = extractPlan('day_train_daytime');
+  const spec = pricing.roomDay;
+  return [
+    check('day_27_daytime.basePrice', spec.twentySeven.daytime, day27.basePrice),
+    check('day_exp_daytime.basePrice', spec.experience.daytime, dayExp.basePrice),
+    check('day_train_daytime.basePrice', spec.training.daytime, dayTrain.basePrice),
+    // 内部整合性: am + pm = daytime
+    check('27畳 daytime = am + pm', spec.twentySeven.am + spec.twentySeven.pm, spec.twentySeven.daytime),
+    check('体験 daytime = am + pm', spec.experience.am + spec.experience.pm, spec.experience.daytime),
+    check('研修 daytime = am + pm', spec.training.am + spec.training.pm, spec.training.daytime),
+  ].every(Boolean);
+});
+
 // === 平日割の実装確認 ===
 run('平日割の実装確認', () => {
   // 新実装: 料金表の固定値を使う。PLANS に weekdayDiscountResident/weekdayDiscountNonResident が設定され、
@@ -195,9 +227,10 @@ run('利用人数目安の上限設定', () => {
   return [
     check('tennis_full.guestEstimateMax', 10, parseMax(tennisFull)),
     check('tennis_half.guestEstimateMax', 10, parseMax(tennisHalf)),
-    check('midori_am.guestEstimateMax', 150, parseMax(midoriAm)),
-    check('midori_pm.guestEstimateMax', 150, parseMax(midoriPm)),
-    check('midori_eve.guestEstimateMax', 150, parseMax(midoriEve)),
+    check('midori_am.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriAm)),
+    check('midori_pm.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriPm)),
+    check('midori_eve.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriEve)),
+    check('midori_day.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(extractPlan('midori_day'))),
   ].every(Boolean);
 });
 

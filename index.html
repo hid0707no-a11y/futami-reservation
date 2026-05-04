@@ -1147,7 +1147,8 @@ const PLANS = [
     slots: [8,9,10,11,12,13,14,15,16],
     timeRange: '8:30 - 17:00', basePrice: 4410,
     priceDisplay: '4,410円/室/日中通し',
-    badge: '日中通し', badgeColor: '#fb923c' },
+    badge: '日中通し', badgeColor: '#fb923c',
+    note: '8:30-17:00 の通しプラン（夜間枠 17:00-22:00 は別途ご予約ください）' },
   { id: 'day_27_all', name: '日帰り通し（27畳）', planType: 'day_all', category: 'day',
     rooms: ['room_27'],
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
@@ -1172,7 +1173,8 @@ const PLANS = [
     slots: [8,9,10,11,12,13,14,15,16],
     timeRange: '8:30 - 17:00', basePrice: 4410,
     priceDisplay: '4,410円/室/日中通し',
-    badge: '日中通し', badgeColor: '#fb923c' },
+    badge: '日中通し', badgeColor: '#fb923c',
+    note: '8:30-17:00 の通しプラン（夜間枠 17:00-22:00 は別途ご予約ください）' },
   { id: 'day_exp_all', name: '日帰り通し（体験学習室）', planType: 'day_all', category: 'day',
     rooms: ['room_exp'],
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
@@ -1197,7 +1199,8 @@ const PLANS = [
     slots: [8,9,10,11,12,13,14,15,16],
     timeRange: '8:30 - 17:00', basePrice: 6500,
     priceDisplay: '6,500円/室/日中通し',
-    badge: '日中通し', badgeColor: '#fb923c' },
+    badge: '日中通し', badgeColor: '#fb923c',
+    note: '8:30-17:00 の通しプラン（夜間枠 17:00-22:00 は別途ご予約ください）' },
   { id: 'day_train_all', name: '日帰り通し（研修室）', planType: 'day_all', category: 'day',
     rooms: ['room_train'],
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
@@ -2326,14 +2329,17 @@ function showRoomBooking() {
       html += '<div class="text-muted" style="font-size:0.8rem;margin-bottom:6px">※ 料金には影響しません／伊予市への利用実績報告に活用します／未入力 (0) でも予約できます／最大' + plan.guestEstimateMax + '名</div>';
       html += '<div class="stepper">';
       html += '<button class="stepper-btn" onclick="stepSportGuestCount(-1)">-</button>';
-      html += '<input type="number" inputmode="numeric" min="0" max="' + plan.guestEstimateMax + '" id="sport-guest-count-input" value="' + state.sportGuestCount + '" oninput="setSportGuestCount(this.value)" style="width:72px;text-align:center;font-size:1.1rem;font-weight:600;border:1px solid #d1d5db;border-radius:6px;padding:6px 4px;margin:0 6px">';
+      // 直接入力: oninput で空欄含めて受け、onblur で正規化（空欄→0、範囲外→クランプ）
+      html += '<input type="number" inputmode="numeric" min="0" max="' + plan.guestEstimateMax + '" id="sport-guest-count-input" value="' + state.sportGuestCount + '" oninput="setSportGuestCount(this.value)" onblur="normalizeSportGuestCount()" style="width:72px;text-align:center;font-size:1.1rem;font-weight:600;border:1px solid #d1d5db;border-radius:6px;padding:6px 4px;margin:0 6px">';
       html += '<span class="stepper-unit">名</span>';
       html += '<button class="stepper-btn" onclick="stepSportGuestCount(1)">+</button>';
       html += '</div>';
-      // 団体名入力欄（任意）
+      // 団体名入力欄（任意）— HTML属性内 echo のため &/<>/" を全てエンティティ化
+      const escGroup = (state.groupName || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       html += '<div class="form-group" style="margin-top:14px">';
       html += '<label class="form-label">団体名（任意）</label>';
-      html += '<input type="text" id="group-name-input" maxlength="60" placeholder="例：愛媛松山ボーイズ" value="' + (state.groupName || '').replace(/"/g, '&quot;') + '" oninput="state.groupName = this.value" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:1rem">';
+      html += '<input type="text" id="group-name-input" maxlength="60" placeholder="例：愛媛松山ボーイズ" value="' + escGroup + '" oninput="state.groupName = this.value" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:1rem">';
       html += '</div>';
       html += '</div></div>';
     }
@@ -2628,11 +2634,22 @@ function stepSportGuestCount(delta) {
 function setSportGuestCount(value) {
   const plan = state.selectedPlan;
   const max = (plan && plan.guestEstimateMax) || 10;
+  // 空欄は許容（入力中の自然な状態）。state は 0 として扱うが input には書き戻さない
+  if (value === '' || value === null || value === undefined) {
+    state.sportGuestCount = 0;
+    return;
+  }
   let n = parseInt(value, 10);
   if (isNaN(n) || n < 0) n = 0;
   if (n > max) n = max;
   state.sportGuestCount = n;
   // 入力中はinputのvalueはユーザー操作なのでこちらから書き戻さない（カーソル位置維持のため）
+}
+
+function normalizeSportGuestCount() {
+  // blur時：state を input に反映（空欄→0、範囲外→クランプ済み値）して見た目を整える
+  const input = document.getElementById('sport-guest-count-input');
+  if (input) input.value = state.sportGuestCount;
 }
 
 function stepMidoriLighting(delta) {

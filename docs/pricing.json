@@ -1,7 +1,8 @@
 {
   "_comment": "ふたみ潮風ふれあい公園 料金表の機械可読版 (SSOT)。物理料金表との照合テストの正解データとして使う。更新時は docs/pricing.md と料金表原本 PDF も揃えて更新。",
   "source": "伊予市 ふたみ潮風ふれあい公園 料金表（現場掲示版・平日割料金表 2026-04 時点）",
-  "lastVerified": "2026-04-12",
+  "lastVerified": "2026-05-04",
+  "lastVerifiedNote": "2026-05-04 改修対応：みどり日中通し(midori.day)プラン追加、みどり利用人数MAX 50→150、室別日帰り日中(8:30-17:00)プランを27畳/体験/研修の3施設に追加",
   "verifiedBy": "高橋秀典（株式会社日昇）",
   "confirmedBy": "上村（ふれあい）",
 
@@ -76,6 +77,20 @@
       "studentResident": 1580,
       "studentNonResident": 1890
     },
+    "day": {
+      "label": "みどりの広場 日中（午前+午後通し）",
+      "timeRange": "08:30-17:00",
+      "hours": 9,
+      "resident": 4620,
+      "nonResident": 5450,
+      "studentResident": 2630,
+      "studentNonResident": 3150,
+      "_note": "2026-05-04追加。既存 am+pm の単純合算（resident: 1890+2730=4620, nonResident: 2200+3250=5450, studentResident: 1050+1580=2630, studentNonResident: 1260+1890=3150）"
+    },
+    "guestEstimateMax": {
+      "value": 150,
+      "_note": "2026-05-04: 50→150に拡張（運営要望）。料金には影響しない・伊予市行政報告用の任意入力上限"
+    },
     "lighting": {
       "label": "夜間照明（器具レンタル・みどりの広場）",
       "unit": "1時間",
@@ -83,6 +98,37 @@
       "maxHours": 5,
       "optional": true,
       "_note": "夜間スロット (17:00-22:00) でのみ任意追加可能。0〜5時間で指定"
+    }
+  },
+
+  "roomDay": {
+    "_comment": "ふれあいの館の日帰り料金（室別・空間貸し）。2026-05-04 daytime（8:30-17:00通し）プラン追加に伴い SSOT 化。am/pm/eve は既存値を後追い記載。",
+    "twentySeven": {
+      "label": "27畳大部屋 日帰り",
+      "am": 1790,
+      "pm": 2620,
+      "eve": 2620,
+      "daytime": 4410,
+      "all": 6080,
+      "_daytimeNote": "am(1790)+pm(2620)=4410（単純合算）"
+    },
+    "experience": {
+      "label": "体験学習室 日帰り",
+      "am": 1790,
+      "pm": 2620,
+      "eve": 2620,
+      "daytime": 4410,
+      "all": 6080,
+      "_daytimeNote": "am(1790)+pm(2620)=4410（単純合算）"
+    },
+    "training": {
+      "label": "研修室 日帰り",
+      "am": 2620,
+      "pm": 3880,
+      "eve": 3880,
+      "daytime": 6500,
+      "all": 8910,
+      "_daytimeNote": "am(2620)+pm(3880)=6500（単純合算）"
     }
   },
 
