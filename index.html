@@ -1142,6 +1142,12 @@ const PLANS = [
     rooms: ['room_27'],
     slots: [17,18,19,20,21], timeRange: '17:00-22:00', basePrice: 2620,
     priceDisplay: '2,620円', badge: '夜間', badgeColor: '#8b5cf6' },
+  { id: 'day_27_daytime', name: '日帰り日中（27畳）', planType: 'day_all', category: 'day',
+    rooms: ['room_27'],
+    slots: [8,9,10,11,12,13,14,15,16],
+    timeRange: '8:30 - 17:00', basePrice: 4410,
+    priceDisplay: '4,410円/室/日中通し',
+    badge: '日中通し', badgeColor: '#fb923c' },
   { id: 'day_27_all', name: '日帰り通し（27畳）', planType: 'day_all', category: 'day',
     rooms: ['room_27'],
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
@@ -1161,6 +1167,12 @@ const PLANS = [
     rooms: ['room_exp'],
     slots: [17,18,19,20,21], timeRange: '17:00-22:00', basePrice: 2620,
     priceDisplay: '2,620円', badge: '夜間', badgeColor: '#8b5cf6' },
+  { id: 'day_exp_daytime', name: '日帰り日中（体験学習室）', planType: 'day_all', category: 'day',
+    rooms: ['room_exp'],
+    slots: [8,9,10,11,12,13,14,15,16],
+    timeRange: '8:30 - 17:00', basePrice: 4410,
+    priceDisplay: '4,410円/室/日中通し',
+    badge: '日中通し', badgeColor: '#fb923c' },
   { id: 'day_exp_all', name: '日帰り通し（体験学習室）', planType: 'day_all', category: 'day',
     rooms: ['room_exp'],
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
@@ -1180,6 +1192,12 @@ const PLANS = [
     rooms: ['room_train'],
     slots: [17,18,19,20,21], timeRange: '17:00-22:00', basePrice: 3880,
     priceDisplay: '3,880円', badge: '夜間', badgeColor: '#8b5cf6' },
+  { id: 'day_train_daytime', name: '日帰り日中（研修室）', planType: 'day_all', category: 'day',
+    rooms: ['room_train'],
+    slots: [8,9,10,11,12,13,14,15,16],
+    timeRange: '8:30 - 17:00', basePrice: 6500,
+    priceDisplay: '6,500円/室/日中通し',
+    badge: '日中通し', badgeColor: '#fb923c' },
   { id: 'day_train_all', name: '日帰り通し（研修室）', planType: 'day_all', category: 'day',
     rooms: ['room_train'],
     slots: [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
@@ -1268,7 +1286,7 @@ const PLANS = [
     slots: [8,9,10,11], timeRange: '8:30-12:00',
     basePrice: 1890, nonResidentPrice: 2200, studentPrice: 1050, studentNonResidentPrice: 1260,
     priceDisplay: '市民1,890円/市外2,200円',
-    guestEstimateMax: 50,
+    guestEstimateMax: 150,
     badge: '午前', badgeColor: '#f97316',
     note: '専用利用の場合は予約金額の半額' },
   { id: 'midori_pm', name: 'みどりの広場 午後', planType: 'day_slot', category: 'sport',
@@ -1276,15 +1294,23 @@ const PLANS = [
     slots: [12,13,14,15,16], timeRange: '12:00-17:00',
     basePrice: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890,
     priceDisplay: '市民2,730円/市外3,250円',
-    guestEstimateMax: 50,
+    guestEstimateMax: 150,
     badge: '午後', badgeColor: '#f59e0b' },
+  { id: 'midori_day', name: 'みどりの広場 日中', planType: 'day_slot', category: 'sport',
+    rooms: ['midori'],
+    slots: [8,9,10,11,12,13,14,15,16], timeRange: '8:30-17:00',
+    basePrice: 4620, nonResidentPrice: 5450, studentPrice: 2630, studentNonResidentPrice: 3150,
+    priceDisplay: '市民4,620円/市外5,450円',
+    guestEstimateMax: 150,
+    badge: '日中通し', badgeColor: '#fb923c',
+    note: '午前+午後の通しプラン（午前のみ・午後のみは別途）' },
   { id: 'midori_eve', name: 'みどりの広場 夜間', planType: 'day_slot', category: 'sport',
     rooms: ['midori'],
     slots: [17,18,19,20,21], timeRange: '17:00-22:00',
     basePrice: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890,
     priceDisplay: '市民2,730円/市外3,250円',
     lightingPrice: 1890, lightingLabel: '夜間照明（1時間 1,890円）', lightingHours: 5,
-    guestEstimateMax: 50,
+    guestEstimateMax: 150,
     badge: '夜間', badgeColor: '#8b5cf6',
     note: '夜間利用の場合、夜間照明を 0〜5 時間の範囲で任意追加できます（1時間 1,890円）' },
 
@@ -1334,11 +1360,11 @@ const FACILITY_GROUPS = [
   { id: 'fg_fureai_day_6', name: '日帰り）宿泊室【6畳】', icon: '\u2600\uFE0F', category: 'day',
     plans: ['day_6_all'] },
   { id: 'fg_fureai_day_27', name: '日帰り）宿泊室【27畳】', icon: '\u2600\uFE0F', category: 'day',
-    plans: ['day_27_am','day_27_pm','day_27_eve','day_27_all'] },
+    plans: ['day_27_am','day_27_pm','day_27_eve','day_27_daytime','day_27_all'] },
   { id: 'fg_fureai_day_exp', name: '日帰り）体験学習室', icon: '\u2600\uFE0F', category: 'day',
-    plans: ['day_exp_am','day_exp_pm','day_exp_eve','day_exp_all'] },
+    plans: ['day_exp_am','day_exp_pm','day_exp_eve','day_exp_daytime','day_exp_all'] },
   { id: 'fg_fureai_day_train', name: '日帰り）研修室', icon: '\u{1F4DA}', category: 'day',
-    plans: ['day_train_am','day_train_pm','day_train_eve','day_train_all'] },
+    plans: ['day_train_am','day_train_pm','day_train_eve','day_train_daytime','day_train_all'] },
   { id: 'fg_fureai_day_kitchen', name: '日帰り）厨房・食堂', icon: '\u{1F373}', category: 'day',
     plans: ['day_kitchen'] },
   { id: 'fg_camp', name: 'キャンプ場', icon: '\u26FA', category: 'outdoor',
@@ -1348,7 +1374,7 @@ const FACILITY_GROUPS = [
   { id: 'fg_tennis', name: 'テニスコート', icon: '\u{1F3BE}', category: 'sport',
     plans: ['tennis_full', 'tennis_half'] },
   { id: 'fg_midori', name: 'みどりの広場', icon: '\u26BE', category: 'sport',
-    plans: ['midori_am','midori_pm','midori_eve'] },
+    plans: ['midori_am','midori_pm','midori_day','midori_eve'] },
   { id: 'fg_sauna', name: 'ふたみサンセットサウナ', icon: '\u{1F9D6}', category: 'sauna',
     plans: ['sauna_1','sauna_2','sauna_3','sauna_4'] },
 ];
@@ -1389,6 +1415,8 @@ const state = {
   // 利用予定人数（目安・任意・料金には影響しない／伊予市への利用実績報告用に記録）
   // 0 = 未入力。テニス/みどり等 category === 'sport' のプランで入力欄を表示
   sportGuestCount: 0,
+  // 団体名（任意）／みどり等 sport カテゴリで入力欄を表示。備考の先頭に保存
+  groupName: '',
   // 夜間照明オプション（テニス: 選択枠すべてに適用するON/OFF）
   useLighting: false,
   // みどり夜間 の夜間照明: 0〜5時間を任意で選択
@@ -1847,6 +1875,7 @@ function selectPlanFromSearch(planId) {
   state.saunaIce = 0;
   state.selectedHours = [];
   state.sportGuestCount = 0;
+  state.groupName = '';
   state.useLighting = false;
   state.midoriLightingHours = 0;
 
@@ -2200,6 +2229,7 @@ function selectPlan(planId) {
   state.selectedHours = [];
   state.selectedSlotPlans = [];
   state.sportGuestCount = 0;
+  state.groupName = '';
   state.useLighting = false;
   state.midoriLightingHours = 0;
 
@@ -2227,7 +2257,7 @@ function showRoomBooking() {
 
   // プラン切替時の state 整合性保証:
   // 当該プランに無関係な追加オプションは強制リセット
-  if (!plan.guestEstimateMax) state.sportGuestCount = 0;
+  if (!plan.guestEstimateMax) { state.sportGuestCount = 0; state.groupName = ''; }
   if (!plan.lightingPrice) { state.useLighting = false; state.midoriLightingHours = 0; }
   if (plan.id !== 'midori_eve') state.midoriLightingHours = 0;
   if (plan.id === 'midori_eve') state.useLighting = false; // midori は stepper を使うため toggle は常に false
@@ -2293,13 +2323,19 @@ function showRoomBooking() {
       html += '<div class="card">';
       html += '<div class="form-group">';
       html += '<label class="form-label">ご利用予定人数（目安）</label>';
-      html += '<div class="text-muted" style="font-size:0.8rem;margin-bottom:6px">※ 料金には影響しません／伊予市への利用実績報告に活用します／未入力 (0) でも予約できます</div>';
+      html += '<div class="text-muted" style="font-size:0.8rem;margin-bottom:6px">※ 料金には影響しません／伊予市への利用実績報告に活用します／未入力 (0) でも予約できます／最大' + plan.guestEstimateMax + '名</div>';
       html += '<div class="stepper">';
       html += '<button class="stepper-btn" onclick="stepSportGuestCount(-1)">-</button>';
-      html += '<span class="stepper-value" id="sport-guest-count">' + state.sportGuestCount + '</span>';
+      html += '<input type="number" inputmode="numeric" min="0" max="' + plan.guestEstimateMax + '" id="sport-guest-count-input" value="' + state.sportGuestCount + '" oninput="setSportGuestCount(this.value)" style="width:72px;text-align:center;font-size:1.1rem;font-weight:600;border:1px solid #d1d5db;border-radius:6px;padding:6px 4px;margin:0 6px">';
       html += '<span class="stepper-unit">名</span>';
       html += '<button class="stepper-btn" onclick="stepSportGuestCount(1)">+</button>';
-      html += '</div></div></div>';
+      html += '</div>';
+      // 団体名入力欄（任意）
+      html += '<div class="form-group" style="margin-top:14px">';
+      html += '<label class="form-label">団体名（任意）</label>';
+      html += '<input type="text" id="group-name-input" maxlength="60" placeholder="例：愛媛松山ボーイズ" value="' + (state.groupName || '').replace(/"/g, '&quot;') + '" oninput="state.groupName = this.value" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:1rem">';
+      html += '</div>';
+      html += '</div></div>';
     }
     // 夜間照明オプション（対象プランのみ）
     if (plan.lightingPrice) {
@@ -2584,9 +2620,19 @@ function stepSportGuestCount(delta) {
   const plan = state.selectedPlan;
   const max = (plan && plan.guestEstimateMax) || 10;
   state.sportGuestCount = Math.max(0, Math.min(max, state.sportGuestCount + delta));
-  const el = document.getElementById('sport-guest-count');
-  if (el) el.textContent = state.sportGuestCount;
+  const input = document.getElementById('sport-guest-count-input');
+  if (input) input.value = state.sportGuestCount;
   // 料金影響なし → updateBookingPriceSummary は呼ばない（合計金額は変わらないため）
+}
+
+function setSportGuestCount(value) {
+  const plan = state.selectedPlan;
+  const max = (plan && plan.guestEstimateMax) || 10;
+  let n = parseInt(value, 10);
+  if (isNaN(n) || n < 0) n = 0;
+  if (n > max) n = max;
+  state.sportGuestCount = n;
+  // 入力中はinputのvalueはユーザー操作なのでこちらから書き戻さない（カーソル位置維持のため）
 }
 
 function stepMidoriLighting(delta) {
@@ -3569,7 +3615,12 @@ async function submitBooking() {
   const name = document.getElementById('confirm-name').value.trim();
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
-  const note = document.getElementById('confirm-note').value.trim();
+  const userNote = document.getElementById('confirm-note').value.trim();
+  // 団体名（みどり等 sport カテゴリで入力された場合は備考の先頭に付加）
+  const groupNamePrefix = (state.groupName && state.groupName.trim())
+    ? '【団体名】' + state.groupName.trim() + (userNote ? '\n' : '')
+    : '';
+  const note = groupNamePrefix + userNote;
   const zip = document.getElementById('confirm-zip').value.trim();
   const address1 = document.getElementById('confirm-address1').value.trim();
   const address2 = document.getElementById('confirm-address2').value.trim();

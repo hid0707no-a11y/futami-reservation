@@ -195,9 +195,9 @@ run('利用人数目安の上限設定', () => {
   return [
     check('tennis_full.guestEstimateMax', 10, parseMax(tennisFull)),
     check('tennis_half.guestEstimateMax', 10, parseMax(tennisHalf)),
-    check('midori_am.guestEstimateMax', 50, parseMax(midoriAm)),
-    check('midori_pm.guestEstimateMax', 50, parseMax(midoriPm)),
-    check('midori_eve.guestEstimateMax', 50, parseMax(midoriEve)),
+    check('midori_am.guestEstimateMax', 150, parseMax(midoriAm)),
+    check('midori_pm.guestEstimateMax', 150, parseMax(midoriPm)),
+    check('midori_eve.guestEstimateMax', 150, parseMax(midoriEve)),
   ].every(Boolean);
 });
 
