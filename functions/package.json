@@ -9,15 +9,21 @@
   "scripts": {
     "build": "tsc",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:integration": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 jest --config=jest.integration.config.js --runInBand"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.6.0",
     "@types/nodemailer": "^8.0.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.9",
     "typescript": "^6.0.2"
   },
   "dependencies": {

@@ -11,4 +11,5 @@ set -e
 
 git config core.hooksPath hooks
 chmod +x hooks/pre-commit
+chmod +x hooks/commit-msg
 echo "✅ hooks installed. core.hooksPath = $(git config core.hooksPath)"

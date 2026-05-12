@@ -1692,10 +1692,12 @@ const JP_HOLIDAYS_2026_2027 = new Set([
 function isJapaneseHoliday(dateStr) {
   if (!dateStr) return false;
   if (JP_HOLIDAYS_2026_2027.has(dateStr)) return true;
-  // テーブル範囲外の警告（本番では 2028 以降に発火）
-  if (dateStr >= '2028-01-01') {
+  // テーブル範囲外の警告（2027-10-01 以降に発火・期限の3ヶ月前から DevTools console に警告）
+  // 失効当日にスタッフが気付くのではなく、社長か運営の誰かが3ヶ月の間に開いて気付くのが目的。
+  // staffHealthMonitor (Cloud Functions) からも同期間 SMTP アラートが飛ぶ。
+  if (dateStr >= '2027-10-01') {
     if (!isJapaneseHoliday._warned) {
-      console.warn('[holidays] 祝日テーブルが古い。index.html の JP_HOLIDAYS_2026_2027 を更新してください。');
+      console.warn('[holidays] 祝日テーブル JP_HOLIDAYS_2026_2027 が 2027-12-31 で失効間近。2028-2029 用に更新してください（手順: 00_projects/futami_reservation/CLAUDE.md L60-79）。');
       isJapaneseHoliday._warned = true;
     }
   }

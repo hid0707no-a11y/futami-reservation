@@ -1,0 +1,107 @@
+// staffHealthMonitor サービス本体（onSchedule ラッパは index.ts に薄く残す）
+//
+// 2026-05-05 新設（/gfu Phase B-1 services 抽出）。
+// 旧 index.ts:963-1075 のロジック部分のみ移植。Cloud Functions の onSchedule export は index.ts に置き、
+// このファイルでは「何をチェックするか」「どう通知するか」だけを管理する。
+
+import * as admin from 'firebase-admin';
+import { sendMonitorAlert } from '../lib/mail';
+
+const HOLIDAY_TABLE_END = '2027-12-31';
+const HOLIDAY_WARN_FROM = '2027-10-01';
+
+export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promise<void> {
+  const failures: string[] = [];
+  const checks: Record<string, boolean> = {};
+
+  // --- Check 1: Firestore 接続（business_calendar）---
+  try {
+    const doc = await db.doc('config/business_calendar').get();
+    checks.firestore_business_calendar = doc.exists;
+    if (!doc.exists) failures.push('config/business_calendar が存在しません');
+  } catch (e: any) {
+    checks.firestore_business_calendar = false;
+    failures.push(`Firestore business_calendar read エラー: ${e.message || e}`);
+  }
+
+  // --- Check 2: reservations コレクション ---
+  try {
+    const snap = await db.collection('reservations').limit(1).get();
+    checks.firestore_reservations = true;
+    console.log(`[monitor] reservations サンプル: ${snap.size}件`);
+  } catch (e: any) {
+    checks.firestore_reservations = false;
+    failures.push(`reservations クエリエラー: ${e.message || e}`);
+  }
+
+  // --- Check 3: tennis_slots コレクション ---
+  try {
+    const snap = await db.collection('tennis_slots').limit(1).get();
+    checks.firestore_tennis_slots = true;
+    console.log(`[monitor] tennis_slots サンプル: ${snap.size}件`);
+  } catch (e: any) {
+    checks.firestore_tennis_slots = false;
+    failures.push(`tennis_slots クエリエラー: ${e.message || e}`);
+  }
+
+  // --- Check 4: Firebase Auth に staff claim ユーザーが 1 人以上いる ---
+  try {
+    const list = await admin.auth().listUsers(1000);
+    const staffUsers = list.users.filter(u => (u.customClaims as any)?.staff === true);
+    checks.firebase_auth_staff_count = staffUsers.length > 0;
+    console.log(`[monitor] staff users: ${staffUsers.length}名`);
+    if (staffUsers.length === 0) {
+      failures.push('Firebase Auth に staff:true claim 付きユーザーが 1 人もいません');
+    }
+  } catch (e: any) {
+    checks.firebase_auth_staff_count = false;
+    failures.push(`Firebase Auth listUsers エラー: ${e.message || e}`);
+  }
+
+  // --- Check 5: 祝日テーブル期限（index.html JP_HOLIDAYS_2026_2027）---
+  const today = new Date().toISOString().slice(0, 10);
+  if (today >= HOLIDAY_WARN_FROM) {
+    checks.holiday_table_current = false;
+    failures.push(
+      `祝日テーブル JP_HOLIDAYS_2026_2027 が ${HOLIDAY_TABLE_END} で失効間近（今日=${today}）。` +
+      'index.html の JP_HOLIDAYS_2026_2027 を 2028-2029 用に更新してください。' +
+      ' 手順: 00_projects/futami_reservation/CLAUDE.md L60-79 を参照。'
+    );
+  } else {
+    checks.holiday_table_current = true;
+  }
+
+  // --- 判定 + 通知 ---
+  console.log(JSON.stringify({
+    severity: 'INFO',
+    audit: true,
+    action: 'monitor.staff_health',
+    timestamp: new Date().toISOString(),
+    checks,
+    failures,
+    ok: failures.length === 0,
+  }));
+
+  if (failures.length > 0) {
+    const body = [
+      'ふたみ予約システムのスタッフ機能ヘルスチェックで問題を検知しました。',
+      '',
+      `検証日時: ${new Date().toISOString()}`,
+      '',
+      '【失敗項目】',
+      ...failures.map(f => '  - ' + f),
+      '',
+      '【全チェック結果】',
+      JSON.stringify(checks, null, 2),
+      '',
+      '対応:',
+      '  - https://hid0707no-a11y.github.io/futami-reservation/staff.html を開いて動作確認',
+      '  - Firebase Console (https://console.firebase.google.com/project/futami-yoyaku-492607) でログ確認',
+      '',
+      'このメールは staffHealthMonitor Cloud Function が自動送信しています。',
+    ].join('\n');
+    await sendMonitorAlert('[ふたみ予約] スタッフ機能ヘルスチェック失敗', body);
+  } else {
+    console.log('[monitor] all checks passed');
+  }
+}

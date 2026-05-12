@@ -13,49 +13,8 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net https://*.googleapis.com https://*.firebaseapp.com; img-src 'self' data:; font-src 'self'; frame-src https://*.firebaseapp.com;">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script>
-firebase.initializeApp({
-  apiKey: "AIzaSyDS4b-ukVqd1iiMo7DeRIB2tzKwrt-or10",
-  authDomain: "futami-yoyaku-492607.firebaseapp.com",
-  projectId: "futami-yoyaku-492607"
-});
-var _fbAuth = firebase.auth();
-var _fbUser = null;
-_fbAuth.onAuthStateChanged(function(user) {
-  if (user) {
-    _fbUser = user;
-    document.getElementById('login-overlay')?.remove();
-    // loadGcalDataが定義されるまで待ってから呼ぶ
-    var _tryCount = 0;
-    function tryLoad() {
-      if (typeof loadGcalData === 'function') { loadGcalData(); }
-      else if (++_tryCount < 50) { setTimeout(tryLoad, 100); }
-    }
-    tryLoad();
-  } else {
-    var ov = document.getElementById('login-overlay');
-    if (ov) ov.style.display = 'flex';
-  }
-});
-async function getAuthHeader() {
-  if (_fbUser) {
-    var token = await _fbUser.getIdToken();
-    return { 'Authorization': 'Bearer ' + token };
-  }
-  return {};
-}
-function doLogin() {
-  var email = document.getElementById('login-email').value;
-  var pass = document.getElementById('login-pass').value;
-  var err = document.getElementById('login-error');
-  _fbAuth.signInWithEmailAndPassword(email, pass).catch(function(e) {
-    err.textContent = 'ログイン失敗: メールアドレスまたはパスワードが正しくありません';
-  });
-}
-function doLogout() {
-  _fbAuth.signOut().then(function() { location.reload(); });
-}
-</script>
+<!-- 認証共通化 2026-05-05 Phase B-2：staff/staff2/staff_tennis.html で重複していたコードを集約 -->
+<script src="assets/js/auth-bootstrap.js" data-load-fn="loadGcalData"></script>
 <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoi44G144Gf44G/5LqI57SE566h55CGIiwic2hvcnRfbmFtZSI6IuS6iOe0hOeuoeeQhiIsInN0YXJ0X3VybCI6Ii4vc3RhZmYuaHRtbCIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiMwZjM0NjAiLCJ0aGVtZV9jb2xvciI6IiMwZjM0NjAifQ==">
 <style>
 /* ===== リセット・ベース ===== */
@@ -937,7 +896,7 @@ function escapeHtml(s) {
 }
 
 // ===== Firestore API 由来データ =====
-const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
+// API_BASE は assets/js/auth-bootstrap.js で window.API_BASE として定義済（2026-05-05 Phase B-2）
 // APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 let GCAL_BOOKINGS = [];
 let LAST_SYNC_AT = null;

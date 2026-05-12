@@ -4,6 +4,7 @@
 # 2. HTML 内 inline script の JS syntax チェック
 # 3. 料金表 SSOT 照合テスト（scripts/verify_pricing.js）
 # 4. 平文 credential の簡易検出（STAFF_API_KEY 等）
+# 5. SHEET_HEADERS 変更タグ強制（2026-05-05 Phase B-3 追加）
 #
 # Bypass: `git commit --no-verify` (非推奨・PR レビュー必須)
 
@@ -81,6 +82,19 @@ if [ -n "$STAGED" ]; then
   done
   rm -f /tmp/_pc_leak.txt
 fi
+
+# ===== 5. SHEET_HEADERS 変更検知マーカー =====
+# functions/src/index.ts / functions/src/constants.ts の SHEET_HEADERS が変更されている場合、
+# /tmp にマーカーを置く。commit-msg hook が読み取って [sheet-schema] タグの有無を強制する。
+# （pre-commit 段階では .git/COMMIT_EDITMSG がまだ書かれていない可能性が高いため二段構え）
+SHEET_HEADER_FILES="functions/src/index.ts functions/src/constants.ts"
+rm -f /tmp/_pc_sheet_headers_touched
+for f in $SHEET_HEADER_FILES; do
+  echo "$STAGED" | grep -qE "(^|/)$(basename $f)\$" || continue
+  if git diff --cached "$f" 2>/dev/null | grep -qE "^[+-].*SHEET_HEADERS"; then
+    touch /tmp/_pc_sheet_headers_touched
+  fi
+done
 
 if [ $FAIL -ne 0 ]; then
   echo ""

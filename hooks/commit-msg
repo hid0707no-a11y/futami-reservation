@@ -1,0 +1,34 @@
+#!/bin/sh
+# Nissho futami-reservation commit-msg hook
+# 2026-05-05 新設（/gfu Phase B-3）
+#
+# pre-commit hook が /tmp/_pc_sheet_headers_touched マーカーを置いた場合、
+# commit message に [sheet-schema] タグがないと commit を拒否する。
+#
+# 目的：SHEET_HEADERS 変更時にスプシピボット/外部関数が壊れるリスクを認識させ、
+#       運営通知＋migration 整備＋列レンジ更新＋変更記録を確認してから commit させる。
+#
+# Bypass: `git commit --no-verify` (非推奨・SHEET_HEADERS 変更では使うな)
+
+COMMIT_MSG_FILE="$1"
+
+if [ -f /tmp/_pc_sheet_headers_touched ]; then
+  rm -f /tmp/_pc_sheet_headers_touched
+  if ! grep -q "\[sheet-schema\]" "$COMMIT_MSG_FILE"; then
+    echo ""
+    echo "❌ SHEET_HEADERS の変更を検出しましたが、commit message に [sheet-schema] タグがありません。"
+    echo ""
+    echo "スプシ列追加・順序変更は外部ピボット/関数を壊すリスクあり。以下を確認してください："
+    echo "  1) 運営に1週間前通知済み（既存ピボット影響範囲確認）"
+    echo "  2) functions/migrations/ に新規 migration 作成済み（または不要を判断済み）"
+    echo "  3) SHEET_LAST_COLUMN / SYNC_CLEAR_RANGE_* の列レンジも更新済み"
+    echo "  4) docs/<日付>_sheet_schema_change.md に変更内容記録済み"
+    echo ""
+    echo "確認後、commit message 末尾に '[sheet-schema]' を付けて再 commit してください。"
+    echo "例: git commit -m 'feat: 楽天ポイント列を追加 [sheet-schema]'"
+    echo ""
+    exit 1
+  fi
+fi
+
+exit 0
