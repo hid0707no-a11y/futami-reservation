@@ -108,6 +108,49 @@ describe('slot conflict detection integration (emulator)', () => {
     const slotsSnap = await db.collection('slots').get();
     expect(slotsSnap.size).toBe(2);
   }, 15000);
+
+  // 2026-05-13 追加：要望#7+#9 の複数 roomIds 選択（allowMultiSelect）の slot 競合保護
+  // 旧 integration test は全て roomId=room_27 単一だったため、複数選択 UI で
+  // 「一部だけ満室」のケースが未保護だった。Evaluator 不足1への対応。
+  it('複数 roomIds の一部が既予約 → 全 roomIds の予約が拒否される（atomic）', async () => {
+    // 先に room_6_1 を取る
+    const first = await reserveSlotsWithConflictCheck(['room_6_1|2026-06-05|18']);
+    expect(first.ok).toBe(true);
+
+    // 6畳複数選択で room_6_1 と room_6_2 を同時申請（room_6_1 だけ既に埋まっている）
+    const second = await reserveSlotsWithConflictCheck([
+      'room_6_1|2026-06-05|18', // 競合
+      'room_6_2|2026-06-05|18', // 空き
+    ]);
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.conflicts).toContain('room_6_1|2026-06-05|18');
+
+    // 空いていた room_6_2 にも書き込まれていない（atomicity）
+    const slotsSnap = await db.collection('slots').get();
+    expect(slotsSnap.size).toBe(1); // 最初の room_6_1 のみ
+    const room62 = await db.collection('slots').doc('room_6_2|2026-06-05|18').get();
+    expect(room62.exists).toBe(false);
+  }, 15000);
+
+  it('複数 roomIds 全てが空きなら全件成立して slots に複数 docs が書かれる', async () => {
+    // 6畳3部屋・1泊2時間枠の同時予約（複数選択 UI から発火する典型ペイロード）
+    const result = await reserveSlotsWithConflictCheck([
+      'room_6_1|2026-06-06|18',
+      'room_6_1|2026-06-06|19',
+      'room_6_2|2026-06-06|18',
+      'room_6_2|2026-06-06|19',
+      'room_6_3|2026-06-06|18',
+      'room_6_3|2026-06-06|19',
+    ]);
+    expect(result.ok).toBe(true);
+    const slotsSnap = await db.collection('slots').get();
+    expect(slotsSnap.size).toBe(6);
+    // 全 slots が同一 reservationId を持つ（複数選択は1予約）
+    const reservationIds = new Set<string>();
+    slotsSnap.forEach(d => reservationIds.add((d.data() as any).reservationId));
+    expect(reservationIds.size).toBe(1);
+  }, 15000);
 });
 
 afterAll(async () => {

@@ -627,6 +627,14 @@ td.block-start-td + td.block-mid { border-left: none; }
     <a href="staff_tennis.html" class="today-btn" style="text-decoration:none;background:#fef3c7;color:#b45309">🎾 テニス</a>
     <button onclick="doLogout()" class="today-btn" style="background:#fef2f2;color:#dc2626;margin-left:auto;font-size:12px">ログアウト</button>
   </div>
+  <!-- 予約番号検索バー（要望#8 関連・2026-05-13 追加） -->
+  <div class="header-row" style="margin-top:6px">
+    <input type="text" id="displayIdSearch" placeholder="予約番号で検索（F-XXXXXX）"
+           oninput="searchByDisplayId(this.value)"
+           style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;font-family:monospace;text-transform:uppercase">
+    <button class="today-btn" onclick="document.getElementById('displayIdSearch').value=''; document.getElementById('displayIdResults').style.display='none'">クリア</button>
+  </div>
+  <div id="displayIdResults" style="display:none;background:white;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;max-height:300px;overflow-y:auto;font-size:13px"></div>
 </header>
 
 <!-- 統計バー -->
@@ -1032,6 +1040,65 @@ function updateSyncIndicator(error) {
 
 // 30秒ごとに自動更新（ログイン済み＋タブがアクティブな場合のみ）
 setInterval(() => { if (_fbUser && !document.hidden) loadGcalData(); }, 30000);
+
+// ===== 予約番号検索（要望#8 関連・2026-05-13 追加） =====
+// 電話で「F-XXXXXX」を聞かれたとき、スタッフが入力 → GCAL_BOOKINGS から filter で
+// マッチする予約を一覧表示し、クリックで詳細モーダルを開く。
+// GCAL_BOOKINGS は loadGcalData で全件取得済（30秒ごと更新）なので、追加API呼び出し不要。
+function searchByDisplayId(query) {
+  const resultsEl = document.getElementById('displayIdResults');
+  if (!resultsEl) return;
+  const q = String(query || '').toUpperCase().trim();
+  if (q.length < 2) {
+    resultsEl.style.display = 'none';
+    return;
+  }
+  // GCAL_BOOKINGS の各 record は convertApiReservation で部屋ごとに分割されているため
+  // _origId（元 doc.id）で dedupe してから検索
+  const seen = new Set();
+  const matches = [];
+  for (const r of GCAL_BOOKINGS || []) {
+    const origId = r._origId || r.id;
+    if (seen.has(origId)) continue;
+    seen.add(origId);
+    const displayId = r.displayId || (origId ? 'F-' + String(origId).substring(0, 6).toUpperCase() : '');
+    if (displayId && displayId.includes(q)) {
+      matches.push({ ...r, _displayId: displayId });
+    }
+  }
+  if (matches.length === 0) {
+    resultsEl.innerHTML = '<div style="padding:8px 12px;color:#9ca3af">該当する予約が見つかりません</div>';
+    resultsEl.style.display = 'block';
+    return;
+  }
+  let html = '';
+  for (const m of matches.slice(0, 20)) {
+    const room = ROOMS.find(x => x.id === m.roomId);
+    const planDef = PLANS.find(p => p.id === m.planId);
+    const planLabel = planDef ? (planDef.badge + ' ' + planDef.name) : (m.planId || '');
+    html += `
+      <div style="padding:10px 12px;border-bottom:1px solid #f3f4f6;cursor:pointer"
+           onclick="closeSearchAndShowDetail('${m.id.replace(/'/g, '\\\'')}')">
+        <div style="font-family:monospace;font-weight:700;color:#0c4a6e">${m._displayId}</div>
+        <div style="font-size:12px;color:#374151;margin-top:2px">
+          ${escapeHtml(m.name || '')} / ${escapeHtml(m.date || '')}
+          ${room ? '/ ' + room.icon + ' ' + escapeHtml(room.name) : ''}
+        </div>
+        <div style="font-size:11px;color:#6b7280">${escapeHtml(planLabel)}</div>
+      </div>`;
+  }
+  if (matches.length > 20) {
+    html += `<div style="padding:6px 12px;color:#9ca3af;font-size:11px">他 ${matches.length - 20} 件…検索を絞り込んでください</div>`;
+  }
+  resultsEl.innerHTML = html;
+  resultsEl.style.display = 'block';
+}
+
+function closeSearchAndShowDetail(resId) {
+  document.getElementById('displayIdResults').style.display = 'none';
+  document.getElementById('displayIdSearch').value = '';
+  showDetail(resId);
+}
 
 // ===== LocalStorage =====
 function loadReservations() {

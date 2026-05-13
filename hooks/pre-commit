@@ -63,19 +63,38 @@ if echo "$STAGED" | grep -qE '(^|/)(index\.html|docs/pricing\.json|scripts/verif
 fi
 
 # ===== 4. credential leak simple scan =====
-# STAFF_API_KEY 相当の 64 桁 hex が HTML/JS に含まれていないか
+# 主要な credential 漏洩パターンを検出（2026-05-13 拡張）。
+# 旧: STAFF_API_KEY 相当の 64 桁 hex のみ
+# 新: + Google API Key (AIza...) / OpenAI sk-... / Stripe sk_live_/rk_live_ / GitHub PAT (ghp_...)
+#     + Bearer ${long_token} のハードコード / Anthropic sk-ant-...
+# 注意: Firebase の apiKey はクライアント公開前提なので除外（漏洩問題なし）。
 if [ -n "$STAGED" ]; then
   for f in $STAGED; do
     [ -f "$f" ] || continue
     case "$f" in
-      *.html|*.js|*.ts|*.md)
-        if grep -nE "'[a-f0-9]{64}'" "$f" > /tmp/_pc_leak.txt 2>/dev/null; then
-          # 許容リスト（過去の commit に残っている参考値など）がないなら警告
-          echo "⚠️  possible 64-hex credential in: $f"
-          cat /tmp/_pc_leak.txt
-          echo "   → Firebase Auth 化後の今、平文の長い16進キーは不要のはず。"
-          echo "   → 本当に必要なら --no-verify でバイパス可"
-          FAIL=1
+      *.html|*.js|*.ts|*.md|*.py|*.sh|*.json|*.yaml|*.yml)
+        # Firebase apiKey（AIzaSyDS4b-ukVqd1iiMo7DeRIB2tzKwrt-or10）はクライアント公開OKなので除外
+        # 検出パターン：AIza以外のGoogle系、sk-、ghp_、GitHub fine-grained、Bearer 長文字列、Anthropic
+        if grep -nE \
+          -e "'[a-f0-9]{64}'" \
+          -e "sk-[A-Za-z0-9_-]{40,}" \
+          -e "sk_live_[A-Za-z0-9]{20,}" \
+          -e "rk_live_[A-Za-z0-9]{20,}" \
+          -e "ghp_[A-Za-z0-9]{30,}" \
+          -e "github_pat_[A-Za-z0-9_]{50,}" \
+          -e "sk-ant-[A-Za-z0-9_-]{50,}" \
+          -e "Bearer [A-Za-z0-9_.-]{40,}" \
+          "$f" > /tmp/_pc_leak.txt 2>/dev/null; then
+          # Firebase apiKey（AIzaSyDS4b-…）の正当パターンは除外
+          grep -v "AIzaSyDS4b-ukVqd1iiMo7DeRIB2tzKwrt-or10" /tmp/_pc_leak.txt > /tmp/_pc_leak2.txt
+          if [ -s /tmp/_pc_leak2.txt ]; then
+            echo "⚠️  possible credential leak in: $f"
+            cat /tmp/_pc_leak2.txt
+            echo "   → 認証情報は Keychain / .env / Secret Manager に保管してください。"
+            echo "   → 本当に必要なら --no-verify でバイパス可（社長承認推奨）"
+            FAIL=1
+          fi
+          rm -f /tmp/_pc_leak2.txt
         fi
         ;;
     esac

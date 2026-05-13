@@ -21,6 +21,22 @@ import { VALID_ROOM_IDS } from '../constants';
 import { getFutamiDays } from '../lib/futamiDays';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
 
+/**
+ * roomIds が完全にテニスコート（court_*）のみで構成されているか判定する純粋関数。
+ *
+ * 2026-05-13 export 化（jest 単体テスト対象）。
+ * 旧コード `roomIds[0].startsWith('court_')` だと `['court_1','camp_1']` のような
+ * 混在ペイロードで tennis_slots に書込み・キャンプ排他スキップが起きる脆弱性があった。
+ * `.every` で全件チェックすることで isCamp との対称性も担保（isCamp も全件 camp_* 判定）。
+ *
+ * テスト対象 → functions/tests/createReservation.test.ts
+ */
+export function isTennisPayload(roomIds: unknown): boolean {
+  return Array.isArray(roomIds)
+    && roomIds.length > 0
+    && roomIds.every((r: unknown) => typeof r === 'string' && r.startsWith('court_'));
+}
+
 // 薄いラッパ：db を束ねる（互換維持）
 function validateAndRespond(body: any, res: any): boolean {
   const result = validateReservationBody(body, { validRoomIds: VALID_ROOM_IDS });
@@ -63,10 +79,7 @@ export const createReservation = onRequest(
       if (!(await checkIdempotency(req, res))) return;
 
       // ===== テニス専用ルート（tennis_slots 30分単位）=====
-      // 2026-05-13: 全 roomId が court_* であることを要求（複数選択時の混在ペイロード対策）。
-      // 旧コード `roomIds[0].startsWith('court_')` だと ['court_1','camp_1'] のような混在
-      // payload で tennis_slots に書込み・キャンプ排他がスキップされうる。isCamp との対称性も担保。
-      const isTennis = Array.isArray(roomIds) && roomIds.length > 0 && roomIds.every((r: string) => r.startsWith('court_'));
+      const isTennis = isTennisPayload(roomIds);
       if (isTennis) {
         try {
           const tennisResult = await db.runTransaction(async tx => {
