@@ -181,13 +181,17 @@ run('day_xx_daytime (室別 日中通し 8:30-17:00)', () => {
 // === 平日割の実装確認 ===
 run('平日割の実装確認', () => {
   // 新実装: 料金表の固定値を使う。PLANS に weekdayDiscountResident/weekdayDiscountNonResident が設定され、
-  // calculateTotal で discountPrice として読み取っているか確認する。
+  // pricing.js (calculateHourlyTennisPrice) で discountPrice として読み取っているか確認。
+  // 2026-05-13 リファクタで料金計算コアが index.html → assets/js/pricing.js へ移動。
+  const pricingJsPath = path.join(ROOT, 'assets', 'js', 'pricing.js');
+  const pricingJs = fs.existsSync(pricingJsPath) ? fs.readFileSync(pricingJsPath, 'utf8') : '';
+  const combined = html + '\n' + pricingJs;
   const hasFixedFields = /weekdayDiscountResident:\s*\d+/.test(html)
     && /weekdayDiscountNonResident:\s*\d+/.test(html);
-  const usesFixedFields = /plan\.weekdayDiscountResident/.test(html)
-    && /plan\.weekdayDiscountNonResident/.test(html);
+  const usesFixedFields = /plan\.weekdayDiscountResident/.test(combined)
+    && /plan\.weekdayDiscountNonResident/.test(combined);
   // フォールバックロジックも検証（範囲外の為の保険）
-  const hasFallback = /Math\.ceil\(\s*normalPrice\s*\*\s*0\.5\s*\/\s*10\s*\)\s*\*\s*10/.test(html);
+  const hasFallback = /Math\.ceil\(\s*normalPrice\s*\*\s*0\.5\s*\/\s*10\s*\)\s*\*\s*10/.test(combined);
   const ok1 = hasFixedFields;
   const ok2 = usesFixedFields;
   const ok3 = hasFallback;

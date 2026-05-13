@@ -1026,6 +1026,8 @@ body {
 
 </div>
 
+<!-- 価格計算 純粋関数ライブラリ（2026-05-13 抽出・Jest テスト対象） -->
+<script src="assets/js/pricing.js"></script>
 <script>
 /* ================================================================
    ROOMS + PLANS データ構造（staff.html と統一）
@@ -2960,25 +2962,8 @@ function stepNights(delta) {
 
 // 宿泊N泊目が確保するスロットを展開する
 // 例: 2泊（4/1開始）→ [{date:'2026-04-01',hour:16},...,{date:'2026-04-02',hour:9},{date:'2026-04-02',hour:16},...,{date:'2026-04-03',hour:9}]
-function expandStaySlots(plan, baseDate, nights) {
-  const slots = Array.isArray(plan.slots) ? plan.slots : [];
-  if (slots.length === 0) return [];
-
-  // チェックイン時刻を特定（slots配列の先頭＝チェックイン開始時刻）
-  const checkinHour = slots[0];
-
-  const result = [];
-  for (let n = 0; n < nights; n++) {
-    const checkinDate = addDays(baseDate, n);
-    const nextDate = addDays(baseDate, n + 1);
-    for (const h of slots) {
-      // チェックイン時刻より前の時間は翌日（チェックアウト日）扱い
-      const date = h < checkinHour ? nextDate : checkinDate;
-      result.push({ date, hour: h });
-    }
-  }
-  return result;
-}
+// expandStaySlots は assets/js/pricing.js から再 export（2026-05-13 jest テスト対象化）
+const expandStaySlots = window.NisshoPricing.expandStaySlots;
 
 // 営業カレンダー（API連動）
 var BUSINESS_CALENDAR = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
@@ -3182,14 +3167,8 @@ function isTennisSlotFree(courtId, date, timeStr) {
   return !TENNIS_SLOTS.has(`${courtId}|${date}|${timeStr}`);
 }
 
-function addMinutes(timeStr, mins) {
-  const h = parseInt(timeStr.slice(0,2), 10);
-  const m = parseInt(timeStr.slice(2), 10);
-  const total = h * 60 + m + mins;
-  const nh = Math.floor(total / 60);
-  const nm = total % 60;
-  return `${String(nh).padStart(2,'0')}${String(nm).padStart(2,'0')}`;
-}
+// addMinutes は assets/js/pricing.js から再 export
+const addMinutes = window.NisshoPricing.addMinutes;
 
 function toggleHour(hour, el, avail) {
   if (!avail) return;
@@ -3248,14 +3227,16 @@ function calculateTotal() {
   const pt = plan.planType;
 
   if (pt === 'stay') {
-    // 宿泊: 基本料金（部屋数倍）+ 年齢区分加算 x 泊数
+    // 2026-05-13: 純粋関数 NisshoPricing.calculateStayPrice に委譲（Jest テスト対象）
     const roomCount = (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0)
       ? state.selectedRoomIds.length : 1;
-    const baseCost = plan.basePrice * roomCount;
-    const adultCost = plan.extraAdult * state.guestsAdult;
-    const childCost = plan.extraChild * state.guestsChild;
-    const infantCost = plan.extraInfant * state.guestsInfant;
-    return (baseCost + adultCost + childCost + infantCost) * state.selectedNights;
+    return window.NisshoPricing.calculateStayPrice(plan, {
+      roomCount: roomCount,
+      nights: state.selectedNights,
+      guestsAdult: state.guestsAdult,
+      guestsChild: state.guestsChild,
+      guestsInfant: state.guestsInfant,
+    });
   }
 
   if (pt === 'stay_simple') {
@@ -3267,8 +3248,11 @@ function calculateTotal() {
   }
 
   if (pt === 'camp') {
-    const siteCount = state.selectedCampSites.length;
-    return plan.basePrice * siteCount * state.selectedNights;
+    // 2026-05-13: NisshoPricing.calculateCampPrice に委譲
+    return window.NisshoPricing.calculateCampPrice(plan, {
+      siteCount: state.selectedCampSites.length,
+      nights: state.selectedNights,
+    });
   }
 
   if (pt === 'day_all' || pt === 'day_slot') {
@@ -3282,30 +3266,17 @@ function calculateTotal() {
 
   if (pt === 'hourly') {
     if (plan.id === 'tennis_full') {
-      const normalPrice = state.isResident ? plan.residentPrice : plan.nonResidentPrice;
-      // 平日割価格: 料金表の固定値（半額→10円切上げ済み）。
-      // フィールドが無いプランには対応せず、フォールバックで Math.ceil(price*0.5/10)*10 を使う。
-      const discountPrice = state.isResident
-        ? (plan.weekdayDiscountResident != null
-            ? plan.weekdayDiscountResident
-            : Math.ceil(normalPrice * 0.5 / 10) * 10)
-        : (plan.weekdayDiscountNonResident != null
-            ? plan.weekdayDiscountNonResident
-            : Math.ceil(normalPrice * 0.5 / 10) * 10);
-      // 空間貸し運用（上村確認・2026-04-12）: 半面も一面も人数確認なし。
-      // 料金表の単価そのままを 1 時間分として計上する。
+      // 2026-05-13: NisshoPricing.calculateHourlyTennisPrice に委譲（Jest テスト対象）
       const courtCount = (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0)
         ? state.selectedRoomIds.length : 1;
-      let total = 0;
-      state.selectedHours.forEach(h => {
-        const isDiscounted = plan.weekdayDiscount && isTennisWeekdayDiscountSlot(state.selectedDate, h);
-        total += (isDiscounted ? discountPrice : normalPrice) * courtCount;
+      const selectedDate = state.selectedDate;
+      return window.NisshoPricing.calculateHourlyTennisPrice(plan, {
+        hours: state.selectedHours || [],
+        isResident: !!state.isResident,
+        useLighting: !!state.useLighting,
+        courtCount: courtCount,
+        isWeekdayDiscountHour: function (h) { return isTennisWeekdayDiscountSlot(selectedDate, h); },
       });
-      // 夜間照明（任意・コート単位で 1 時間あたり定額・平日割対象外）
-      if (state.useLighting && plan.lightingPrice) {
-        total += plan.lightingPrice * state.selectedHours.length * courtCount;
-      }
-      return total;
     }
     return plan.basePrice * state.selectedHours.length;
   }
@@ -3911,18 +3882,9 @@ function getTodayStr() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr + 'T00:00:00');
-  const days = ['日', '月', '火', '水', '木', '金', '土'];
-  return (d.getMonth() + 1) + '月' + d.getDate() + '日(' + days[d.getDay()] + ')';
-}
-
-function addDays(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
+// formatDate / addDays は assets/js/pricing.js から再 export
+const formatDate = window.NisshoPricing.formatDate;
+const addDays = window.NisshoPricing.addDays;
 
 /* ================================================================
    INIT

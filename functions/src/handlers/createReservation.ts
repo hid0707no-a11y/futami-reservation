@@ -15,6 +15,7 @@ import { setCors, checkOrigin } from '../lib/cors';
 import { checkRateLimit } from '../lib/rateLimit';
 import { audit as auditLog, logMailFailure, logIdempotencyFailure } from '../lib/logger';
 import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../lib/format';
+import { detectDisplayIdCollision } from '../lib/displayId';
 import { MailData, sendConfirmationEmail, sendStaffNotification } from '../lib/mail';
 import { validateReservationBody } from '../lib/validation';
 import { VALID_ROOM_IDS } from '../constants';
@@ -118,6 +119,16 @@ export const createReservation = onRequest(
           };
           sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: tennisResult.id, type: 'tennis' }, req));
           sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: tennisResult.id, type: 'tennis', kind: 'new' }, req));
+          // 2026-05-13: displayId 衝突検知（ランタイム警告のみ・本予約は内部IDで一意確保）
+          detectDisplayIdCollision(db, tennisResult.displayId, tennisResult.id).then(c => {
+            if (c.collided) {
+              console.warn(JSON.stringify({
+                severity: 'WARNING', audit: true, action: 'displayId.collision',
+                displayId: tennisResult.displayId, newId: tennisResult.id, existingIds: c.existingIds,
+                type: 'tennis',
+              }));
+            }
+          }).catch(() => { /* 衝突検知失敗は本予約に影響させない */ });
           auditLog('reservation.create', { reservationId: tennisResult.id, displayId: tennisResult.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'tennis' }, req);
           const tennisResp = { reservationId: tennisResult.displayId, internalId: tennisResult.id, status: 'confirmed', isTennis: true };
           saveIdempotencyKey(req, tennisResp).catch(logIdempotencyFailure(tennisResult.id, req));
@@ -189,6 +200,15 @@ export const createReservation = onRequest(
           };
           sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: 'futami_sauna', seats }, req));
           sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: 'futami_sauna', kind: 'new' }, req));
+          detectDisplayIdCollision(db, result.displayId, result.id).then(c => {
+            if (c.collided) {
+              console.warn(JSON.stringify({
+                severity: 'WARNING', audit: true, action: 'displayId.collision',
+                displayId: result.displayId, newId: result.id, existingIds: c.existingIds,
+                type: 'futami_sauna',
+              }));
+            }
+          }).catch(() => { /* noop */ });
           auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'futami_sauna', seats }, req);
           const futamiResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', isFutamiDay: true, seats };
           saveIdempotencyKey(req, futamiResp).catch(logIdempotencyFailure(result.id, req));
@@ -264,6 +284,15 @@ export const createReservation = onRequest(
       };
       sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: isCamp ? 'camp' : 'normal' }, req));
       sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: isCamp ? 'camp' : 'normal', kind: 'new' }, req));
+      detectDisplayIdCollision(db, result.displayId, result.id).then(c => {
+        if (c.collided) {
+          console.warn(JSON.stringify({
+            severity: 'WARNING', audit: true, action: 'displayId.collision',
+            displayId: result.displayId, newId: result.id, existingIds: c.existingIds,
+            type: isCamp ? 'camp' : 'normal',
+          }));
+        }
+      }).catch(() => { /* noop */ });
       auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: isCamp ? 'camp' : 'normal' }, req);
       const normalResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', ...(isCamp ? { isCamp: true, sites: roomIds.length } : {}) };
       saveIdempotencyKey(req, normalResp).catch(logIdempotencyFailure(result.id, req));

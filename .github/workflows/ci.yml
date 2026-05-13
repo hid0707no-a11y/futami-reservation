@@ -1,0 +1,81 @@
+name: CI
+
+# 2026-05-13 新設（ハーネスエンジニアリング監査の指摘対応）。
+# pre-commit hook はローカルのみで `--no-verify` バイパスや別端末（Win）から push
+# された場合に素通りするため、CI でも同じ検査を走らせる多層防御。
+#
+# 走らせる検査：
+#  1. functions/ の TypeScript ビルド（tsc）
+#  2. functions/ の jest ユニットテスト（integration は emulator 必要のためスキップ）
+#  3. scripts/verify_pricing.js（料金表 SSOT 照合）
+#  4. HTML inline script の構文チェック（hooks/pre-commit と同等のロジック）
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: TypeScript build
+        working-directory: functions
+        run: npm run build
+
+      - name: Run jest unit tests
+        working-directory: functions
+        run: npm test
+        # integration tests are skipped: they require Firestore Emulator (port 8080)
+        # which is not provisioned in this CI step. Run locally with:
+        #   npm run test:integration
+
+      - name: Verify pricing SSOT
+        run: node scripts/verify_pricing.js
+
+      - name: HTML inline script syntax check
+        run: |
+          node -e "
+            const fs = require('fs');
+            const files = ['index.html', 'staff.html', 'staff2.html', 'staff_tennis.html'];
+            let errors = 0;
+            files.forEach(f => {
+              const html = fs.readFileSync(f, 'utf8');
+              const re = /<script(?![^>]*\bsrc=)(?![^>]*\btype=\"module\")[^>]*>([\s\S]*?)<\/script>/g;
+              let m, i = 0;
+              while ((m = re.exec(html)) !== null) {
+                i++;
+                try { new Function(m[1]); }
+                catch (e) { console.error(f + ' script #' + i + ': ' + e.message); errors++; }
+              }
+            });
+            if (errors > 0) { console.error('Total errors: ' + errors); process.exit(1); }
+            console.log('All HTML inline scripts: syntax OK');
+          "
+
+      - name: Check for merge conflict markers
+        run: |
+          if grep -rnE '^(<{7}|={7}|>{7})( |$)' \
+              --include='*.html' --include='*.ts' --include='*.js' --include='*.md' \
+              --exclude-dir=node_modules --exclude-dir=lib .; then
+            echo "❌ Merge conflict markers found"
+            exit 1
+          fi
+          echo "✅ No merge conflict markers"
