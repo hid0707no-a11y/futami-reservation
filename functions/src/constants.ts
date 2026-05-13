@@ -55,11 +55,14 @@ export const VALID_ROOM_IDS = new Set<string>([
 // ─────────────────────────────────────────────
 // SHEET_HEADERS（Google Sheets 同期）
 // ─────────────────────────────────────────────
+// ★注意★ 本ファイルの SHEET_HEADERS は legacy 定義（コピー）。実際に sheetsSync.ts から
+// import されているのは functions/src/lib/sheets.ts の SHEET_HEADERS。列追加時は両方更新。
 // 列を追加・順序変更する場合は同時に SYNC_CLEAR_RANGE_RESERVATIONS / SYNC_CLEAR_RANGE_CANCELLED の
-// 列レンジ（A:Y）も更新する必要がある（25列 → 列が増えたら A:Z 等に拡張）。
+// 列レンジも更新する必要がある（A:Y → A:Z 等）。
 // 直近の変更履歴：
 //  - 2026-04-27: 郵便番号 / 住所 を追加（commit 856c194・25列）
 //  - 2026-05-05: clear範囲を A:Y に限定（運営の Z列以降のメモを保護）
+//  - 2026-05-13: 「予約番号」(displayId) を末尾に追加（26列・A:Z 拡張）
 export const SHEET_HEADERS = [
   '予約ID', '登録日時', 'ステータス', 'プランID', '部屋ID',
   '利用開始日', '利用終了日', '泊数', '時間帯',
@@ -67,11 +70,12 @@ export const SHEET_HEADERS = [
   '大人', '小学生', '未就学児', '利用予定人数(目安)',
   '合計金額', '照明料金', '平日割適用枠数',
   '市民区分', '予約経路', 'サウナオプション', '備考',
+  '予約番号', // 2026-05-13 追加（Z列）
 ] as const;
 
-// SHEET_HEADERS の長さに対応するスプシ列レンジ（25列なら A:Y）。
-// 列を増やす時は SHEET_HEADERS 拡張＋このレンジを A:Z 等に同期更新する。
-export const SHEET_LAST_COLUMN = 'Y';
+// SHEET_HEADERS の長さに対応するスプシ列レンジ（26列なら A:Z）。
+// 列を増やす時は SHEET_HEADERS 拡張＋このレンジを A:AA 等に同期更新する。
+export const SHEET_LAST_COLUMN = 'Z';
 export const SYNC_CLEAR_RANGE_RESERVATIONS = `reservations!A:${SHEET_LAST_COLUMN}`;
 export const SYNC_CLEAR_RANGE_CANCELLED = `cancelled!A:${SHEET_LAST_COLUMN}`;
 export const SYNC_CLEAR_RANGE_META = 'meta!A:B';

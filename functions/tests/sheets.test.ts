@@ -4,8 +4,8 @@
 import { rowToArray, reservationToRow, SHEET_HEADERS, ReservationRow } from '../src/lib/sheets';
 
 describe('SHEET_HEADERS', () => {
-  it('25列（A:Y）に固定されている（変更時は SYNC_CLEAR_RANGE_* も同期更新が必要）', () => {
-    expect(SHEET_HEADERS).toHaveLength(25);
+  it('26列（A:Z）に固定されている（変更時は SYNC_CLEAR_RANGE_* も同期更新が必要）', () => {
+    expect(SHEET_HEADERS).toHaveLength(26);
   });
 
   it('最初の5列はメタ情報', () => {
@@ -16,6 +16,10 @@ describe('SHEET_HEADERS', () => {
     const emailIdx = SHEET_HEADERS.indexOf('メール');
     expect(SHEET_HEADERS[emailIdx + 1]).toBe('郵便番号');
     expect(SHEET_HEADERS[emailIdx + 2]).toBe('住所');
+  });
+
+  it('予約番号は2026-05-13追加で末尾（Z列）に並ぶ', () => {
+    expect(SHEET_HEADERS[SHEET_HEADERS.length - 1]).toBe('予約番号');
   });
 });
 
@@ -47,12 +51,14 @@ describe('rowToArray', () => {
       createdBy: 'staff',
       saunaOptions: '',
       note: '備考テスト',
+      displayId: 'F-ABC123',
     };
     const arr = rowToArray(row);
-    expect(arr).toHaveLength(25);
+    expect(arr).toHaveLength(26);
     expect(arr[0]).toBe('abc123');
     expect(arr[2]).toBe('confirmed');
-    expect(arr[arr.length - 1]).toBe('備考テスト');
+    expect(arr[arr.length - 1]).toBe('F-ABC123'); // 末尾は displayId
+    expect(arr[arr.length - 2]).toBe('備考テスト'); // 備考は末尾-1
   });
 });
 
@@ -128,5 +134,22 @@ describe('reservationToRow', () => {
       note: longNote,
     });
     expect(row.note.length).toBe(500);
+  });
+
+  it('displayId が Firestore document に保存されていればそれを使う', () => {
+    const row = reservationToRow('abc123', {
+      customer: { name: 'X', phone: '0' },
+      slots: [],
+      displayId: 'F-CUSTOM',
+    });
+    expect(row.displayId).toBe('F-CUSTOM');
+  });
+
+  it('displayId 未保存の旧予約は doc.id から fallback 生成（backfill 前の保険）', () => {
+    const row = reservationToRow('abcdef123456', {
+      customer: { name: 'X', phone: '0' },
+      slots: [],
+    });
+    expect(row.displayId).toBe('F-ABCDEF');
   });
 });

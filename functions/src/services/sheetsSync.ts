@@ -4,10 +4,12 @@
 // 旧 index.ts:1094-1173 を移植。dailySyncToSheets / triggerSyncToSheets の両 onRequest/onSchedule から呼ばれる。
 //
 // 同期先：
-//   reservations タブ（A:Y） … confirmed 全件
-//   cancelled タブ（A:Y）   … cancelled 全件
+//   reservations タブ（A:Z） … confirmed 全件（2026-05-13 列追加で Y→Z 拡張）
+//   cancelled タブ（A:Z）   … cancelled 全件
 //   meta タブ（A:B）        … 最終同期時刻 + 件数
-//   ※ A:Y 限定で clear するので運営の Z列以降のメモは温存される（2026-05-05 Phase 0 修正済）
+//   ※ A:Z 限定で clear するので運営の AA列以降のメモは温存される
+//   ※ 2026-05-05: A:Y で限定運用開始（Z以降をメモ列として温存）
+//   ※ 2026-05-13: 「予約番号」列を Z に追加。運営にメモ列を AA 以降に退避してもらう必要あり
 
 import * as admin from 'firebase-admin';
 import { google } from 'googleapis';
@@ -15,8 +17,8 @@ import { ReservationRow, SHEET_HEADERS, rowToArray, reservationToRow } from '../
 
 const SHEETS_SYNC_ID = process.env.SHEETS_SYNC_ID || '';
 
-const SYNC_CLEAR_RANGE_RESERVATIONS = 'reservations!A:Y';
-const SYNC_CLEAR_RANGE_CANCELLED = 'cancelled!A:Y';
+const SYNC_CLEAR_RANGE_RESERVATIONS = 'reservations!A:Z';
+const SYNC_CLEAR_RANGE_CANCELLED = 'cancelled!A:Z';
 const SYNC_CLEAR_RANGE_META = 'meta!A:B';
 
 export async function syncReservationsToSheets(
