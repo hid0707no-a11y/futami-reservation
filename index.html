@@ -1029,6 +1029,16 @@ body {
 <!-- 価格計算 純粋関数ライブラリ（2026-05-13 抽出・Jest テスト対象） -->
 <script src="assets/js/pricing.js"></script>
 <script>
+// ===== pricing.js からの再 export（SSOT一本化・2026-05-13）=====
+// 旧 index.html 内 inline 定義から assets/js/pricing.js へ抽出済み。
+// 散在を避けて1箇所に集約。以降の関数呼出は実行時にこれらを参照する。
+const NisshoPricing = window.NisshoPricing;
+const expandStaySlots = NisshoPricing.expandStaySlots;
+const addDays = NisshoPricing.addDays;
+const addMinutes = NisshoPricing.addMinutes;
+const formatDate = NisshoPricing.formatDate;
+</script>
+<script>
 /* ================================================================
    ROOMS + PLANS データ構造（staff.html と統一）
    - ROOMS = 物理リソース（親SKU）
@@ -2962,8 +2972,7 @@ function stepNights(delta) {
 
 // 宿泊N泊目が確保するスロットを展開する
 // 例: 2泊（4/1開始）→ [{date:'2026-04-01',hour:16},...,{date:'2026-04-02',hour:9},{date:'2026-04-02',hour:16},...,{date:'2026-04-03',hour:9}]
-// expandStaySlots は assets/js/pricing.js から再 export（2026-05-13 jest テスト対象化）
-const expandStaySlots = window.NisshoPricing.expandStaySlots;
+// expandStaySlots は <head> 直後の集約ブロックで再 export 済（2026-05-13）
 
 // 営業カレンダー（API連動）
 var BUSINESS_CALENDAR = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
@@ -3167,8 +3176,7 @@ function isTennisSlotFree(courtId, date, timeStr) {
   return !TENNIS_SLOTS.has(`${courtId}|${date}|${timeStr}`);
 }
 
-// addMinutes は assets/js/pricing.js から再 export
-const addMinutes = window.NisshoPricing.addMinutes;
+// addMinutes は集約ブロックで再 export 済
 
 function toggleHour(hour, el, avail) {
   if (!avail) return;
@@ -3882,9 +3890,7 @@ function getTodayStr() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-// formatDate / addDays は assets/js/pricing.js から再 export
-const formatDate = window.NisshoPricing.formatDate;
-const addDays = window.NisshoPricing.addDays;
+// formatDate / addDays は集約ブロックで再 export 済
 
 /* ================================================================
    INIT

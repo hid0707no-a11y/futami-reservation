@@ -24,6 +24,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # SHEET_HEADERS 変更検出のため履歴を全部 fetch（shallow だと git diff HEAD~1 が動かない）
+          fetch-depth: 0
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -79,3 +82,65 @@ jobs:
             exit 1
           fi
           echo "✅ No merge conflict markers"
+
+      - name: Credential leak scan
+        # pre-commit hook §4 と同等のチェック。--no-verify バイパス対策。
+        # Firebase apiKey（クライアント公開OK）は除外リストで誤検知防止。
+        run: |
+          set +e
+          MATCHES=$(grep -rnE \
+            -e "'[a-f0-9]{64}'" \
+            -e "sk-[A-Za-z0-9_-]{40,}" \
+            -e "sk_live_[A-Za-z0-9]{20,}" \
+            -e "rk_live_[A-Za-z0-9]{20,}" \
+            -e "ghp_[A-Za-z0-9]{30,}" \
+            -e "github_pat_[A-Za-z0-9_]{50,}" \
+            -e "sk-ant-[A-Za-z0-9_-]{50,}" \
+            -e "Bearer [A-Za-z0-9_.-]{40,}" \
+            --include='*.html' --include='*.js' --include='*.ts' \
+            --include='*.md' --include='*.py' --include='*.sh' \
+            --include='*.json' --include='*.yaml' --include='*.yml' \
+            --exclude-dir=node_modules --exclude-dir=lib --exclude-dir=.git . \
+            2>/dev/null \
+            | grep -v "AIzaSyDS4b-ukVqd1iiMo7DeRIB2tzKwrt-or10")
+          if [ -n "$MATCHES" ]; then
+            echo "❌ Possible credential leak detected:"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "✅ No credential leak patterns detected"
+
+      - name: SHEET_HEADERS change requires [sheet-schema] commit tag
+        # pre-commit hook §5 と同等。SHEET_HEADERS/SYNC_CLEAR_RANGE/SHEET_LAST_COLUMN を
+        # 変更しているのに最新 commit メッセージに [sheet-schema] タグがない場合は fail。
+        # PR では HEAD のメッセージを、push では event の commits を見る。
+        run: |
+          set +e
+          # PR の場合は base..HEAD、push の場合は最新 commit を対象
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            DIFF_RANGE="${{ github.event.pull_request.base.sha }}..HEAD"
+          else
+            DIFF_RANGE="HEAD~1..HEAD"
+          fi
+          CHANGED=$(git diff --name-only "$DIFF_RANGE" 2>/dev/null || true)
+          SCHEMA_FILES="functions/src/lib/sheets.ts functions/src/services/sheetsSync.ts functions/src/index.ts functions/src/constants.ts"
+          HIT=0
+          for f in $SCHEMA_FILES; do
+            if echo "$CHANGED" | grep -qE "(^|/)$(basename $f)\$"; then
+              if git diff "$DIFF_RANGE" -- "$f" 2>/dev/null | grep -qE "^[+-].*(SHEET_HEADERS|SYNC_CLEAR_RANGE|SHEET_LAST_COLUMN)"; then
+                HIT=1
+                break
+              fi
+            fi
+          done
+          if [ "$HIT" -eq 1 ]; then
+            LAST_MSG=$(git log -1 --pretty=%B)
+            if ! echo "$LAST_MSG" | grep -q "\[sheet-schema\]"; then
+              echo "❌ SHEET_HEADERS/SYNC_CLEAR_RANGE/SHEET_LAST_COLUMN を変更しているのに commit message に [sheet-schema] タグがありません"
+              echo "   詳細: 00_projects/futami_reservation/CLAUDE.md ★5 ルール"
+              exit 1
+            fi
+            echo "✅ [sheet-schema] タグ確認OK"
+          else
+            echo "✅ SHEET_HEADERS 変更なし"
+          fi

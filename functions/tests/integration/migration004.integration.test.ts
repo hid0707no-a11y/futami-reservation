@@ -95,7 +95,7 @@ describe('migration 004_backfill_display_id_20260513', () => {
     expect(after.docs.every(d => !!d.data().displayId)).toBe(true);
 
     const result = await down(db, { dryRun: false });
-    expect(result.removed).toBe(4);
+    expect((result as { removed: number }).removed).toBe(4);
 
     const final = await db.collection('reservations').get();
     final.forEach(d => {
@@ -103,12 +103,14 @@ describe('migration 004_backfill_display_id_20260513', () => {
     });
   }, 15000);
 
-  it('down() dry-run は実書込みなし（件数のみ返す）', async () => {
+  it('down() dry-run は実書込みなし（wouldRemove で件数のみ返す）', async () => {
     await seedReservations(2, false);
     await up(db, { dryRun: false });
 
     const result = await down(db, { dryRun: true });
-    expect(result.removed).toBe(2);
+    // 2026-05-13: dry-run は wouldRemove フィールドで返す（旧版の removed と誤読を防止）
+    expect((result as { wouldRemove: number }).wouldRemove).toBe(2);
+    expect((result as any).removed).toBeUndefined();
 
     const final = await db.collection('reservations').get();
     expect(final.docs.every(d => !!d.data().displayId)).toBe(true);

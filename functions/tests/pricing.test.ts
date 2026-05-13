@@ -48,8 +48,20 @@ describe('addMinutes', () => {
     expect(NisshoPricing.addMinutes('0930', 30)).toBe('1000');
   });
 
-  it('複数時繰り上がり', () => {
-    expect(NisshoPricing.addMinutes('2330', 60)).toBe('2430');
+  it('24時跨ぎは mod 24 正規化（旧版は "2430" 桁あふれを返していた・2026-05-13 修正）', () => {
+    expect(NisshoPricing.addMinutes('2330', 60)).toBe('0030');
+    expect(NisshoPricing.addMinutes('2330', 30)).toBe('0000');
+    expect(NisshoPricing.addMinutes('2300', 120)).toBe('0100');
+  });
+
+  it('現営業時間（8:00-22:00 + 30分枠）の範囲では 24時跨ぎは発生しない（実害ゼロ確認）', () => {
+    // テニスは 8:00-22:00 範囲。最大 +30 分でも 22:30 で収まる
+    expect(NisshoPricing.addMinutes('2200', 30)).toBe('2230');
+    expect(NisshoPricing.addMinutes('2130', 30)).toBe('2200');
+  });
+
+  it('負の加算（過去時刻）も正規化', () => {
+    expect(NisshoPricing.addMinutes('0030', -60)).toBe('2330');
   });
 });
 

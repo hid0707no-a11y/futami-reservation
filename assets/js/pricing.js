@@ -11,13 +11,21 @@
 //
 // テスト：functions/tests/pricing.test.ts（jest jsdom 不要・純粋関数のため）
 
+// 2026-05-13: root 解決を globalThis 優先に（strict mode / ESM 化耐性）
+// 旧版は `this` フォールバックだったが strict mode で undefined になり、将来
+// `<script type="module">` 化したら壊れる罠だった。
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
     module.exports = factory();
   } else {
     root.NisshoPricing = factory();
   }
-})(typeof self !== 'undefined' ? self : this, function () {
+})(
+  typeof globalThis !== 'undefined' ? globalThis
+    : typeof self !== 'undefined' ? self
+    : typeof window !== 'undefined' ? window
+    : this,
+  function () {
 
   // ─────────────────────────────────────────
   // 日付・時刻ヘルパ
@@ -32,11 +40,22 @@
       + String(d.getDate()).padStart(2, '0');
   }
 
-  /** "HHMM" 形式の時刻に分を加算して "HHMM" を返す。 */
+  /**
+   * "HHMM" 形式の時刻に分を加算して "HHMM" を返す。
+   *
+   * 2026-05-13: HH の 24時超え (例 '2430') を出さないよう mod 24 正規化する。
+   * 旧版は 24:30 → '2430' のように桁あふれを返していた。テニス営業時間 8-22 では
+   * 実害ゼロだが、将来営業時間が深夜帯に拡張された瞬間に slot key 整合が崩れる
+   * 罠だったため事前修正。日跨ぎ判定は呼出側で別途行う（呼出側が同じ日付の
+   * slot key を扱う前提なので、本関数では 24h で wrap するだけ）。
+   */
   function addMinutes(timeStr, mins) {
     const h = parseInt(timeStr.slice(0, 2), 10);
     const m = parseInt(timeStr.slice(2), 10);
-    const total = h * 60 + m + mins;
+    let total = h * 60 + m + mins;
+    // 24h で wrap（負の値も正規化）
+    const dayMin = 24 * 60;
+    total = ((total % dayMin) + dayMin) % dayMin;
     const nh = Math.floor(total / 60);
     const nm = total % 60;
     return String(nh).padStart(2, '0') + String(nm).padStart(2, '0');

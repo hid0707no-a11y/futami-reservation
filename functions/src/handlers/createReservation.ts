@@ -16,11 +16,56 @@ import { checkRateLimit } from '../lib/rateLimit';
 import { audit as auditLog, logMailFailure, logIdempotencyFailure } from '../lib/logger';
 import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../lib/format';
 import { detectDisplayIdCollision } from '../lib/displayId';
-import { MailData, sendConfirmationEmail, sendStaffNotification } from '../lib/mail';
+import { MailData, sendConfirmationEmail, sendStaffNotification, sendMonitorAlert } from '../lib/mail';
 import { validateReservationBody } from '../lib/validation';
 import { VALID_ROOM_IDS } from '../constants';
 import { getFutamiDays } from '../lib/futamiDays';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
+
+/**
+ * displayId 衝突時の運用エスカレーション。
+ *
+ * 2026-05-13 強化（コードレビュー 🔴 指摘#2）。
+ * 旧版は console.warn のみで上村さん（運営）に届かなかった。「F-XXXXXX で2件存在」
+ * の状態は電話照会で判別不能になるため、severity=CRITICAL ログ + SMTP アラートで
+ * 即時手動リネーム指示が出せるようにする。
+ *
+ * 失敗（メール送信エラー等）は console.error に握り、本予約成功には影響させない。
+ */
+function escalateDisplayIdCollision(
+  displayId: string,
+  newId: string,
+  existingIds: string[],
+  reservationType: string,
+): void {
+  console.error(JSON.stringify({
+    severity: 'CRITICAL',
+    audit: true,
+    action: 'displayId.collision',
+    displayId,
+    newId,
+    existingIds,
+    type: reservationType,
+    runbook: 'docs/RUNBOOK.md §6 Firestore データ復旧 — displayId 手動リネーム',
+  }));
+  const body = [
+    `[CRITICAL] displayId 衝突が発生しました。`,
+    ``,
+    `displayId: ${displayId}`,
+    `新規予約ID: ${newId}`,
+    `既存予約ID: ${existingIds.join(', ')}`,
+    `予約タイプ: ${reservationType}`,
+    ``,
+    `対応：Firestore で既存予約のいずれかの displayId を手動で別 ID に書き換え`,
+    `（例：'F-XXXXXX' の末尾に文字追加 → 'F-XXXXXX-2'）。`,
+    `内部 Auto ID は一意なので機能的影響なし。運営の電話照会対応のためのみの対応。`,
+    ``,
+    `参照: docs/RUNBOOK.md §6 Firestore データ復旧`,
+  ].join('\n');
+  sendMonitorAlert('[ふたみ予約] displayId 衝突 (要手動対応)', body).catch(e => {
+    console.error('[collision] sendMonitorAlert failed:', e?.message || e);
+  });
+}
 
 /**
  * roomIds が完全にテニスコート（court_*）のみで構成されているか判定する純粋関数。
@@ -121,14 +166,8 @@ export const createReservation = onRequest(
           sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: tennisResult.id, type: 'tennis', kind: 'new' }, req));
           // 2026-05-13: displayId 衝突検知（ランタイム警告のみ・本予約は内部IDで一意確保）
           detectDisplayIdCollision(db, tennisResult.displayId, tennisResult.id).then(c => {
-            if (c.collided) {
-              console.warn(JSON.stringify({
-                severity: 'WARNING', audit: true, action: 'displayId.collision',
-                displayId: tennisResult.displayId, newId: tennisResult.id, existingIds: c.existingIds,
-                type: 'tennis',
-              }));
-            }
-          }).catch(() => { /* 衝突検知失敗は本予約に影響させない */ });
+            if (c.collided) escalateDisplayIdCollision(tennisResult.displayId, tennisResult.id, c.existingIds, 'tennis');
+          }).catch(e => { console.error('[collision-check] failed:', e?.message || e); });
           auditLog('reservation.create', { reservationId: tennisResult.id, displayId: tennisResult.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'tennis' }, req);
           const tennisResp = { reservationId: tennisResult.displayId, internalId: tennisResult.id, status: 'confirmed', isTennis: true };
           saveIdempotencyKey(req, tennisResp).catch(logIdempotencyFailure(tennisResult.id, req));
@@ -201,14 +240,8 @@ export const createReservation = onRequest(
           sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: 'futami_sauna', seats }, req));
           sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: 'futami_sauna', kind: 'new' }, req));
           detectDisplayIdCollision(db, result.displayId, result.id).then(c => {
-            if (c.collided) {
-              console.warn(JSON.stringify({
-                severity: 'WARNING', audit: true, action: 'displayId.collision',
-                displayId: result.displayId, newId: result.id, existingIds: c.existingIds,
-                type: 'futami_sauna',
-              }));
-            }
-          }).catch(() => { /* noop */ });
+            if (c.collided) escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, 'futami_sauna');
+          }).catch(e => { console.error('[collision-check] failed:', e?.message || e); });
           auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'futami_sauna', seats }, req);
           const futamiResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', isFutamiDay: true, seats };
           saveIdempotencyKey(req, futamiResp).catch(logIdempotencyFailure(result.id, req));
@@ -285,14 +318,8 @@ export const createReservation = onRequest(
       sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: isCamp ? 'camp' : 'normal' }, req));
       sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: isCamp ? 'camp' : 'normal', kind: 'new' }, req));
       detectDisplayIdCollision(db, result.displayId, result.id).then(c => {
-        if (c.collided) {
-          console.warn(JSON.stringify({
-            severity: 'WARNING', audit: true, action: 'displayId.collision',
-            displayId: result.displayId, newId: result.id, existingIds: c.existingIds,
-            type: isCamp ? 'camp' : 'normal',
-          }));
-        }
-      }).catch(() => { /* noop */ });
+        if (c.collided) escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, isCamp ? 'camp' : 'normal');
+      }).catch(e => { console.error('[collision-check] failed:', e?.message || e); });
       auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: isCamp ? 'camp' : 'normal' }, req);
       const normalResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', ...(isCamp ? { isCamp: true, sites: roomIds.length } : {}) };
       saveIdempotencyKey(req, normalResp).catch(logIdempotencyFailure(result.id, req));

@@ -42,16 +42,25 @@ export async function up(db: admin.firestore.Firestore, opts: { dryRun: boolean 
   return { total: snap.size, alreadyHas, toBackfill };
 }
 
-/** displayId フィールドを全 reservations から削除（FieldValue.delete）。基本的に実行不要。 */
+/**
+ * displayId フィールドを全 reservations から削除（FieldValue.delete）。基本的に実行不要。
+ *
+ * 戻り値:
+ *  - dryRun=false: { removed: 実削除件数 }
+ *  - dryRun=true:  { wouldRemove: 削除予定件数 }  ※実書込みは発生していない
+ *
+ * 2026-05-13: 旧版は dry-run でも `removed++` していたため「実削除」と誤読される
+ * 危険があった。命名を分けて明確化（コードレビュー指摘）。
+ */
 export async function down(db: admin.firestore.Firestore, opts: { dryRun: boolean }) {
   const snap = await db.collection('reservations').get();
-  let removed = 0;
+  let count = 0;
   for (const doc of snap.docs) {
     if (!doc.data().displayId) continue;
     if (!opts.dryRun) {
       await doc.ref.update({ displayId: admin.firestore.FieldValue.delete() });
     }
-    removed++;
+    count++;
   }
-  return { removed };
+  return opts.dryRun ? { wouldRemove: count } : { removed: count };
 }

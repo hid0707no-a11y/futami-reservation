@@ -188,6 +188,19 @@ run('平日割の実装確認', () => {
   const combined = html + '\n' + pricingJs;
   const hasFixedFields = /weekdayDiscountResident:\s*\d+/.test(html)
     && /weekdayDiscountNonResident:\s*\d+/.test(html);
+  // ★pricing.js 単独で fallback ロジックが存在することを必須化（2026-05-13 追加）
+  // ※ index.html へ間違って戻したリグレッションを検知できる
+  const usesFixedFieldsInPricing = /plan\.weekdayDiscountResident/.test(pricingJs)
+    && /plan\.weekdayDiscountNonResident/.test(pricingJs);
+  const hasFallbackInPricing = /Math\.ceil\(\s*normalPrice\s*\*\s*0\.5\s*\/\s*10\s*\)\s*\*\s*10/.test(pricingJs);
+  if (!usesFixedFieldsInPricing) {
+    console.error('  ❌ pricing.js が plan.weekdayDiscountResident/NonResident を参照していない');
+    return false;
+  }
+  if (!hasFallbackInPricing) {
+    console.error('  ❌ pricing.js に Math.ceil(normalPrice*0.5/10)*10 のフォールバックがない');
+    return false;
+  }
   const usesFixedFields = /plan\.weekdayDiscountResident/.test(combined)
     && /plan\.weekdayDiscountNonResident/.test(combined);
   // フォールバックロジックも検証（範囲外の為の保険）

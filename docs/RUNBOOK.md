@@ -187,6 +187,21 @@ gcloud firestore fields ttls list --project=futami-yoyaku-492607
 
 これによりコレクションの無限膨張が防止される。Firestore は `expireAt` < now のドキュメントを 24h 以内に自動削除する。
 
+### ⚠️ 有効化直後の本番影響（2026-05-13 実測ベース）
+
+TTL Policy を**初めて**有効化すると、過去に書き込まれたドキュメントが Firestore の次回 sweep（最大24h）で**一斉削除**される。実測：
+
+| コレクション | TTL | 過去蓄積 | 初回 sweep 後 |
+|---|---|---|---|
+| `idempotency_keys` | 24h | 直近24h 内の冪等性キー | 24h 以前のキーは全削除（実害なし：本来 24h で破棄予定だった） |
+| `rate_limits` | 2分 | 直近2分内のレート制限バケット | 2分以前のバケットは全削除（実害なし：すでに無効） |
+
+**Cloud Functions 動作中の影響なし**を確認。これらは「すでに有効期限を過ぎた」レコードのため、削除されても機能に影響しない。
+
+### TTL Policy の後退検知
+
+`staffHealthMonitor` （毎朝08:30 onSchedule）に TTL state チェックを組み込み予定（次スプリント）。それまでは月1回手動で `gcloud firestore fields ttls list` を実行し ACTIVE 状態を確認すること。
+
 ## 12. 過去の障害履歴
 
 | 日付 | 内容 | 復旧 |
