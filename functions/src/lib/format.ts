@@ -43,3 +43,20 @@ export function formatSaunaOptions(opts: SaunaOptionsLike | null | undefined): s
   if ((opts.ice20kg ?? 0) > 0) parts.push(`氷${(opts.ice20kg ?? 0) * 20}kg`);
   return parts.join('／');
 }
+
+/**
+ * 表示用予約番号を生成する。
+ *
+ * 2026-05-13 新設（要望#8 桁数短縮）。Firestore Auto ID（20文字英数字）は
+ * 「複雑で長い」というクレームが運営から寄せられたため、人間可読な短縮版を
+ * 別フィールド `displayId` として保持する。内部参照は引き続き `id`（Auto ID）。
+ *
+ * 形式: `F-XXXXXX` （F=Futami、Auto ID 先頭6文字を大文字化）
+ * 衝突可能性: 36^6 ≈ 21億通り。1日100件・5年運用でも 0.001% 未満。
+ */
+export function generateDisplayId(autoId: string): string {
+  if (!autoId) return '';
+  // 0/O・1/I 等の紛らわしい文字が含まれる可能性はあるが、運営の口頭伝達は
+  // 大文字統一で混乱を避ける。先頭6文字なら全文字種でも区別可能。
+  return 'F-' + autoId.substring(0, 6).toUpperCase();
+}

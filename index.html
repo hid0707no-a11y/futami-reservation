@@ -1055,11 +1055,11 @@ const ROOMS = [
   { id: 'camp_8', name: 'キャンプ区画⑧', fullName: 'キャンプ場 区画⑧', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
   { id: 'lodge_a', name: 'ロッジA', fullName: 'ロッジA', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
   { id: 'lodge_b', name: 'ロッジB', fullName: 'ロッジB', building: 'アウトドア', icon: '\u{1F3D5}\uFE0F', capacity: 6 },
-  { id: 'court_1', name: 'コート1', fullName: 'テニスコート1', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
-  { id: 'court_2', name: 'コート2', fullName: 'テニスコート2', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
-  { id: 'court_3', name: 'コート3', fullName: 'テニスコート3', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
-  { id: 'court_4', name: 'コート4', fullName: 'テニスコート4', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
-  { id: 'court_5', name: 'コート5', fullName: 'テニスコート5', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_1', name: 'コートA', fullName: 'テニスコートA', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_2', name: 'コートB', fullName: 'テニスコートB', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_3', name: 'コートC', fullName: 'テニスコートC', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_4', name: 'コートD', fullName: 'テニスコートD', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  { id: 'court_5', name: 'コートE', fullName: 'テニスコートE', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
   { id: 'midori', name: 'みどりの広場', fullName: 'みどりの広場', building: 'グラウンド', icon: '\u26BE', capacity: 150 },
   { id: 'sauna', name: 'サンセットサウナ', fullName: '貸切サウナ（120分/8名まで）', building: 'サウナ', icon: '\u{1F9D6}', capacity: 8 },
 ];
@@ -1077,6 +1077,7 @@ const PLANS = [
   // ===== ふれあいの館 - 宿泊 =====
   { id: 'stay_6', name: '宿泊（6畳）', planType: 'stay', category: 'stay',
     rooms: ['room_6_1','room_6_2','room_6_3','room_6_4'],
+    allowMultiSelect: true, // 6畳個室を複数まとめて予約可能
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     checkin: '16:00', checkout: '10:00',
     requireAddress: true, // 宿泊業の台帳記入義務
@@ -1085,7 +1086,7 @@ const PLANS = [
     extraAdult: 1580, extraChild: 1050, extraInfant: 790,
     priceDisplay: '2,310円/室/泊 +人数加算',
     badge: '宿泊', badgeColor: '#6366f1',
-    note: '3名まで / 中学生以上+1,580円, 小学生+1,050円, 小学生未満+790円' },
+    note: '1室3名まで / 中学生以上+1,580円, 小学生+1,050円, 小学生未満+790円。複数室を同時予約可能。' },
   { id: 'stay_27', name: '宿泊（27畳）', planType: 'stay', category: 'stay',
     rooms: ['room_27'],
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
@@ -1227,7 +1228,7 @@ const PLANS = [
     requireAddress: true,
     basePrice: 790, priceDisplay: '790円/区画/泊',
     badge: 'キャンプ', badgeColor: '#059669',
-    extras: [{ id: 'tent', name: 'テント追加', price: 50, unit: '1張' }] },
+    extras: [] },
 
   // ===== ロッジ =====
   { id: 'lodge_stay', name: 'ロッジ宿泊', planType: 'stay_simple', category: 'outdoor',
@@ -1250,6 +1251,7 @@ const PLANS = [
   // 平日割は 10 円単位切上げ（630 / 2 = 315 → 320）、料金表の数値を固定値で保持
   { id: 'tennis_full', name: 'テニスコート（一面貸切）', planType: 'hourly', category: 'sport',
     rooms: ['court_1','court_2','court_3','court_4','court_5'],
+    allowMultiSelect: true, // 複数コートを同時予約可能
     slots: 'hourly',
     hourlyRange: { start: 8, end: 22 },
     basePrice: 630,
@@ -1263,25 +1265,6 @@ const PLANS = [
     guestEstimateMax: 10, // 利用人数目安の上限（行政報告用・料金には影響しない）
     badge: '一面貸切', badgeColor: '#0ea5e9',
     note: '平日 8:30〜17:00 は市民 320 円 / 市外 380 円（土日・祝日・大会日は対象外／2026-2027年の祝日は自動判定）／夜間照明は任意（1時間 630円）' },
-
-  // 半面練習用: 市民 240円 / 市外 280円（1人/1時間）
-  // 平日割は 10 円単位切上げ（もともと 120/140 で 10 円境界ぴったり）
-  { id: 'tennis_half', name: 'テニスコート（半面・練習用）', planType: 'hourly', category: 'sport',
-    rooms: ['court_1','court_2','court_3','court_4','court_5'],
-    slots: 'hourly',
-    hourlyRange: { start: 8, end: 22 },
-    basePrice: 240,
-    residentPrice: 240, nonResidentPrice: 280,
-    priceUnit: '人/時',
-    priceDisplay: '市民240円/市外280円（1人/1時間）',
-    perPerson: true,
-    weekdayDiscount: true,
-    weekdayDiscountResident: 120,     // 料金表固定値
-    weekdayDiscountNonResident: 140,  // 料金表固定値
-    lightingPrice: 630, lightingLabel: '夜間照明（1時間 630円・コート単位）',
-    guestEstimateMax: 10, // 利用人数目安の上限（行政報告用）
-    badge: '半面練習', badgeColor: '#0284c7',
-    note: '練習用（1人1時間単価）／平日 8:30〜17:00 は市民 120 円 / 市外 140 円（土日・祝日・大会日は対象外／2026-2027年の祝日は自動判定）／夜間照明は任意（1時間 630円・コート単位）' },
 
   // ===== みどりの広場 =====
   { id: 'midori_am', name: 'みどりの広場 午前', planType: 'day_slot', category: 'sport',
@@ -1375,7 +1358,7 @@ const FACILITY_GROUPS = [
   { id: 'fg_lodge', name: 'ロッジ', icon: '\u{1F3D5}\uFE0F', category: 'outdoor',
     plans: ['lodge_stay','lodge_day'] },
   { id: 'fg_tennis', name: 'テニスコート', icon: '\u{1F3BE}', category: 'sport',
-    plans: ['tennis_full', 'tennis_half'] },
+    plans: ['tennis_full'] },
   { id: 'fg_midori', name: 'みどりの広場', icon: '\u26BE', category: 'sport',
     plans: ['midori_am','midori_pm','midori_day','midori_eve'] },
   { id: 'fg_sauna', name: 'ふたみサンセットサウナ', icon: '\u{1F9D6}', category: 'sauna',
@@ -1392,6 +1375,7 @@ const state = {
   // 選択中の予約情報
   selectedPlan: null,
   selectedRoomId: null,
+  selectedRoomIds: [], // 複数選択対応（allowMultiSelect プラン用・single 選択時は [selectedRoomId] と同期）
   selectedDate: '',
   selectedNights: 1,
   // 宿泊用: 年齢区分別人数
@@ -1742,7 +1726,7 @@ function isTennisWeekdayDiscountSlot(dateStr, startKey) {
 }
 
 function getPlanDisplayPrice(plan) {
-  if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
+  if (plan.id === 'tennis_full') {
     return state.isResident ? plan.residentPrice : plan.nonResidentPrice;
   }
   if (plan.id.startsWith('midori')) {
@@ -1849,7 +1833,9 @@ function renderSearchResults() {
       const planName = isFutami ? item.plan.name + '（ふたみの日）' : item.plan.name;
       const priceDisp = isFutami ? '2,300円/人' : item.plan.priceDisplay;
       html += '    <div class="facility-name">' + planName + '</div>';
-      html += '    <div class="facility-meta">定員' + item.maxCap + '名</div>';
+      if (!item.plan.id.startsWith('tennis')) {
+        html += '    <div class="facility-meta">定員' + item.maxCap + '名</div>';
+      }
       html += '    <div class="facility-price">' + priceDisp + ' ' + availBadge(item.level) + '</div>';
       html += '  </div>';
       html += isFull ? '' : '  <div class="facility-arrow">&#8250;</div>';
@@ -1887,6 +1873,7 @@ function selectPlanFromSearch(planId) {
   // 空いている部屋を自動選択
   const available = getAvailableRooms(plan, state.selectedDate);
   state.selectedRoomId = available.length > 0 ? available[0] : plan.rooms[0];
+  state.selectedRoomIds = [state.selectedRoomId];
 
   showRoomBooking();
 }
@@ -2244,6 +2231,7 @@ function selectPlan(planId) {
   // 空いている部屋を自動選択
   const available = getAvailableRooms(plan, state.selectedDate);
   state.selectedRoomId = available.length > 0 ? available[0] : plan.rooms[0];
+  state.selectedRoomIds = [state.selectedRoomId];
 
   showRoomBooking();
 }
@@ -2268,9 +2256,15 @@ function showRoomBooking() {
   if (plan.id === 'midori_eve') state.useLighting = false; // midori は stepper を使うため toggle は常に false
 
   let html = '<div class="section-title">' + (room ? room.icon : '') + ' ' + plan.name + '</div>';
-  // キャンプは複数区画選択方式なので、特定の1区画名をサブヘッダに出さない
-  if (room && plan.planType !== 'camp') html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
-  else if (plan.planType === 'camp') html += '<div class="text-muted mb-16">キャンプ場（区画①〜⑧）</div>';
+  // キャンプ・複数選択プランは特定の1部屋/区画名をサブヘッダに出さない
+  if (plan.planType === 'camp') {
+    html += '<div class="text-muted mb-16">キャンプ場（区画①〜⑧）</div>';
+  } else if (plan.allowMultiSelect && plan.rooms.length > 1) {
+    const isTennis = plan.id.startsWith('tennis');
+    html += '<div class="text-muted mb-16">' + (isTennis ? 'テニスコート' : '6畳個室') + '（下で複数選択可）</div>';
+  } else if (room) {
+    html += '<div class="text-muted mb-16">' + room.fullName + '</div>';
+  }
 
   // 全室パック: 6部屋を一覧表示（選択不可・占有確認のみ）
   if (plan.requiresAllRooms) {
@@ -2293,20 +2287,37 @@ function showRoomBooking() {
   // 部屋が複数ある場合は選択UI（全室パック以外）
   else if (plan.rooms.length > 1 && plan.planType !== 'camp') {
     // キャンプは下の renderCampSitePicker で複数選択UIを出すのでここは出さない
+    const isTennis = plan.id.startsWith('tennis');
+    const isMulti = !!plan.allowMultiSelect;
+    const pickerLabel = isTennis
+      ? (isMulti ? 'コートを選択（複数選択可）' : 'コート選択')
+      : (isMulti ? '部屋を選択（複数選択可）' : '部屋を選択');
+    if (!Array.isArray(state.selectedRoomIds) || state.selectedRoomIds.length === 0) {
+      state.selectedRoomIds = state.selectedRoomId ? [state.selectedRoomId] : [];
+    }
     html += '<div class="card">';
-    html += '<div class="form-group"><label class="form-label">部屋を選択</label>';
+    html += '<div class="form-group"><label class="form-label">' + pickerLabel + '</label>';
+    if (isMulti) {
+      html += '<div style="font-size:13px;color:#6b7280;margin-bottom:8px;line-height:1.5">複数選択するとまとめて予約できます（' + (isTennis ? 'コート' : '部屋') + 'タップで追加/解除）。</div>';
+    }
     plan.rooms.forEach(rid => {
       const r = ROOMS.find(x => x.id === rid);
       if (!r) return;
-      const selected = rid === state.selectedRoomId ? ' selected' : '';
+      const selected = isMulti
+        ? (state.selectedRoomIds.includes(rid) ? ' selected' : '')
+        : (rid === state.selectedRoomId ? ' selected' : '');
       const avail = state.selectedDate ? isPlanAvailableForRoom(plan, rid, state.selectedDate) : true;
       const cls = avail ? '' : ' style="opacity:0.5"';
-      html += '<div class="room-card' + selected + '"' + cls + ' onclick="changeRoom(\'' + rid + '\')">';
-      html += '<div class="room-name">' + r.fullName + '</div>';
-      html += '<div class="room-detail">定員 ' + r.capacity + '名</div>';
+      const onclickFn = isMulti && avail ? 'toggleRoomMulti' : 'changeRoom';
+      html += '<div class="room-card' + selected + '"' + cls + ' onclick="' + onclickFn + '(\'' + rid + '\')">';
+      html += '<div class="room-name">' + r.fullName + (isMulti && selected ? ' ✓' : '') + '</div>';
+      if (!isTennis) html += '<div class="room-detail">定員 ' + r.capacity + '名</div>';
       if (state.selectedDate && !avail) html += '<div class="room-detail" style="color:var(--danger)">この日は予約済み</div>';
       html += '</div>';
     });
+    if (isMulti && state.selectedRoomIds.length > 1) {
+      html += '<div style="margin-top:8px;font-size:14px;color:#0f3460;font-weight:600">' + state.selectedRoomIds.length + (isTennis ? 'コート' : '室') + '選択中</div>';
+    }
     html += '</div></div>';
   }
 
@@ -2319,7 +2330,9 @@ function showRoomBooking() {
       html += '<div style="display:flex;align-items:center">';
       html += '<label class="toggle-switch"><input type="checkbox" ' + (state.isStudent ? 'checked' : '') + ' onchange="toggleStudent(this.checked)"><span class="toggle-slider"></span></label>';
       html += '<span class="toggle-status" id="student-status">' + (state.isStudent ? '学生' : '一般') + '</span>';
-      html += '</div></div></div>';
+      html += '</div></div>';
+      html += '<div style="margin-top:8px;font-size:13px;color:#6b7280;line-height:1.5">ONにすると学生料金が適用されます（市民¥1,580／市外¥1,890／日帰り日中も同様）。</div>';
+      html += '</div>';
     }
     // 利用人数目安（行政報告用・料金には影響しない・任意）
     // 指定管理者として伊予市に利用実績を報告するためのデータ収集。
@@ -2341,7 +2354,7 @@ function showRoomBooking() {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       html += '<div class="form-group" style="margin-top:14px">';
       html += '<label class="form-label">団体名（任意）</label>';
-      html += '<input type="text" id="group-name-input" maxlength="60" placeholder="例：愛媛松山ボーイズ" value="' + escGroup + '" oninput="state.groupName = this.value" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:1rem">';
+      html += '<input type="text" id="group-name-input" maxlength="60" placeholder="例：○○サークル" value="' + escGroup + '" oninput="state.groupName = this.value" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:1rem">';
       html += '</div>';
       html += '</div></div>';
     }
@@ -2585,6 +2598,24 @@ function showRoomBooking() {
 
 function changeRoom(roomId) {
   state.selectedRoomId = roomId;
+  state.selectedRoomIds = [roomId];
+  showRoomBooking();
+}
+
+// 複数選択モード（allowMultiSelect プラン）：部屋を toggle
+function toggleRoomMulti(roomId) {
+  if (!Array.isArray(state.selectedRoomIds)) state.selectedRoomIds = [];
+  const idx = state.selectedRoomIds.indexOf(roomId);
+  if (idx >= 0) {
+    // 最後の1つは削除させない（必ず1部屋以上選択）
+    if (state.selectedRoomIds.length > 1) {
+      state.selectedRoomIds.splice(idx, 1);
+    }
+  } else {
+    state.selectedRoomIds.push(roomId);
+  }
+  // selectedRoomId は配列の先頭と同期（既存ロジック互換）
+  state.selectedRoomId = state.selectedRoomIds[0] || null;
   showRoomBooking();
 }
 
@@ -3223,8 +3254,10 @@ function calculateTotal() {
   const pt = plan.planType;
 
   if (pt === 'stay') {
-    // 宿泊: 基本料金 + 年齢区分加算 x 泊数
-    const baseCost = plan.basePrice;
+    // 宿泊: 基本料金（部屋数倍）+ 年齢区分加算 x 泊数
+    const roomCount = (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0)
+      ? state.selectedRoomIds.length : 1;
+    const baseCost = plan.basePrice * roomCount;
     const adultCost = plan.extraAdult * state.guestsAdult;
     const childCost = plan.extraChild * state.guestsChild;
     const infantCost = plan.extraInfant * state.guestsInfant;
@@ -3256,7 +3289,7 @@ function calculateTotal() {
   }
 
   if (pt === 'hourly') {
-    if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
+    if (plan.id === 'tennis_full') {
       const normalPrice = state.isResident ? plan.residentPrice : plan.nonResidentPrice;
       // 平日割価格: 料金表の固定値（半額→10円切上げ済み）。
       // フィールドが無いプランには対応せず、フォールバックで Math.ceil(price*0.5/10)*10 を使う。
@@ -3269,14 +3302,16 @@ function calculateTotal() {
             : Math.ceil(normalPrice * 0.5 / 10) * 10);
       // 空間貸し運用（上村確認・2026-04-12）: 半面も一面も人数確認なし。
       // 料金表の単価そのままを 1 時間分として計上する。
+      const courtCount = (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0)
+        ? state.selectedRoomIds.length : 1;
       let total = 0;
       state.selectedHours.forEach(h => {
         const isDiscounted = plan.weekdayDiscount && isTennisWeekdayDiscountSlot(state.selectedDate, h);
-        total += isDiscounted ? discountPrice : normalPrice;
+        total += (isDiscounted ? discountPrice : normalPrice) * courtCount;
       });
       // 夜間照明（任意・コート単位で 1 時間あたり定額・平日割対象外）
       if (state.useLighting && plan.lightingPrice) {
-        total += plan.lightingPrice * state.selectedHours.length;
+        total += plan.lightingPrice * state.selectedHours.length * courtCount;
       }
       return total;
     }
@@ -3387,6 +3422,8 @@ function proceedToConfirm() {
       checkRooms = plan.rooms;
     } else if (pt === 'camp') {
       checkRooms = state.selectedCampSites;
+    } else if (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0) {
+      checkRooms = state.selectedRoomIds.slice();
     } else {
       checkRooms = [state.selectedRoomId];
     }
@@ -3449,6 +3486,14 @@ function proceedToConfirm() {
       .map(rid => ['①','②','③','④','⑤','⑥','⑦','⑧'][parseInt(rid.split('_')[1], 10) - 1])
       .join('・');
     html += '<div class="summary-row"><span class="summary-label">区画</span><span class="summary-value">' + labels + '</span></div>';
+  } else if (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 1) {
+    const isTennis = plan.id.startsWith('tennis');
+    const labelKey = isTennis ? 'コート' : '部屋';
+    const names = state.selectedRoomIds.map(rid => {
+      const r = ROOMS.find(x => x.id === rid);
+      return r ? r.fullName : rid;
+    }).join('・');
+    html += '<div class="summary-row"><span class="summary-label">' + labelKey + '</span><span class="summary-value">' + names + '（' + state.selectedRoomIds.length + (isTennis ? 'コート' : '室') + '）</span></div>';
   } else {
     html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + (room ? room.fullName : '') + '</span></div>';
   }
@@ -3654,18 +3699,22 @@ async function submitBooking() {
   const isTennis = state.selectedRoomId && state.selectedRoomId.startsWith('court_');
 
   // === API送信用 slot キー配列を生成 ===
+  // 複数選択プランは state.selectedRoomIds、その他は [state.selectedRoomId]
+  const isMultiSelectActive = plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0;
+  const activeRoomIds = isMultiSelectActive ? state.selectedRoomIds.slice() : [state.selectedRoomId];
   let slotKeys = [];
   try {
     if (isTennis && Array.isArray(state.selectedHours)) {
       // テニスは selectedHours が "0900","0930"... の HHMM 開始時刻文字列
-      // 各開始時刻に対し その時刻 + 30分後 の2スロットを生成
-      const courtId = state.selectedRoomId;
+      // 各開始時刻に対し その時刻 + 30分後 の2スロットを生成（選択された各コート分）
       const date = state.selectedDate;
       const set = new Set();
-      for (const h of state.selectedHours) {
-        if (typeof h === 'string' && /^\d{4}$/.test(h)) {
-          set.add(`${courtId}|${date}|${h}`);
-          set.add(`${courtId}|${date}|${addMinutes(h, 30)}`);
+      for (const courtId of activeRoomIds) {
+        for (const h of state.selectedHours) {
+          if (typeof h === 'string' && /^\d{4}$/.test(h)) {
+            set.add(`${courtId}|${date}|${h}`);
+            set.add(`${courtId}|${date}|${addMinutes(h, 30)}`);
+          }
         }
       }
       slotKeys = Array.from(set);
@@ -3679,8 +3728,15 @@ async function submitBooking() {
       }
     } else {
       const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
-      const roomId = isFutamiSauna ? 'sauna_share' : state.selectedRoomId;
-      slotKeys = expanded.map(s => roomId + '|' + s.date + '|' + s.hour);
+      if (isFutamiSauna) {
+        slotKeys = expanded.map(s => 'sauna_share|' + s.date + '|' + s.hour);
+      } else {
+        for (const rid of activeRoomIds) {
+          for (const s of expanded) {
+            slotKeys.push(rid + '|' + s.date + '|' + s.hour);
+          }
+        }
+      }
     }
   } catch (e) {
     console.error('slot expand error', e);
@@ -3698,10 +3754,10 @@ async function submitBooking() {
       const futamiSeats = isFutamiSauna ? (state.guests || 1) : null;
       // テニス向け付帯情報（平日割/照明）
       let tennisPricingInfo = null;
-      if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
+      if (plan.id === 'tennis_full') {
         const weekdaySlots = (state.selectedHours || []).filter(h => isTennisWeekdayDiscountSlot(state.selectedDate, h));
         tennisPricingInfo = {
-          courtType: plan.id === 'tennis_half' ? 'half' : 'full',
+          courtType: 'full',
           isResident: !!state.isResident,
           totalHours: (state.selectedHours || []).length,
           weekdayDiscountHours: weekdaySlots.length,
@@ -3722,10 +3778,11 @@ async function submitBooking() {
       const sportGuestEstimate = (plan.category === 'sport' && plan.guestEstimateMax)
         ? (state.sportGuestCount || 0)
         : null;
-      // roomIds決定: キャンプは選択した複数区画、その他は単一
+      // roomIds決定: キャンプは選択した複数区画、複数選択プランは selectedRoomIds、その他は単一
       let payloadRoomIds;
       if (isFutamiSauna) payloadRoomIds = ['sauna_share'];
       else if (isCamp) payloadRoomIds = state.selectedCampSites.slice();
+      else if (isMultiSelectActive) payloadRoomIds = state.selectedRoomIds.slice();
       else payloadRoomIds = [state.selectedRoomId];
       const payload = {
         planId: isFutamiSauna ? 'plan_sauna_futami' : plan.id,

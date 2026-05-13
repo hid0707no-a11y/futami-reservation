@@ -104,18 +104,8 @@ run('tennis_full (一面貸切)', () => {
 });
 
 // === テニス 半面練習 ===
-run('tennis_half (半面練習)', () => {
-  const plan = extractPlan('tennis_half');
-  const spec = pricing.tennis.half;
-  return [
-    check('residentPrice', spec.resident, plan.residentPrice),
-    check('nonResidentPrice', spec.nonResident, plan.nonResidentPrice),
-    check('basePrice', spec.resident, plan.basePrice),
-    check('lightingPrice', pricing.tennis.lighting.price, plan.lightingPrice),
-    check('weekdayDiscountResident', spec.weekdayDiscount.resident, plan.weekdayDiscountResident),
-    check('weekdayDiscountNonResident', spec.weekdayDiscount.nonResident, plan.weekdayDiscountNonResident),
-  ].every(Boolean);
-});
+// 2026-05-13 削除（要望#11）：半面プランは廃止された。pricing.json 側に
+// tennis.half 定義が残っていても整合チェックは行わない。
 
 // === みどり 午前 ===
 run('midori_am (みどり午前)', () => {
@@ -215,7 +205,6 @@ run('平日割の実装確認', () => {
 // プラン定義に guestEstimateMax が正しく設定されているかを確認する。
 run('利用人数目安の上限設定', () => {
   const tennisFull = extractPlan('tennis_full');
-  const tennisHalf = extractPlan('tennis_half');
   const midoriAm = extractPlan('midori_am');
   const midoriPm = extractPlan('midori_pm');
   const midoriEve = extractPlan('midori_eve');
@@ -226,7 +215,6 @@ run('利用人数目安の上限設定', () => {
   };
   return [
     check('tennis_full.guestEstimateMax', 10, parseMax(tennisFull)),
-    check('tennis_half.guestEstimateMax', 10, parseMax(tennisHalf)),
     check('midori_am.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriAm)),
     check('midori_pm.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriPm)),
     check('midori_eve.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriEve)),

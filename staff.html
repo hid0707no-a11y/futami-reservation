@@ -762,11 +762,11 @@ const ROOMS = [
   { id: 'camp_8', name: 'キャンプ区画⑧', building: 'アウトドア', icon: '\u26FA' },
   { id: 'lodge_a', name: 'ロッジA', building: 'アウトドア', icon: '\uD83C\uDFD5\uFE0F' },
   { id: 'lodge_b', name: 'ロッジB', building: 'アウトドア', icon: '\uD83C\uDFD5\uFE0F' },
-  { id: 'court_1', name: 'コート1', building: 'テニス', icon: '\uD83C\uDFBE' },
-  { id: 'court_2', name: 'コート2', building: 'テニス', icon: '\uD83C\uDFBE' },
-  { id: 'court_3', name: 'コート3', building: 'テニス', icon: '\uD83C\uDFBE' },
-  { id: 'court_4', name: 'コート4', building: 'テニス', icon: '\uD83C\uDFBE' },
-  { id: 'court_5', name: 'コート5', building: 'テニス', icon: '\uD83C\uDFBE' },
+  { id: 'court_1', name: 'コートA', building: 'テニス', icon: '\uD83C\uDFBE' },
+  { id: 'court_2', name: 'コートB', building: 'テニス', icon: '\uD83C\uDFBE' },
+  { id: 'court_3', name: 'コートC', building: 'テニス', icon: '\uD83C\uDFBE' },
+  { id: 'court_4', name: 'コートD', building: 'テニス', icon: '\uD83C\uDFBE' },
+  { id: 'court_5', name: 'コートE', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'midori', name: 'みどりの広場', building: 'グラウンド', icon: '\u26BE' },
   { id: 'sauna', name: 'サンセットサウナ', building: 'サウナ', icon: '\uD83E\uDDD6' },
 ];
@@ -1367,7 +1367,10 @@ function showDetail(resId) {
   const zipPart = res.zip ? '\u3012' + res.zip + ' ' : '';
   const addrFull = (zipPart + (res.address1 || '') + (res.address2 ? ' ' + res.address2 : '')).trim();
 
+  // \u4E88\u7D04\u756A\u53F7\u8868\u793A\uFF08displayId \u512A\u5148\u30FB\u65E2\u5B58\u4E88\u7D04\u306F Auto ID \u5148\u982D6\u6587\u5B57\u3067\u4EE3\u66FF\uFF09
+  const displayId = res.displayId || (res.id ? 'F-' + String(res.id).substring(0, 6).toUpperCase() : '');
   let html = `
+    <div class="detail-row" style="background:#f0f9ff;margin:4px -16px;padding:8px 16px;border-radius:8px"><span class="label" style="color:#0369a1">\u4E88\u7D04\u756A\u53F7</span><span class="value" style="font-family:monospace;font-weight:700;color:#0c4a6e">${escapeHtml(displayId)}</span></div>
     <div class="detail-row"><span class="label">\u4E88\u7D04\u8005</span><span class="value">${escapeHtml(res.name)}</span></div>
     <div class="detail-row"><span class="label">\u96FB\u8A71\u756A\u53F7</span><span class="value"><a href="tel:${escapeHtml(res.phone)}" style="color:var(--navy)">${escapeHtml(res.phone)}</a></span></div>
     <div class="detail-row"><span class="label">\u4F4F\u6240</span><span class="value">${addrFull ? escapeHtml(addrFull) : '\u2014'}</span></div>

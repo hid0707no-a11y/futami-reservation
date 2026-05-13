@@ -14,7 +14,7 @@ import { db } from '../lib/firestore';
 import { setCors, checkOrigin } from '../lib/cors';
 import { checkRateLimit } from '../lib/rateLimit';
 import { audit as auditLog, logMailFailure, logIdempotencyFailure } from '../lib/logger';
-import { formatCustomerAddress, formatSaunaOptions } from '../lib/format';
+import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../lib/format';
 import { MailData, sendConfirmationEmail, sendStaffNotification } from '../lib/mail';
 import { validateReservationBody } from '../lib/validation';
 import { VALID_ROOM_IDS } from '../constants';
@@ -74,12 +74,14 @@ export const createReservation = onRequest(
               .filter((x: any) => x !== null);
             if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
             const resRef = db.collection('reservations').doc();
+            const displayId = generateDisplayId(resRef.id);
             const now = admin.firestore.FieldValue.serverTimestamp();
             tx.set(resRef, {
               planId, roomIds, slots, startDate, endDate, nights: 0,
               customer, guests: guests || null, pricing: pricing || null,
               payment: { method: 'onsite', status: 'unpaid' },
               status: 'confirmed', note: note || null,
+              displayId,
               createdAt: now, createdBy, updatedAt: now, isTennis: true,
             });
             slots.forEach((key: string, i: number) => {
@@ -90,19 +92,19 @@ export const createReservation = onRequest(
                 reservationId: resRef.id, createdAt: now,
               });
             });
-            return resRef.id;
+            return { id: resRef.id, displayId };
           });
           const mailData: MailData = {
             planName: planId, roomName: roomIds.join(', '), startDate, endDate,
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
-            note: note || '', reservationId: tennisResult, isTennis: true,
+            note: note || '', reservationId: tennisResult.displayId, isTennis: true,
           };
-          sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: tennisResult, type: 'tennis' }, req));
-          sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: tennisResult, type: 'tennis', kind: 'new' }, req));
-          auditLog('reservation.create', { reservationId: tennisResult, planId, roomIds, startDate, customerName: customer.name, type: 'tennis' }, req);
-          const tennisResp = { reservationId: tennisResult, status: 'confirmed', isTennis: true };
-          saveIdempotencyKey(req, tennisResp).catch(logIdempotencyFailure(tennisResult, req));
+          sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: tennisResult.id, type: 'tennis' }, req));
+          sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: tennisResult.id, type: 'tennis', kind: 'new' }, req));
+          auditLog('reservation.create', { reservationId: tennisResult.id, displayId: tennisResult.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'tennis' }, req);
+          const tennisResp = { reservationId: tennisResult.displayId, internalId: tennisResult.id, status: 'confirmed', isTennis: true };
+          saveIdempotencyKey(req, tennisResp).catch(logIdempotencyFailure(tennisResult.id, req));
           res.status(201).json(tennisResp);
           return;
         } catch (e: any) {
@@ -141,6 +143,7 @@ export const createReservation = onRequest(
             if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
 
             const resRef = db.collection('reservations').doc();
+            const displayId = generateDisplayId(resRef.id);
             const now = admin.firestore.FieldValue.serverTimestamp();
             tx.set(resRef, {
               planId, roomIds: ['sauna_share'], slots, startDate, endDate, nights: 0,
@@ -148,6 +151,7 @@ export const createReservation = onRequest(
               pricing: pricing || null,
               payment: { method: 'onsite', status: 'unpaid' },
               status: 'confirmed', note: note || null,
+              displayId,
               createdAt: now, createdBy, updatedAt: now, isFutamiDay: true,
             });
             slots.forEach((key: string, i: number) => {
@@ -158,20 +162,20 @@ export const createReservation = onRequest(
                 reservationId: resRef.id, createdAt: now,
               });
             });
-            return resRef.id;
+            return { id: resRef.id, displayId };
           });
           const mailData: MailData = {
             planName: planId, roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
-            note: note || '', reservationId: result, guestCount: seats, isFutamiDay: true,
+            note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
             saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
           };
-          sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result, type: 'futami_sauna', seats }, req));
-          sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result, type: 'futami_sauna', kind: 'new' }, req));
-          auditLog('reservation.create', { reservationId: result, planId, roomIds, startDate, customerName: customer.name, type: 'futami_sauna', seats }, req);
-          const futamiResp = { reservationId: result, status: 'confirmed', isFutamiDay: true, seats };
-          saveIdempotencyKey(req, futamiResp).catch(logIdempotencyFailure(result, req));
+          sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: 'futami_sauna', seats }, req));
+          sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: 'futami_sauna', kind: 'new' }, req));
+          auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'futami_sauna', seats }, req);
+          const futamiResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', isFutamiDay: true, seats };
+          saveIdempotencyKey(req, futamiResp).catch(logIdempotencyFailure(result.id, req));
           res.status(201).json(futamiResp);
           return;
         } catch (e: any) {
@@ -208,6 +212,7 @@ export const createReservation = onRequest(
         if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
 
         const resRef = db.collection('reservations').doc();
+        const displayId = generateDisplayId(resRef.id);
         const now = admin.firestore.FieldValue.serverTimestamp();
         tx.set(resRef, {
           planId, roomIds, slots, startDate, endDate, nights,
@@ -216,6 +221,7 @@ export const createReservation = onRequest(
           pricing: pricing || null,
           payment: { method: 'onsite', status: 'unpaid' },
           status: 'confirmed', note: note || null,
+          displayId,
           createdAt: now, createdBy, updatedAt: now,
         });
         slots.forEach((key: string, i: number) => {
@@ -226,7 +232,7 @@ export const createReservation = onRequest(
             reservationId: resRef.id, createdAt: now,
           });
         });
-        return resRef.id;
+        return { id: resRef.id, displayId };
       });
 
       const roomNameForMail = isCamp
@@ -236,15 +242,15 @@ export const createReservation = onRequest(
         planName: planId, roomName: roomNameForMail, startDate, endDate,
         customerName: customer.name, customerPhone: customer.phone,
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
-        note: note || '', reservationId: result,
+        note: note || '', reservationId: result.displayId,
         ...(isCamp ? { isCamp: true, guestCount: roomIds.length } : {}),
         saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
       };
-      sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result, type: isCamp ? 'camp' : 'normal' }, req));
-      sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result, type: isCamp ? 'camp' : 'normal', kind: 'new' }, req));
-      auditLog('reservation.create', { reservationId: result, planId, roomIds, startDate, customerName: customer.name, type: isCamp ? 'camp' : 'normal' }, req);
-      const normalResp = { reservationId: result, status: 'confirmed', ...(isCamp ? { isCamp: true, sites: roomIds.length } : {}) };
-      saveIdempotencyKey(req, normalResp).catch(logIdempotencyFailure(result, req));
+      sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: isCamp ? 'camp' : 'normal' }, req));
+      sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: isCamp ? 'camp' : 'normal', kind: 'new' }, req));
+      auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: isCamp ? 'camp' : 'normal' }, req);
+      const normalResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', ...(isCamp ? { isCamp: true, sites: roomIds.length } : {}) };
+      saveIdempotencyKey(req, normalResp).catch(logIdempotencyFailure(result.id, req));
 
       res.status(201).json(normalResp);
     } catch (e: any) {
