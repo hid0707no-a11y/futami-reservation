@@ -34,8 +34,15 @@
 ## 適用フロー
 
 1. ✅ `scripts/backfill_display_id_20260513.js --apply` 実行（5/13 完了・209件）
-2. ⏳ 本コミットを deploy（次回 `dailySyncToSheets` 実行で Z列に displayId が書き込まれる）
-3. ⏳ 運営へ通知：「Z列に予約番号列が追加されました。電話でお問い合わせ時に F-XXXXXX で検索できます」
+2. ✅ 本コミットを deploy（次回 `dailySyncToSheets` 実行で Z列に displayId が書き込まれる）
+3. ⏳ **deploy 後・明朝3時の dailySyncToSheets 前に Z列メモ事故対策を実施**（2026-05-13 追加対応）：
+   ```bash
+   # 1) チェックのみ（Z列に既存値があるか確認）
+   node scripts/check_sheet_z_column_safety_20260513.js
+   # 2) 既存値があれば自動退避（_backup_z_20260513 タブにコピー）
+   node scripts/check_sheet_z_column_safety_20260513.js --backup
+   ```
+4. ⏳ 運営へ通知：「Z列に予約番号列が追加されました。電話でお問い合わせ時に F-XXXXXX で検索できます」
 
 ## ロールバック
 

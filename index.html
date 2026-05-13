@@ -1388,10 +1388,7 @@ const state = {
   // selectedCampSites: 利用者が選択した区画ID配列（例: ['camp_1','camp_3']）
   // 空配列＝未選択。最大3区画まで（plan.maxSites で制限）
   selectedCampSites: [],
-  // 2026-05-13 要望#10: キャンプ「テント追加(50円/1張)」廃止。state は 0 固定の dead value として残置
-  // （extras 配列から消したので stepper UI は描画されず、tentTotal も常に 0）。将来 extras
-  // 再追加するなら toggle で復活させればよいので削除はしない。
-  campTents: 0,
+  // 2026-05-13 要望#10: キャンプ「テント追加(50円/1張)」を完全廃止。state.campTents 削除済。
   // ロッジシーツ
   lodgeSheets: 0,
   // サウナオプション
@@ -1862,7 +1859,6 @@ function selectPlanFromSearch(planId) {
   state.guestsChild = 0;
   state.guestsInfant = 0;
   state.selectedCampSites = [];
-  state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
   state.saunaTarpTent = 0;
@@ -2216,7 +2212,6 @@ function selectPlan(planId) {
   state.guestsInfant = 0;
   state.guests = 2;
   state.selectedCampSites = [];
-  state.campTents = 0;
   state.lodgeSheets = 0;
   state.saunaTowels = 0;
   state.saunaTarpTent = 0;
@@ -2899,7 +2894,7 @@ function renderSiteMap(context) {
 }
 
 function getExtraCount(extraId) {
-  if (extraId === 'tent') return state.campTents;
+  // 2026-05-13 要望#10: 'tent' は廃止済（state.campTents 削除）
   if (extraId === 'sheet') return state.lodgeSheets;
   if (extraId === 'towel') return state.saunaTowels;
   if (extraId === 'tarp_tent') return state.saunaTarpTent;
@@ -2908,11 +2903,7 @@ function getExtraCount(extraId) {
 }
 
 function stepExtra(extraId, delta) {
-  if (extraId === 'tent') {
-    state.campTents = Math.max(0, Math.min(20, state.campTents + delta));
-    const el = document.getElementById('extra-tent-count');
-    if (el) el.textContent = state.campTents;
-  }
+  // 2026-05-13 要望#10: 'tent' 分岐は廃止済（state.campTents 削除）
   if (extraId === 'sheet') {
     state.lodgeSheets = Math.max(0, Math.min(10, state.lodgeSheets + delta));
     const el = document.getElementById('extra-sheet-count');
@@ -3236,15 +3227,12 @@ function updateSimplePriceInfo() {
 
   if (pt === 'camp') {
     const siteCount = state.selectedCampSites.length;
-    const siteTotal = plan.basePrice * siteCount * state.selectedNights;
-    const tentTotal = state.campTents * 50;
-    const total = siteTotal + tentTotal;
+    const total = plan.basePrice * siteCount * state.selectedNights;
     let info;
     if (siteCount === 0) {
       info = '<span style="color:#9ca3af">区画を選択してください</span>';
     } else {
-      info = plan.basePrice.toLocaleString() + '円 x ' + siteCount + '区画 x ' + state.selectedNights + '泊 = ' + siteTotal.toLocaleString() + '円';
-      if (tentTotal > 0) info += '<br>テント追加: 50円 x ' + state.campTents + '張 = ' + tentTotal.toLocaleString() + '円';
+      info = plan.basePrice.toLocaleString() + '円 x ' + siteCount + '区画 x ' + state.selectedNights + '泊 = ' + total.toLocaleString() + '円';
       info += '<br><strong>合計: ' + total.toLocaleString() + '円</strong>';
     }
     el.innerHTML = info;
@@ -3280,9 +3268,7 @@ function calculateTotal() {
 
   if (pt === 'camp') {
     const siteCount = state.selectedCampSites.length;
-    let total = plan.basePrice * siteCount * state.selectedNights;
-    total += state.campTents * 50;
-    return total;
+    return plan.basePrice * siteCount * state.selectedNights;
   }
 
   if (pt === 'day_all' || pt === 'day_slot') {
@@ -3517,9 +3503,7 @@ function proceedToConfirm() {
   }
   if (pt === 'camp') {
     html += '<div class="summary-row"><span class="summary-label">区画数</span><span class="summary-value">' + state.selectedCampSites.length + '区画</span></div>';
-    if (state.campTents > 0) {
-      html += '<div class="summary-row"><span class="summary-label">テント追加</span><span class="summary-value">' + state.campTents + '張</span></div>';
-    }
+    // 2026-05-13 要望#10: テント追加（50円/1張）は完全廃止
   }
   if (plan.id.startsWith('tennis') || plan.id.startsWith('midori')) {
     html += '<div class="summary-row"><span class="summary-label">利用者区分</span><span class="summary-value">' + (state.isResident ? '伊予市民' : '市外') + (state.isStudent ? '（学生）' : '') + '</span></div>';
@@ -3801,7 +3785,7 @@ async function submitBooking() {
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
         pricing: {
           basePrice: 0, personFee: 0,
-          optionFee: (state.saunaTowels * 550) + (state.saunaTarpTent * 1100) + (state.saunaIce * 4400) + (state.campTents * 50) + (state.lodgeSheets * 340),
+          optionFee: (state.saunaTowels * 550) + (state.saunaTarpTent * 1100) + (state.saunaIce * 4400) + (state.lodgeSheets * 340),
           total: state.totalPrice || 0,
           tennis: tennisPricingInfo, midori: midoriPricingInfo, sportGuestEstimate,
           saunaOptions: plan.planType === 'sauna' ? { towels: state.saunaTowels, tarpTent: state.saunaTarpTent, ice20kg: state.saunaIce } : undefined,
@@ -3854,7 +3838,6 @@ async function submitBooking() {
     guests: state.guests,
     campSites: state.selectedCampSites.length,
     selectedCampSites: state.selectedCampSites.slice(),
-    campTents: state.campTents,
     lodgeSheets: state.lodgeSheets,
     saunaTowels: state.saunaTowels,
     saunaTarpTent: state.saunaTarpTent,

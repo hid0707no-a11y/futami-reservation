@@ -84,14 +84,17 @@ if [ -n "$STAGED" ]; then
 fi
 
 # ===== 5. SHEET_HEADERS 変更検知マーカー =====
-# functions/src/index.ts / functions/src/constants.ts の SHEET_HEADERS が変更されている場合、
-# /tmp にマーカーを置く。commit-msg hook が読み取って [sheet-schema] タグの有無を強制する。
+# functions/src/lib/sheets.ts（SSOT・2026-05-05 Phase B-1 以降）/ index.ts / constants.ts（legacy 写し）
+# の SHEET_HEADERS / SYNC_CLEAR_RANGE_* が変更されている場合、/tmp にマーカーを置く。
+# commit-msg hook が読み取って [sheet-schema] タグの有無を強制する。
 # （pre-commit 段階では .git/COMMIT_EDITMSG がまだ書かれていない可能性が高いため二段構え）
-SHEET_HEADER_FILES="functions/src/index.ts functions/src/constants.ts"
+# 2026-05-13: lib/sheets.ts を watch list に追加（SSOT がそこに移ったが監視漏れていた）。
+# services/sheetsSync.ts の SYNC_CLEAR_RANGE_* ハードコードも併せて検出する。
+SHEET_HEADER_FILES="functions/src/lib/sheets.ts functions/src/services/sheetsSync.ts functions/src/index.ts functions/src/constants.ts"
 rm -f /tmp/_pc_sheet_headers_touched
 for f in $SHEET_HEADER_FILES; do
   echo "$STAGED" | grep -qE "(^|/)$(basename $f)\$" || continue
-  if git diff --cached "$f" 2>/dev/null | grep -qE "^[+-].*SHEET_HEADERS"; then
+  if git diff --cached "$f" 2>/dev/null | grep -qE "^[+-].*(SHEET_HEADERS|SYNC_CLEAR_RANGE|SHEET_LAST_COLUMN)"; then
     touch /tmp/_pc_sheet_headers_touched
   fi
 done

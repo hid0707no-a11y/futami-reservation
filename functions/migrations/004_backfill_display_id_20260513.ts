@@ -7,6 +7,7 @@
 // 関連要望: スプシ「予約システム改修要望」#8（予約番号が複雑で長い）
 
 import * as admin from 'firebase-admin';
+import { generateDisplayId } from '../src/lib/format';
 
 export const META = {
   id: '004_backfill_display_id_20260513',
@@ -32,8 +33,10 @@ export async function up(db: admin.firestore.Firestore, opts: { dryRun: boolean 
     if (doc.data().displayId) { alreadyHas++; continue; }
     toBackfill++;
     if (!opts.dryRun) {
-      const displayId = 'F-' + doc.id.substring(0, 6).toUpperCase();
-      await doc.ref.update({ displayId });
+      // 2026-05-13: format.ts の generateDisplayId を import 再利用（divergence 防止）。
+      // 旧版はインライン `'F-' + doc.id.substring(0, 6).toUpperCase()` だったが、format.ts と
+      // ロジックが乖離するリスクがあったため SSOT 化。
+      await doc.ref.update({ displayId: generateDisplayId(doc.id) });
     }
   }
   return { total: snap.size, alreadyHas, toBackfill };

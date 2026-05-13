@@ -47,7 +47,7 @@ export const staffHealthMonitor = onSchedule(
 /**
  * ===== 予約データ Google Sheets 同期（日次 03:00 JST）=====
  * Firestore reservations 全件を Google Sheets に書き出す。バックアップ + 行政報告原データ。
- * 同期先：reservations / cancelled / meta タブ（A:Y / A:Y / A:B 限定で運営の右側メモ列を保護）
+ * 同期先：reservations / cancelled / meta タブ（A:Z / A:Z / A:B 限定で運営の AA列以降のメモを保護・2026-05-13 拡張）
  * 認証：Cloud Functions デフォルト SA（事前にスプシを編集者として SA に共有が必要）
  * 本体ロジック：services/sheetsSync.ts
  */

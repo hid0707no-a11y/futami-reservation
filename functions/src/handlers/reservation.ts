@@ -10,7 +10,7 @@ import { setCors, checkOrigin } from '../lib/cors';
 import { checkRateLimit } from '../lib/rateLimit';
 import { requireStaffAuth } from '../lib/auth';
 import { audit as auditLog, logMailFailure } from '../lib/logger';
-import { formatCustomerAddress } from '../lib/format';
+import { formatCustomerAddress, generateDisplayId } from '../lib/format';
 import { MailData, sendCancellationEmail, sendStaffNotification } from '../lib/mail';
 
 /** GET /listReservations?date=&status=&from=&to= — スタッフ用予約一覧 */
@@ -283,6 +283,9 @@ export const cancelReservation = onRequest(
       });
 
       // キャンセルメール送信（失敗は構造化ログへ）
+      // 2026-05-13: メール表示 ID は displayId 優先（要望#8 のキャンセル経路でも顧客に短縮ID
+      // を提示するため）。backfill 前の旧予約も generateDisplayId(id) で同じ規則で fallback。
+      const cancelDisplayId = cancelledData?.displayId || generateDisplayId(id);
       if (cancelledData?.customer) {
         const mailData: MailData = {
           planName: cancelledData.planId || '', roomName: (cancelledData.roomIds || []).join(', '),
@@ -291,13 +294,13 @@ export const cancelReservation = onRequest(
           customerEmail: cancelledData.customer.email || '',
           customerAddress: formatCustomerAddress(cancelledData.customer),
           note: cancelledData.note || '',
-          reservationId: id,
+          reservationId: cancelDisplayId,
         };
-        sendCancellationEmail(mailData).catch(logMailFailure('cancellation', { reservationId: id }, req));
-        sendStaffNotification(mailData, 'cancel').catch(logMailFailure('staff', { reservationId: id, kind: 'cancel' }, req));
+        sendCancellationEmail(mailData).catch(logMailFailure('cancellation', { reservationId: id, displayId: cancelDisplayId }, req));
+        sendStaffNotification(mailData, 'cancel').catch(logMailFailure('staff', { reservationId: id, displayId: cancelDisplayId, kind: 'cancel' }, req));
       }
 
-      auditLog('reservation.cancel', { reservationId: id, customerName: cancelledData?.customer?.name || '' }, req);
+      auditLog('reservation.cancel', { reservationId: id, displayId: cancelDisplayId, customerName: cancelledData?.customer?.name || '' }, req);
       res.status(200).json({ id, status: 'cancelled' });
     } catch (e: any) {
       if (e?.code === 'not_found') {

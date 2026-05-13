@@ -4,22 +4,24 @@
 // 旧 index.ts:1094-1173 を移植。dailySyncToSheets / triggerSyncToSheets の両 onRequest/onSchedule から呼ばれる。
 //
 // 同期先：
-//   reservations タブ（A:Z） … confirmed 全件（2026-05-13 列追加で Y→Z 拡張）
-//   cancelled タブ（A:Z）   … cancelled 全件
-//   meta タブ（A:B）        … 最終同期時刻 + 件数
+//   reservations タブ（A:<SHEET_LAST_COLUMN>） … confirmed 全件
+//   cancelled タブ（A:<SHEET_LAST_COLUMN>）   … cancelled 全件
+//   meta タブ（A:B）                          … 最終同期時刻 + 件数
 //   ※ A:Z 限定で clear するので運営の AA列以降のメモは温存される
 //   ※ 2026-05-05: A:Y で限定運用開始（Z以降をメモ列として温存）
-//   ※ 2026-05-13: 「予約番号」列を Z に追加。運営にメモ列を AA 以降に退避してもらう必要あり
+//   ※ 2026-05-13: 「予約番号」列を Z に追加 → A:Z 拡張。運営は AA 列以降にメモを退避。
+//   ※ 2026-05-13: SYNC_CLEAR_RANGE_* を constants.ts SSOT から import するよう統一（ドリフト防止）
 
 import * as admin from 'firebase-admin';
 import { google } from 'googleapis';
 import { ReservationRow, SHEET_HEADERS, rowToArray, reservationToRow } from '../lib/sheets';
+import {
+  SYNC_CLEAR_RANGE_RESERVATIONS,
+  SYNC_CLEAR_RANGE_CANCELLED,
+  SYNC_CLEAR_RANGE_META,
+} from '../constants';
 
 const SHEETS_SYNC_ID = process.env.SHEETS_SYNC_ID || '';
-
-const SYNC_CLEAR_RANGE_RESERVATIONS = 'reservations!A:Z';
-const SYNC_CLEAR_RANGE_CANCELLED = 'cancelled!A:Z';
-const SYNC_CLEAR_RANGE_META = 'meta!A:B';
 
 export async function syncReservationsToSheets(
   db: admin.firestore.Firestore,
@@ -45,7 +47,7 @@ export async function syncReservationsToSheets(
     else confirmed.push(row);
   });
 
-  // reservations タブを上書き（A:Y のみ・運営の右側メモ列は温存）
+  // reservations タブを上書き（A:Z のみ・運営の AA列以降のメモは温存）
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEETS_SYNC_ID,
     range: SYNC_CLEAR_RANGE_RESERVATIONS,
