@@ -438,7 +438,9 @@ function render() {
 function showDetail(resId) {
   const r = RESERVATIONS.find(x => x.id === resId);
   if (!r) return;
-  document.getElementById('popupTitle').textContent = (r.customer && r.customer.name) || '予約';
+  // 予約番号表示（displayId 優先・既存予約は Auto ID 先頭6文字で代替）
+  const displayId = r.displayId || (r.id ? 'F-' + String(r.id).substring(0, 6).toUpperCase() : '');
+  document.getElementById('popupTitle').textContent = ((r.customer && r.customer.name) || '予約') + (displayId ? '（' + displayId + '）' : '');
   document.getElementById('popupSub').textContent = `${r.startDate}`;
   // 占有時間と部屋を整理（30分単位）
   const courts = {};

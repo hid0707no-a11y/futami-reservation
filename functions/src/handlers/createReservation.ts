@@ -63,7 +63,10 @@ export const createReservation = onRequest(
       if (!(await checkIdempotency(req, res))) return;
 
       // ===== テニス専用ルート（tennis_slots 30分単位）=====
-      const isTennis = Array.isArray(roomIds) && roomIds.length > 0 && roomIds[0].startsWith('court_');
+      // 2026-05-13: 全 roomId が court_* であることを要求（複数選択時の混在ペイロード対策）。
+      // 旧コード `roomIds[0].startsWith('court_')` だと ['court_1','camp_1'] のような混在
+      // payload で tennis_slots に書込み・キャンプ排他がスキップされうる。isCamp との対称性も担保。
+      const isTennis = Array.isArray(roomIds) && roomIds.length > 0 && roomIds.every((r: string) => r.startsWith('court_'));
       if (isTennis) {
         try {
           const tennisResult = await db.runTransaction(async tx => {

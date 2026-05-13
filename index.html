@@ -1388,6 +1388,9 @@ const state = {
   // selectedCampSites: 利用者が選択した区画ID配列（例: ['camp_1','camp_3']）
   // 空配列＝未選択。最大3区画まで（plan.maxSites で制限）
   selectedCampSites: [],
+  // 2026-05-13 要望#10: キャンプ「テント追加(50円/1張)」廃止。state は 0 固定の dead value として残置
+  // （extras 配列から消したので stepper UI は描画されず、tentTotal も常に 0）。将来 extras
+  // 再追加するなら toggle で復活させればよいので削除はしない。
   campTents: 0,
   // ロッジシーツ
   lodgeSheets: 0,
@@ -3016,10 +3019,13 @@ function getMaxNights() {
 
   // キャンプは複数区画選択方式: 選択中の全区画に対して連泊チェック
   // 区画未選択時は単純に planCap までは試算可
+  // 2026-05-13 要望#7: 複数選択（allowMultiSelect）プランは selectedRoomIds 全部をチェック
+  // → 他の部屋が将来日で埋まっていても「予約可」と誤判定するバグの修正
   const isCamp = plan.planType === 'camp';
+  const isMultiSelectActive = plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0;
   const checkRoomIds = isCamp
     ? (state.selectedCampSites && state.selectedCampSites.length > 0 ? state.selectedCampSites : ['camp_1'])
-    : [state.selectedRoomId];
+    : (isMultiSelectActive ? state.selectedRoomIds.slice() : [state.selectedRoomId]);
 
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
   if (slots.length === 0) return planCap;

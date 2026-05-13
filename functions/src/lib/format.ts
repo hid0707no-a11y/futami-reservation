@@ -47,16 +47,21 @@ export function formatSaunaOptions(opts: SaunaOptionsLike | null | undefined): s
 /**
  * 表示用予約番号を生成する。
  *
- * 2026-05-13 新設（要望#8 桁数短縮）。Firestore Auto ID（20文字英数字）は
+ * 2026-05-13 新設（要望#8 桁数短縮）。Firestore Auto ID（20文字 base62: a-z A-Z 0-9）は
  * 「複雑で長い」というクレームが運営から寄せられたため、人間可読な短縮版を
  * 別フィールド `displayId` として保持する。内部参照は引き続き `id`（Auto ID）。
  *
- * 形式: `F-XXXXXX` （F=Futami、Auto ID 先頭6文字を大文字化）
- * 衝突可能性: 36^6 ≈ 21億通り。1日100件・5年運用でも 0.001% 未満。
+ * 形式: `F-XXXXXX` （F=Futami、Auto ID 先頭6文字を `toUpperCase()` で大文字化）
+ *
+ * 注意: 元の Auto ID は base62 (62文字種) だが、`toUpperCase()` で大小英字が
+ * 同じ文字に潰れるため、生成空間は base36（36文字種）相当に圧縮される。
+ * 衝突可能性: 36^6 ≈ 21億通り。1日100件・5年運用（18万件）で誕生日逆算 ≈ 0.001%。
+ * 実用上は許容範囲。衝突が顕在化するスケール（年100万件）に達したら、
+ * generateDisplayId 内で衝突検知 + 再試行に切替えるか、桁数を8文字に拡張する。
  */
 export function generateDisplayId(autoId: string): string {
   if (!autoId) return '';
   // 0/O・1/I 等の紛らわしい文字が含まれる可能性はあるが、運営の口頭伝達は
-  // 大文字統一で混乱を避ける。先頭6文字なら全文字種でも区別可能。
+  // 大文字統一で混乱を避ける（電話で「エフ・ハイフン・エー・ビー・シー…」と読む）。
   return 'F-' + autoId.substring(0, 6).toUpperCase();
 }

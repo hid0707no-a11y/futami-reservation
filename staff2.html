@@ -493,10 +493,12 @@ function showCellDetail(roomId, ds, roomName) {
     const time = inferTime(r, ds);
     const badgeClass = cat || 'all';
     const badgeLabel = { stay: '🌙宿泊', day: '☀️日帰り', sport: '🎾スポーツ', sauna: '🧖サウナ', outdoor: '⛺アウトドア' }[cat] || '予約';
+    // 予約番号表示（displayId 優先・既存予約は Auto ID 先頭6文字で代替）
+    const displayId = r.displayId || (r.id ? 'F-' + String(r.id).substring(0, 6).toUpperCase() : '');
     html += `
       <div class="res-item">
         <div>
-          <div class="name">${escapeHtml(name)} ${r.guestCount ? '<span style="color:#6b7280;font-size:11px">'+r.guestCount+'名</span>' : ''}</div>
+          <div class="name">${escapeHtml(name)} ${r.guestCount ? '<span style="color:#6b7280;font-size:11px">'+r.guestCount+'名</span>' : ''} <span style="color:#0c4a6e;font-family:monospace;font-size:11px;background:#f0f9ff;padding:2px 6px;border-radius:4px;margin-left:6px">${escapeHtml(displayId)}</span></div>
           <div class="meta">${time}${phone ? ' / ' + escapeHtml(phone) : ''}</div>
         </div>
         <span class="badge ${badgeClass}">${badgeLabel}</span>

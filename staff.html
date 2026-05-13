@@ -962,6 +962,7 @@ function convertApiReservation(r) {
     records.push({
       id: r.id + (roomList.length > 1 ? '_' + roomId : ''),
       _origId: r.id,
+      displayId: r.displayId || null, // 2026-05-13 要望#8: 短縮表示用ID（未保存の旧予約は null、staff.html:renderDetail で fallback）
       date: r.startDate,
       endDate: r.endDate,
       nights: r.nights || 0,

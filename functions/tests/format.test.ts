@@ -1,7 +1,7 @@
 // 純粋関数フォーマッタのユニットテスト
 // 2026-05-05 新設（/gfu Phase A-2）
 
-import { formatCustomerAddress, formatSaunaOptions } from '../src/lib/format';
+import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../src/lib/format';
 
 describe('formatCustomerAddress', () => {
   it('全フィールド揃っている場合は 〒+住所1+住所2 を整形する', () => {
@@ -67,5 +67,28 @@ describe('formatSaunaOptions', () => {
 
   it('値が 0 のオプションは無視する', () => {
     expect(formatSaunaOptions({ towels: 0, tarpTent: 0, ice20kg: 1 })).toBe('氷20kg');
+  });
+});
+
+describe('generateDisplayId', () => {
+  it('Auto ID 先頭6文字を大文字化して F- prefix で返す', () => {
+    expect(generateDisplayId('abcdef123456ghijklmn')).toBe('F-ABCDEF');
+  });
+
+  it('全部数字でも問題なく動く', () => {
+    expect(generateDisplayId('012345abcdef')).toBe('F-012345');
+  });
+
+  it('大小英字混在は大文字化で正規化', () => {
+    expect(generateDisplayId('aBcDeFghij')).toBe('F-ABCDEF');
+  });
+
+  it('空文字を渡したら空文字を返す（フォールバック側で処理）', () => {
+    expect(generateDisplayId('')).toBe('');
+  });
+
+  it('6文字未満の Auto ID（理論上ありえない短い ID）でも空文字でなく短縮 ID を返す', () => {
+    // Firestore Auto ID は 20文字固定だが、テスト時の手作り ID 用に堅牢性確保
+    expect(generateDisplayId('abc')).toBe('F-ABC');
   });
 });
