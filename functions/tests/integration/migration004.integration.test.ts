@@ -25,8 +25,11 @@ async function clearReservations() {
 }
 
 async function seedReservations(count: number, withDisplayId: boolean = false) {
+  // Firestore Auto ID は base62 (a-z A-Z 0-9) 20文字。テスト用 ID もそれに準拠
+  // させる（_ や - を入れると displayId regex /^F-[A-Z0-9]{6}$/ が落ちる）。
   for (let i = 0; i < count; i++) {
-    const ref = db.collection('reservations').doc(`seed_${i}_${Date.now()}`);
+    const seedId = ('seed' + String(i).padStart(2, '0') + Date.now()).slice(0, 20);
+    const ref = db.collection('reservations').doc(seedId);
     const data: any = {
       planId: 'normal_27',
       roomIds: ['room_27'],

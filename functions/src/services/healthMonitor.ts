@@ -71,6 +71,41 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
     checks.holiday_table_current = true;
   }
 
+  // --- Check 6: TTL Policy 機能の間接検証（2026-05-13 B-lite 追加）---
+  // 直接 TTL state を取るには @google-cloud/firestore-admin が必要だが bundle 重い。
+  // 代わりに「TTL が機能していれば 48h 以上前の expireAt は残らない」という不変条件で
+  // 間接的に検知する。古い残留 = TTL Policy が DELETING/NEEDS_REPAIR 状態の疑い。
+  const TTL_STALE_THRESHOLD_HOURS = 48;
+  const staleBoundary = new Date(Date.now() - TTL_STALE_THRESHOLD_HOURS * 60 * 60 * 1000);
+  try {
+    // idempotency_keys: expireAt は 24h 後設定 → 48h 以上前のものが残っていれば TTL 失効疑い
+    const idempStale = await db.collection('idempotency_keys')
+      .where('expireAt', '<', staleBoundary)
+      .limit(1).get();
+    // rate_limits: expireAt は 2分後設定 → 48h 以上前のものは確実に削除されているはず
+    const rateLimitStale = await db.collection('rate_limits')
+      .where('expireAt', '<', staleBoundary)
+      .limit(1).get();
+    checks.ttl_policy_idempotency_active = idempStale.empty;
+    checks.ttl_policy_rate_limits_active = rateLimitStale.empty;
+    if (!idempStale.empty) {
+      failures.push(
+        `idempotency_keys に 48h 以上前の expireAt を持つドキュメントが残存。` +
+        `TTL Policy が機能していない疑い。確認: gcloud firestore fields ttls list --project=futami-yoyaku-492607`
+      );
+    }
+    if (!rateLimitStale.empty) {
+      failures.push(
+        `rate_limits に 48h 以上前の expireAt を持つドキュメントが残存。` +
+        `TTL Policy が機能していない疑い。確認: gcloud firestore fields ttls list --project=futami-yoyaku-492607`
+      );
+    }
+  } catch (e: any) {
+    checks.ttl_policy_check = false;
+    // 失敗は通知に含めるがメイン処理は続行（クエリエラーで監視全体を落とさない）
+    failures.push(`TTL Policy 間接チェックエラー: ${e.message || e}`);
+  }
+
   // --- 判定 + 通知 ---
   console.log(JSON.stringify({
     severity: 'INFO',

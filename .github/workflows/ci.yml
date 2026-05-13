@@ -5,10 +5,15 @@ name: CI
 # された場合に素通りするため、CI でも同じ検査を走らせる多層防御。
 #
 # 走らせる検査：
-#  1. functions/ の TypeScript ビルド（tsc）
-#  2. functions/ の jest ユニットテスト（integration は emulator 必要のためスキップ）
-#  3. scripts/verify_pricing.js（料金表 SSOT 照合）
-#  4. HTML inline script の構文チェック（hooks/pre-commit と同等のロジック）
+#  build job:
+#   1. functions/ の TypeScript ビルド（tsc）
+#   2. functions/ の jest ユニットテスト
+#   3. scripts/verify_pricing.js（料金表 SSOT 照合）
+#   4. HTML inline script の構文チェック
+#   5. merge conflict マーカー / credential leak / SHEET_HEADERS タグ強制
+#  integration job（2026-05-13 追加）:
+#   6. Firestore Emulator 起動 + tests/integration/ 配下を実行
+#      （emulator は Java 必要・firebase-tools 経由で起動）
 
 on:
   push:
@@ -46,9 +51,8 @@ jobs:
       - name: Run jest unit tests
         working-directory: functions
         run: npm test
-        # integration tests are skipped: they require Firestore Emulator (port 8080)
-        # which is not provisioned in this CI step. Run locally with:
-        #   npm run test:integration
+        # integration tests are in the separate `integration` job below
+        # (Firestore Emulator + Java requirement makes them too heavy for the build job).
 
       - name: Verify pricing SSOT
         run: node scripts/verify_pricing.js
@@ -112,35 +116,94 @@ jobs:
 
       - name: SHEET_HEADERS change requires [sheet-schema] commit tag
         # pre-commit hook §5 と同等。SHEET_HEADERS/SYNC_CLEAR_RANGE/SHEET_LAST_COLUMN を
-        # 変更しているのに最新 commit メッセージに [sheet-schema] タグがない場合は fail。
-        # PR では HEAD のメッセージを、push では event の commits を見る。
+        # 変更しているのに **対象範囲内のいずれかの commit** に [sheet-schema] タグがない場合は fail。
+        # 2026-05-13: 「複数 commit を一度に push して中間 commit の違反が素通り」する穴を
+        # 塞ぐため、各 commit 個別にタグ存在を確認する形に変更。
         run: |
           set +e
-          # PR の場合は base..HEAD、push の場合は最新 commit を対象
+          # PR は base..HEAD、push は event.before..HEAD を対象（複数 commit に対応）
           if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
-            DIFF_RANGE="${{ github.event.pull_request.base.sha }}..HEAD"
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="${{ github.event.before }}"
           else
-            DIFF_RANGE="HEAD~1..HEAD"
+            BASE_SHA="HEAD~1"
           fi
-          CHANGED=$(git diff --name-only "$DIFF_RANGE" 2>/dev/null || true)
           SCHEMA_FILES="functions/src/lib/sheets.ts functions/src/services/sheetsSync.ts functions/src/index.ts functions/src/constants.ts"
-          HIT=0
-          for f in $SCHEMA_FILES; do
-            if echo "$CHANGED" | grep -qE "(^|/)$(basename $f)\$"; then
-              if git diff "$DIFF_RANGE" -- "$f" 2>/dev/null | grep -qE "^[+-].*(SHEET_HEADERS|SYNC_CLEAR_RANGE|SHEET_LAST_COLUMN)"; then
-                HIT=1
-                break
+          # 範囲内の各 commit をループし、schema 変更が含まれる commit に [sheet-schema] があるか個別判定
+          COMMITS=$(git rev-list "$BASE_SHA..HEAD" 2>/dev/null)
+          FAIL_COMMITS=""
+          for commit in $COMMITS; do
+            CHANGED=$(git diff-tree --no-commit-id --name-only -r "$commit" 2>/dev/null)
+            HIT=0
+            for f in $SCHEMA_FILES; do
+              if echo "$CHANGED" | grep -qE "(^|/)$(basename $f)\$"; then
+                if git show "$commit" -- "$f" 2>/dev/null | grep -qE "^[+-].*(SHEET_HEADERS|SYNC_CLEAR_RANGE|SHEET_LAST_COLUMN)"; then
+                  HIT=1
+                  break
+                fi
+              fi
+            done
+            if [ "$HIT" -eq 1 ]; then
+              MSG=$(git log -1 --pretty=%B "$commit")
+              if ! echo "$MSG" | grep -q "\[sheet-schema\]"; then
+                FAIL_COMMITS="$FAIL_COMMITS $commit"
               fi
             fi
           done
-          if [ "$HIT" -eq 1 ]; then
-            LAST_MSG=$(git log -1 --pretty=%B)
-            if ! echo "$LAST_MSG" | grep -q "\[sheet-schema\]"; then
-              echo "❌ SHEET_HEADERS/SYNC_CLEAR_RANGE/SHEET_LAST_COLUMN を変更しているのに commit message に [sheet-schema] タグがありません"
-              echo "   詳細: 00_projects/futami_reservation/CLAUDE.md ★5 ルール"
-              exit 1
-            fi
-            echo "✅ [sheet-schema] タグ確認OK"
-          else
-            echo "✅ SHEET_HEADERS 変更なし"
+          if [ -n "$FAIL_COMMITS" ]; then
+            echo "❌ SHEET_HEADERS/SYNC_CLEAR_RANGE/SHEET_LAST_COLUMN を変更しているのに [sheet-schema] タグがない commit:"
+            for c in $FAIL_COMMITS; do
+              echo "   $(git log -1 --oneline $c)"
+            done
+            echo "   詳細: 00_projects/futami_reservation/CLAUDE.md ★5 ルール"
+            exit 1
           fi
+          echo "✅ [sheet-schema] タグ確認OK（複数 commit 対応）"
+
+  integration:
+    name: Integration Tests (Firestore Emulator)
+    runs-on: ubuntu-latest
+    # build job が通ってから走らせる（順序依存）
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Setup Java 17 (required by Firestore Emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Firebase Emulator JAR
+        # JAR 初回ダウンロードで 30-60 秒。キャッシュで2回目以降を高速化。
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-v1
+
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Run integration tests via Firestore Emulator
+        working-directory: functions
+        env:
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+        run: |
+          firebase emulators:exec \
+            --only firestore \
+            --project futami-yoyaku-492607 \
+            "npm run test:integration"
