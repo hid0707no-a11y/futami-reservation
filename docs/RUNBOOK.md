@@ -135,7 +135,59 @@ await down(admin.firestore(), { dryRun: false });  // 実削除
 | 現地（双海町） | 上村さん（カさん） |
 | 開発外部 | 市川さん（functions B-1 担当・未稼働） |
 
-## 9. 過去の障害履歴
+## 9. SA / 認証鍵 ローテーション計画
+
+### Cloud Functions Service Account
+本プロジェクトは Firebase 管理の **default SA** を利用しており、Google が自動ローテーションする内部署名鍵で稼働する。**運用側でのキーローテーション作業は不要**。
+
+```bash
+# 確認用コマンド
+firebase projects:get futami-yoyaku-492607
+gcloud iam service-accounts list --project=futami-yoyaku-492607
+```
+
+### 外部公開していないキー類
+- `~/.config/nissho/token_write.json` (Sheets書込用)：個人 OAuth refresh_token。Mac mini #1 への配布時に再 OAuth が必要。
+- `~/.config/nissho/credentials.json`：Google Cloud OAuth Client ID/Secret（client app type=installed）。漏洩時の影響は限定的だが、年1回の点検推奨。
+- `STAFF_API_KEY`：2026-04 に Firebase Auth 化で**廃止**。コード内に残存なし（`hooks/pre-commit` の credential scan で保護）。
+
+### ローテーション点検カレンダー
+| 鍵 | 周期 | 最終確認 | 次回 |
+|---|---|---|---|
+| default SA（Firebase管理）| 自動 | 2026-05-13 | — |
+| token_write.json | 年1 | 2026-05-13 | 2027-05 |
+| credentials.json | 年1 | 2026-05-13 | 2027-05 |
+| Firebase apiKey（クライアント公開OK）| 廃止予定なし | — | — |
+
+## 10. 運営通知ルート（上村さん＝カさん向け）
+
+### 主要ルート（優先度順）
+1. **スプシ「予約システム改修要望」** D列（SSOT・上村さんが日次で見る）
+2. **Discord** （即時性が必要な場合）
+3. **電話／SMS** （緊急時）
+
+### 通知 SOP
+- **★5 ルール準拠の事前通知**：SHEET_HEADERS 変更等は**1週間前**にスプシ＋Discord 両方で通知
+- **deploy 後通知**：本番反映と同時にスプシD列に追記（既存パターン）
+- **障害発生時**：Discord に即時投稿 → 電話確認
+
+### 通知忘れ防止
+本日 5/13 の SHEET_HEADERS A:Z 拡張は同日通知（運営影響:Z列メモ上書きリスク）になったが、Z列実調査で既存値0件確認済（§4 Z列退避フロー）。
+
+## 11. Firestore TTL Policy（2026-05-13 設定）
+
+`idempotency_keys.expireAt` / `rate_limits.expireAt` フィールドに対して Firestore TTL Policy を設定済（gcloud firestore fields ttls update --enable-ttl）。
+
+```bash
+gcloud firestore fields ttls list --project=futami-yoyaku-492607
+# expectation:
+#   idempotency_keys/fields/expireAt → state: ACTIVE
+#   rate_limits/fields/expireAt      → state: ACTIVE
+```
+
+これによりコレクションの無限膨張が防止される。Firestore は `expireAt` < now のドキュメントを 24h 以内に自動削除する。
+
+## 12. 過去の障害履歴
 
 | 日付 | 内容 | 復旧 |
 |---|---|---|
