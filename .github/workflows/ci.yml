@@ -178,11 +178,13 @@ jobs:
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
 
-      - name: Setup Java 17 (required by Firestore Emulator)
+      - name: Setup Java 21 (required by firebase-tools / Firestore Emulator)
+        # 2026-05-13: firebase-tools v15+ は Java 21 必須。17 だと「no longer supports
+        # Java version before 21」で fail する。ローカルは openjdk 25 を使用中。
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Cache Firebase Emulator JAR
         # JAR 初回ダウンロードで 30-60 秒。キャッシュで2回目以降を高速化。
