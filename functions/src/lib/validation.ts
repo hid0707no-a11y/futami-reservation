@@ -52,14 +52,42 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
     }
   }
 
-  // slots
+  // 混在カテゴリ拒否（#3）：court_* を他カテゴリと混在させると isTennisPayload 判定を外れ、
+  // court スロットが通常 slots コレクションに書かれて tennis_slots 排他をすり抜け二重予約になる。
+  // camp_* も同様に混在を禁止（isCamp 判定の対称性確保）。
+  const hasCourt = roomIds.some((r: any) => typeof r === 'string' && r.startsWith('court_'));
+  const allCourt = roomIds.every((r: any) => typeof r === 'string' && r.startsWith('court_'));
+  if (hasCourt && !allCourt) {
+    return { ok: false, error: 'invalid_roomIds', detail: 'tennis_mixed' };
+  }
+  const hasCamp = roomIds.some((r: any) => typeof r === 'string' && r.startsWith('camp_'));
+  const allCamp = roomIds.every((r: any) => typeof r === 'string' && r.startsWith('camp_'));
+  if (hasCamp && !allCamp) {
+    return { ok: false, error: 'invalid_roomIds', detail: 'camp_mixed' };
+  }
+
+  // slots：構造（roomId|date|time）と roomIds との突合・重複検査（#3）
   if (!Array.isArray(slots) || slots.length === 0 || slots.length > 500) {
     return { ok: false, error: 'invalid_slots' };
   }
+  const roomIdSet = new Set<string>(roomIds);
+  const seenSlots = new Set<string>();
   for (const s of slots) {
     if (typeof s !== 'string' || s.length > 50) {
       return { ok: false, error: 'invalid_slot_format' };
     }
+    const parts = s.split('|');
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+      return { ok: false, error: 'invalid_slot_format', detail: s };
+    }
+    // slot の roomId 部は宣言された roomIds に含まれること（取り違え二重予約防止）
+    if (!roomIdSet.has(parts[0])) {
+      return { ok: false, error: 'slot_room_mismatch', detail: s };
+    }
+    if (seenSlots.has(s)) {
+      return { ok: false, error: 'duplicate_slot', detail: s };
+    }
+    seenSlots.add(s);
   }
 
   // 日付フォーマット
@@ -75,6 +103,15 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   const bookingDate = new Date(startDate + 'T00:00:00');
   if (bookingDate > maxDate) {
     return { ok: false, error: 'booking_too_far', detail: `${maxDays}日先まで予約可能です` };
+  }
+
+  // slot の日付は startDate〜endDate の範囲内であること（#3 任意日付の在庫汚染防止）。
+  // 宿泊・キャンプの翌朝スロットは endDate（チェックアウト日）に収まる前提。
+  for (const s of slots) {
+    const slotDate = s.split('|')[1];
+    if (slotDate < startDate || slotDate > endDate) {
+      return { ok: false, error: 'slot_date_out_of_range', detail: s };
+    }
   }
 
   // customer
@@ -102,5 +139,72 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
     return { ok: false, error: 'invalid_note' };
   }
 
+  // #17 pricing.total の最低限サニティ（正の有限数・上限内）。
+  // curl 直叩きで total:0/負/NaN/巨額の予約が confirmed 化するのを防ぐ。
+  // ※ pricing.js をサーバ同梱して planId/slots から総額を完全再計算する根治は別タスク（朝送り）。
+  const pricing = (body || {}).pricing;
+  if (pricing != null) {
+    const total = pricing.total;
+    if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0 || total > 10_000_000) {
+      return { ok: false, error: 'invalid_pricing_total' };
+    }
+  }
+
   return { ok: true };
+}
+
+export interface UpdateValidationResult {
+  ok: boolean;
+  error?: string;
+  detail?: string;
+  updates?: Record<string, any>;
+}
+
+/**
+ * updateReservation の部分更新フィールドを検証する（#2/#5）。
+ * status の「スロット整合を壊す遷移」（→cancelled / cancelled からの復活）は呼出側の
+ * トランザクション内で別途拒否する。ここでは型・長さのみ検査し、検証を通ったフィールド
+ * だけを updates に格納して返す（未指定フィールドは含めない＝部分更新）。
+ * customer/payment は呼出側で既存値とマージする前提でオブジェクト妥当性のみ見る。
+ */
+export function validateUpdateFields(body: any): UpdateValidationResult {
+  const updates: Record<string, any> = {};
+  if (body?.status !== undefined) {
+    if (typeof body.status !== 'string' || body.status.length === 0 || body.status.length > 30) {
+      return { ok: false, error: 'invalid_status' };
+    }
+    updates.status = body.status;
+  }
+  if (body?.note !== undefined) {
+    if (body.note !== null && (typeof body.note !== 'string' || body.note.length > 500)) {
+      return { ok: false, error: 'invalid_note' };
+    }
+    updates.note = body.note;
+  }
+  if (body?.customer !== undefined) {
+    const c = body.customer;
+    if (typeof c !== 'object' || c === null || Array.isArray(c)) {
+      return { ok: false, error: 'invalid_customer' };
+    }
+    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 50)) return { ok: false, error: 'invalid_customer_name' };
+    if (c.phone !== undefined && (typeof c.phone !== 'string' || c.phone.length > 20)) return { ok: false, error: 'invalid_customer_phone' };
+    if (c.email !== undefined && c.email !== '' && (typeof c.email !== 'string' || c.email.length > 100)) return { ok: false, error: 'invalid_customer_email' };
+    if (c.zip !== undefined && (typeof c.zip !== 'string' || c.zip.length > 10)) return { ok: false, error: 'invalid_customer_zip' };
+    if (c.address1 !== undefined && (typeof c.address1 !== 'string' || c.address1.length > 100)) return { ok: false, error: 'invalid_customer_address1' };
+    if (c.address2 !== undefined && (typeof c.address2 !== 'string' || c.address2.length > 100)) return { ok: false, error: 'invalid_customer_address2' };
+    updates.customer = c;
+  }
+  if (body?.payment !== undefined) {
+    const p = body.payment;
+    if (typeof p !== 'object' || p === null || Array.isArray(p)) {
+      return { ok: false, error: 'invalid_payment' };
+    }
+    if (p.method !== undefined && (typeof p.method !== 'string' || p.method.length > 50)) return { ok: false, error: 'invalid_payment_method' };
+    if (p.status !== undefined && (typeof p.status !== 'string' || p.status.length > 50)) return { ok: false, error: 'invalid_payment_status' };
+    updates.payment = p;
+  }
+  if (Object.keys(updates).length === 0) {
+    return { ok: false, error: 'no_updatable_fields' };
+  }
+  return { ok: true, updates };
 }

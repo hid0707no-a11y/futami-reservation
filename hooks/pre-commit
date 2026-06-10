@@ -17,7 +17,8 @@ STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 if [ -n "$STAGED" ]; then
   for f in $STAGED; do
     if [ -f "$f" ]; then
-      if grep -nE '^(<{7}|={7}|>{7})( |$)' "$f" > /tmp/_pc_conflict.txt; then
+      # #40: working tree ではなくステージ済み(index)の内容を検査する（部分stage/add漏れ対策）
+      if git show ":$f" 2>/dev/null | grep -nE '^(<{7}|={7}|>{7})( |$)' > /tmp/_pc_conflict.txt; then
         echo "❌ merge conflict marker found in: $f"
         cat /tmp/_pc_conflict.txt
         FAIL=1
@@ -32,9 +33,10 @@ HTML_FILES=$(echo "$STAGED" | grep -E '\.html$' || true)
 if [ -n "$HTML_FILES" ]; then
   for f in $HTML_FILES; do
     [ -f "$f" ] || continue
-    node -e "
+    # #40: working tree ではなくステージ済み(index)の内容を stdin で渡して検査する
+    git show ":$f" 2>/dev/null | node -e "
       const fs = require('fs');
-      const html = fs.readFileSync('$f', 'utf8');
+      const html = fs.readFileSync(0, 'utf8');
       const re = /<script(?![^>]*\bsrc=)(?![^>]*\btype=\"module\")[^>]*>([\\s\\S]*?)<\\/script>/g;
       let m, i = 0, errors = 0;
       while ((m = re.exec(html)) !== null) {

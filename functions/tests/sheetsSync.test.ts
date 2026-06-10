@@ -13,21 +13,32 @@ describe('services/sheetsSync', () => {
     expect(syncReservationsToSheets.length).toBe(1); // 引数1個（db）
   });
 
-  it('SHEETS_SYNC_ID 未設定なら早期 return（{ synced: 0, cancelled: 0 }）', async () => {
-    // 環境変数を一時的にクリア
+  it('SHEETS_SYNC_ID 未設定は本番では throw（#30 静かな同期停止を防ぐ）', async () => {
     const orig = process.env.SHEETS_SYNC_ID;
+    const origSkip = process.env.ALLOW_SHEETS_SKIP;
     delete process.env.SHEETS_SYNC_ID;
-
-    // この検証のために sheetsSync を再ロード
+    delete process.env.ALLOW_SHEETS_SKIP;
     jest.resetModules();
     const { syncReservationsToSheets: reloaded } = await import('../src/services/sheetsSync');
+    const fakeDb: any = { collection: jest.fn(() => { throw new Error('should not be called'); }) };
+    await expect(reloaded(fakeDb)).rejects.toThrow(/SHEETS_SYNC_ID/);
+    expect(fakeDb.collection).not.toHaveBeenCalled();
+    if (orig !== undefined) process.env.SHEETS_SYNC_ID = orig;
+    if (origSkip !== undefined) process.env.ALLOW_SHEETS_SKIP = origSkip;
+  });
 
-    // db は呼ばれない想定なのでダミー
+  it('ALLOW_SHEETS_SKIP=1 なら未設定でも明示スキップ（{synced:0,cancelled:0}）', async () => {
+    const orig = process.env.SHEETS_SYNC_ID;
+    const origSkip = process.env.ALLOW_SHEETS_SKIP;
+    delete process.env.SHEETS_SYNC_ID;
+    process.env.ALLOW_SHEETS_SKIP = '1';
+    jest.resetModules();
+    const { syncReservationsToSheets: reloaded } = await import('../src/services/sheetsSync');
     const fakeDb: any = { collection: jest.fn(() => { throw new Error('should not be called'); }) };
     const result = await reloaded(fakeDb);
     expect(result).toEqual({ synced: 0, cancelled: 0 });
     expect(fakeDb.collection).not.toHaveBeenCalled();
-
     if (orig !== undefined) process.env.SHEETS_SYNC_ID = orig;
+    if (origSkip !== undefined) process.env.ALLOW_SHEETS_SKIP = origSkip; else delete process.env.ALLOW_SHEETS_SKIP;
   });
 });

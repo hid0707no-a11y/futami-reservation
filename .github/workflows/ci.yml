@@ -69,7 +69,7 @@ jobs:
               let m, i = 0;
               while ((m = re.exec(html)) !== null) {
                 i++;
-                try { new Function(m[1]); }
+                try { new Function('\"use strict\";\n' + m[1]); }
                 catch (e) { console.error(f + ' script #' + i + ': ' + e.message); errors++; }
               }
             });
@@ -127,11 +127,25 @@ jobs:
           elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
             BASE_SHA="${{ github.event.before }}"
           else
-            BASE_SHA="HEAD~1"
+            # 新ブランチ push（before=0000）: HEAD~1 だと最終 commit しか見ないので origin/main の分岐点を起点にする
+            BASE_SHA=$(git merge-base origin/main HEAD 2>/dev/null)
+          fi
+          # #37 fail-closed: force-push 等で before が消えた / 解決不能なら merge-base にフォールバックし、
+          # それでも解決できなければ PASS せず fail する（旧実装は rev-list 失敗→空→誤 PASS の fail-open だった）
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            BASE_SHA=$(git merge-base origin/main HEAD 2>/dev/null)
+          fi
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "❌ [sheet-schema] base SHA を解決できませんでした（fail-closed）。手動で [sheet-schema] タグ有無を確認してください。"
+            exit 1
           fi
           SCHEMA_FILES="functions/src/lib/sheets.ts functions/src/services/sheetsSync.ts functions/src/index.ts functions/src/constants.ts"
           # 範囲内の各 commit をループし、schema 変更が含まれる commit に [sheet-schema] があるか個別判定
           COMMITS=$(git rev-list "$BASE_SHA..HEAD" 2>/dev/null)
+          if [ $? -ne 0 ]; then
+            echo "❌ [sheet-schema] git rev-list 失敗（fail-closed）: $BASE_SHA..HEAD"
+            exit 1
+          fi
           FAIL_COMMITS=""
           for commit in $COMMITS; do
             CHANGED=$(git diff-tree --no-commit-id --name-only -r "$commit" 2>/dev/null)
@@ -198,7 +212,9 @@ jobs:
         run: npm ci
 
       - name: Install firebase-tools
-        run: npm install -g firebase-tools
+        # #39 メジャー固定：未固定だと次メジャー(v16等)の Java 要件変更等でコード無変更のまま CI が突然 fail する。
+        # v15 系は Java 21 必須（上の setup-java と整合）。更新は意図的な PR で行う。
+        run: npm install -g firebase-tools@15
 
       - name: Run integration tests via Firestore Emulator
         working-directory: functions

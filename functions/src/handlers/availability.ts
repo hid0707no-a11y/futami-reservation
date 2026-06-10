@@ -75,14 +75,21 @@ export const futamiDays = onRequest(
         if (!(await requireStaffAuth(req, res))) return;
         if (!checkOrigin(req, res)) return;
         const dates: string[] = req.body?.dates || [];
-        if (!Array.isArray(dates)) {
-          res.status(400).json({ error: 'dates must be array' });
+        // #10 businessCalendar と同基準で全要素を検証（型・YYYY-MM-DD・365件上限）
+        const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+        if (!Array.isArray(dates) || dates.length > 365
+            || !dates.every((d: any) => typeof d === 'string' && dateRe.test(d))) {
+          res.status(400).json({ error: 'invalid_dates' });
           return;
         }
-        await db.doc('config/special_days').set(
-          { sauna_capacity_days: dates, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
-          { merge: true }
-        );
+        // #13 config 書込みもトランザクションで包む（★3 文言準拠・bare .set() を残さない）
+        await db.runTransaction(async tx => {
+          tx.set(
+            db.doc('config/special_days'),
+            { sauna_capacity_days: dates, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+            { merge: true }
+          );
+        });
         _clearFutamiDaysCache();
         res.status(200).json({ ok: true, count: dates.length });
         return;
@@ -125,7 +132,10 @@ export const businessCalendar = onRequest(
         if (Array.isArray(defaultClosedDays)) updates.defaultClosedDays = defaultClosedDays;
         if (Array.isArray(forceOpen)) updates.forceOpen = forceOpen;
         if (Array.isArray(forceClosed)) updates.forceClosed = forceClosed;
-        await db.doc('config/business_calendar').set(updates, { merge: true });
+        // #13 config 書込みもトランザクションで包む（★3 文言準拠）
+        await db.runTransaction(async tx => {
+          tx.set(db.doc('config/business_calendar'), updates, { merge: true });
+        });
         _calendarCache = null;
         auditLog('calendar.update', updates, req);
         res.status(200).json({ ok: true });

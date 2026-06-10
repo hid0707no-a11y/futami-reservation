@@ -18,6 +18,12 @@ const db = admin.firestore();
 /**
  * createReservation 内のトランザクションロジックを抽出した最小再現関数。
  * 旧 index.ts → handlers/createReservation.ts の通常プランブランチと同じロジック。
+ *
+ * ⚠️ #36 乖離リスク注意：これは実コードの**コピー**であり、createReservation の tx を直接 import
+ * していない。実装側の競合検出を変えてもこのテストは緑のまま通る恐れがある。
+ * 2026-06-11 以降、本物の createReservation を emulator で叩く real-path テストを
+ * tests/integration/reservationHandlers.integration.test.ts に追加済（そちらが実装の回帰を守る）。
+ * 本ファイルは tx の基礎挙動の軽量確認として残す。lib への完全切出し（3経路共通化）は別タスク。
  */
 async function reserveSlotsWithConflictCheck(slotKeys: string[]): Promise<{ ok: true; reservationId: string } | { ok: false; conflicts: string[] }> {
   try {

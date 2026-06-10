@@ -5,10 +5,9 @@
 // このファイルでは「何をチェックするか」「どう通知するか」だけを管理する。
 
 import * as admin from 'firebase-admin';
+import { google } from 'googleapis';
 import { sendMonitorAlert } from '../lib/mail';
-
-const HOLIDAY_TABLE_END = '2027-12-31';
-const HOLIDAY_WARN_FROM = '2027-10-01';
+import { HOLIDAY_TABLE_END, HOLIDAY_WARN_FROM } from '../constants';
 
 export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promise<void> {
   const failures: string[] = [];
@@ -59,13 +58,15 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
   }
 
   // --- Check 5: 祝日テーブル期限（index.html JP_HOLIDAYS_2026_2027）---
-  const today = new Date().toISOString().slice(0, 10);
+  // JST 基準の今日。onSchedule は 08:30 JST（=UTC 前日 23:30）実行のため、
+  // UTC の toISOString だと判定日が1日早まる。+9h して JST 日付に補正する。
+  const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   if (today >= HOLIDAY_WARN_FROM) {
     checks.holiday_table_current = false;
     failures.push(
       `祝日テーブル JP_HOLIDAYS_2026_2027 が ${HOLIDAY_TABLE_END} で失効間近（今日=${today}）。` +
       'index.html の JP_HOLIDAYS_2026_2027 を 2028-2029 用に更新してください。' +
-      ' 手順: 00_projects/futami_reservation/CLAUDE.md L60-79 を参照。'
+      ' 手順: 00_projects/futami_reservation/CLAUDE.md「年次メンテナンスタスク」節を参照。'
     );
   } else {
     checks.holiday_table_current = true;
@@ -104,6 +105,31 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
     checks.ttl_policy_check = false;
     // 失敗は通知に含めるがメイン処理は続行（クエリエラーで監視全体を落とさない）
     failures.push(`TTL Policy 間接チェックエラー: ${e.message || e}`);
+  }
+
+  // --- Check 7: スプシ同期の鮮度（#31）---
+  // sheetsSync が meta!B2 に毎回書く「最終同期時刻」を読み、26h 以上古ければ同期停止疑い。
+  // SHEETS_SYNC_ID 未設定（ローカル/テスト等）は同期自体が無効なのでスキップ。
+  const SHEETS_SYNC_ID = process.env.SHEETS_SYNC_ID || '';
+  if (SHEETS_SYNC_ID) {
+    try {
+      const auth = new google.auth.GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
+      const sheets = google.sheets({ version: 'v4', auth: (await auth.getClient()) as any });
+      const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEETS_SYNC_ID, range: 'meta!B2' });
+      const lastSyncStr = resp.data.values?.[0]?.[0] as string | undefined;
+      const lastSyncMs = lastSyncStr ? Date.parse(lastSyncStr) : NaN;
+      const ageH = Number.isFinite(lastSyncMs) ? (Date.now() - lastSyncMs) / 3_600_000 : Infinity;
+      checks.sheets_sync_fresh = ageH <= 26;
+      if (ageH > 26) {
+        failures.push(
+          `スプシ同期が停止している疑い：meta!B2 最終同期時刻=${lastSyncStr || '(空)'}` +
+          `（${Number.isFinite(ageH) ? Math.round(ageH) + 'h前' : '解析不可'}）。dailySyncToSheets のログを確認。`
+        );
+      }
+    } catch (e: any) {
+      checks.sheets_sync_fresh = false;
+      failures.push(`スプシ同期鮮度チェックエラー: ${e.message || e}`);
+    }
   }
 
   // --- 判定 + 通知 ---

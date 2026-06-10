@@ -8,6 +8,7 @@ process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '12
 process.env.GCLOUD_PROJECT = 'futami-yoyaku-492607';
 process.env.GOOGLE_CLOUD_PROJECT = 'futami-yoyaku-492607';
 delete process.env.SHEETS_SYNC_ID; // 明示的に未設定にする
+process.env.ALLOW_SHEETS_SKIP = '1'; // #30 本番は throw・テスト/ローカルは明示フラグでスキップ許可
 
 import * as admin from 'firebase-admin';
 
@@ -27,7 +28,7 @@ describe('sheetsSync integration (emulator)', () => {
     ).catch(() => { /* noop */ });
   });
 
-  it('SHEETS_SYNC_ID 未設定なら reservations 件数に関わらず { synced: 0, cancelled: 0 } で早期 return', async () => {
+  it('SHEETS_SYNC_ID 未設定 + ALLOW_SHEETS_SKIP=1 なら reservations 件数に関わらず { synced: 0, cancelled: 0 } で安全スキップ', async () => {
     // データを投入しても Sheets API は叩かれない
     await db.collection('reservations').doc('r1').set({
       status: 'confirmed',

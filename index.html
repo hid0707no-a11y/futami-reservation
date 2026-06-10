@@ -962,19 +962,19 @@ body {
     <div class="card confirm-form">
       <div class="form-group">
         <label class="form-label" for="confirm-name">お名前 *</label>
-        <input type="text" class="form-input" id="confirm-name" placeholder="山田 太郎">
+        <input type="text" class="form-input" id="confirm-name" placeholder="山田 太郎" maxlength="50">
       </div>
       <div class="form-group">
         <label class="form-label" for="confirm-phone">電話番号 *</label>
-        <input type="tel" class="form-input" id="confirm-phone" placeholder="090-1234-5678">
+        <input type="tel" class="form-input" id="confirm-phone" placeholder="090-1234-5678" maxlength="20">
       </div>
       <div class="form-group">
         <label class="form-label" for="confirm-email">メールアドレス</label>
-        <input type="email" class="form-input" id="confirm-email" placeholder="example@mail.com">
+        <input type="email" class="form-input" id="confirm-email" placeholder="example@mail.com" maxlength="100">
       </div>
       <div class="form-group">
         <label class="form-label" for="confirm-email2">メールアドレス（確認）</label>
-        <input type="email" class="form-input" id="confirm-email2" placeholder="もう一度入力してください">
+        <input type="email" class="form-input" id="confirm-email2" placeholder="もう一度入力してください" maxlength="100">
         <div id="email-mismatch" style="color:#e94560;font-size:12px;margin-top:4px;display:none;">メールアドレスが一致しません</div>
       </div>
       <!-- 住所欄（宿泊系プランは必須・宿泊業の台帳要件＋キャンセル料請求書送付用） -->
@@ -983,13 +983,13 @@ body {
         <input type="text" class="form-input" id="confirm-zip" placeholder="郵便番号 例：799-1471" inputmode="numeric" maxlength="8" style="margin-bottom:8px">
         <button type="button" id="zip-lookup-btn" onclick="lookupAddress()" style="display:block;width:100%;min-height:48px;padding:0 18px;margin-bottom:8px;background:#e8eef3;color:#333;border:1px solid #c7d3dd;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer">🔍 郵便番号から住所を入力</button>
         <div id="zip-status" style="font-size:12px;margin:4px 0 8px;display:none"></div>
-        <input type="text" class="form-input" id="confirm-address1" placeholder="都道府県・市区町村・町名（例：愛媛県伊予市双海町高岸甲）" style="margin-bottom:8px">
-        <input type="text" class="form-input" id="confirm-address2" placeholder="番地・建物名（例：1234-5 ○○マンション101）">
+        <input type="text" class="form-input" id="confirm-address1" placeholder="都道府県・市区町村・町名（例：愛媛県伊予市双海町高岸甲）" style="margin-bottom:8px" maxlength="100">
+        <input type="text" class="form-input" id="confirm-address2" placeholder="番地・建物名（例：1234-5 ○○マンション101）" maxlength="100">
         <div id="address-required-note" class="text-muted" style="font-size:12px;margin-top:4px;display:none">※ 宿泊業の台帳記入のため、ご住所のご記入をお願いしております</div>
       </div>
       <div class="form-group">
         <label class="form-label" for="confirm-note">備考</label>
-        <textarea class="form-input" id="confirm-note" rows="3" placeholder="ご要望があればご記入ください"></textarea>
+        <textarea class="form-input" id="confirm-note" rows="3" placeholder="ご要望があればご記入ください" maxlength="440"></textarea>
       </div>
     </div>
 
@@ -1005,7 +1005,7 @@ body {
     <div class="summary-card" id="review-summary"></div>
     <div style="display:flex;gap:12px;margin-top:16px;">
       <button class="btn" style="flex:1;background:#f3f4f6;color:#374151;" onclick="navigate('screen-confirm')">戻って修正</button>
-      <button class="btn btn-primary" style="flex:2;" onclick="submitBooking()">この内容で予約を確定する</button>
+      <button class="btn btn-primary" style="flex:2;" id="confirm-submit-btn" onclick="submitBooking()">この内容で予約を確定する</button>
     </div>
     <div class="text-center text-muted mt-16">
       ※ 確定後の変更は電話にてご連絡ください。
@@ -1502,6 +1502,23 @@ let DATA_LOADED = false;
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
 const AVAILABILITY_URL = 'https://availability-6ry33ad4oa-an.a.run.app';
 
+// #27 古い data.json フォールバック使用中である事を画面上部で告知するバナー
+function showStaleDataBanner() {
+  let b = document.getElementById('stale-data-banner');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'stale-data-banner';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;padding:8px 12px;font-size:13px;line-height:1.5;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.25)';
+    b.textContent = '⚠️ 最新の空き状況を取得できていません。表示は参考値です（時間をおいて再読込してください）。';
+    document.body.appendChild(b);
+  }
+  b.style.display = 'block';
+}
+function hideStaleDataBanner() {
+  const b = document.getElementById('stale-data-banner');
+  if (b) b.style.display = 'none';
+}
+
 async function loadAvailabilityData() {
   try {
     // 営業カレンダーも同時に取得
@@ -1522,6 +1539,7 @@ async function loadAvailabilityData() {
     TENNIS_SLOTS.clear();
     (data.tennisSlots || []).forEach(s => TENNIS_SLOTS.add(s));
     DATA_LOADED = true;
+    hideStaleDataBanner(); // #27 最新取得成功 → バナー解除
     console.log('[api] loaded', OCCUPIED_SLOTS.size, 'slots,', TENNIS_SLOTS.size, 'tennis,', Object.keys(SHARED_SLOTS).length, 'shared');
     // 既に表示中の画面があれば再描画
     if (typeof renderSearchResults === 'function' && state.flow === 'date' && state.searchDate) {
@@ -1529,6 +1547,7 @@ async function loadAvailabilityData() {
     }
   } catch (e) {
     console.warn('[api] load failed, falling back to data.json:', e);
+    showStaleDataBanner(); // #27 フォールバック中は参考値である旨を告知
     try {
       const res2 = await fetch('data.json?t=' + Date.now());
       if (res2.ok) {
@@ -1547,10 +1566,10 @@ function generateIdempotencyKey() {
   return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
-async function submitReservation(payload) {
+async function submitReservation(payload, idempotencyKey) {
   const res = await fetch(API_BASE + '/createReservation', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': generateIdempotencyKey() },
+    headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': idempotencyKey || generateIdempotencyKey() },
     body: JSON.stringify(payload),
   });
   const data = await res.json();
@@ -1880,6 +1899,11 @@ function selectPlanFromSearch(planId) {
   state.groupName = '';
   state.useLighting = false;
   state.midoriLightingHours = 0;
+
+  // #25 ふたみの日サウナは最小2名。検索フロー経由で1名のまま進むとサーバ400になるためここで補正
+  if (plan.planType === 'sauna') {
+    state.guests = Math.max(2, Math.min(8, state.guests || 2));
+  }
 
   // 空いている部屋を自動選択
   const available = getAvailableRooms(plan, state.selectedDate);
@@ -2764,18 +2788,23 @@ function updateStayPriceBreakdown() {
   const room = ROOMS.find(r => r.id === state.selectedRoomId);
   const roomLabel = room ? room.name : '';
 
-  const baseCost = plan.basePrice;
+  // #23 室数を反映し、総合計は正本 NisshoPricing.calculateStayPrice に委譲（明細とサマリーバーの食い違い解消）
+  const roomCount = (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0) ? state.selectedRoomIds.length : 1;
+  const baseCost = plan.basePrice * roomCount;
   const adultCost = plan.extraAdult * state.guestsAdult;
   const childCost = plan.extraChild * state.guestsChild;
   const infantCost = plan.extraInfant * state.guestsInfant;
   const perNight = baseCost + adultCost + childCost + infantCost;
-  const grandTotal = perNight * state.selectedNights;
+  const grandTotal = window.NisshoPricing.calculateStayPrice(plan, {
+    roomCount: roomCount, nights: state.selectedNights,
+    guestsAdult: state.guestsAdult, guestsChild: state.guestsChild, guestsInfant: state.guestsInfant,
+  });
 
   let html = '<div class="price-breakdown">';
   html += '<div class="price-breakdown-title">料金明細</div>';
 
   // 基本料金
-  html += '<div class="price-row"><span class="price-row-label">基本料金（' + roomLabel + ' x 1泊）</span><span class="price-row-value">' + baseCost.toLocaleString() + '円</span></div>';
+  html += '<div class="price-row"><span class="price-row-label">基本料金（' + roomLabel + ' x ' + roomCount + '室 x 1泊）</span><span class="price-row-value">' + baseCost.toLocaleString() + '円</span></div>';
 
   // 年齢区分
   html += '<div class="price-row"><span class="price-row-label">中学生以上 x ' + state.guestsAdult + '人</span><span class="price-row-value">' + adultCost.toLocaleString() + '円</span></div>';
@@ -3361,8 +3390,10 @@ function proceedToConfirm() {
       return;
     }
     const room = ROOMS.find(r => r.id === state.selectedRoomId);
-    if (plan.id === 'stay_6' && room && total > room.capacity) {
-      alert('6畳は' + room.capacity + '名までです。');
+    // #22 複数室選択時は定員×室数で判定（複数室予約機能が多人数で使えるように）
+    const roomCount = (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0) ? state.selectedRoomIds.length : 1;
+    if (plan.id === 'stay_6' && room && total > room.capacity * roomCount) {
+      alert('6畳は1室' + room.capacity + '名まで（選択中' + roomCount + '室で' + (room.capacity * roomCount) + '名）です。人数が多い場合は部屋数を増やしてください。');
       return;
     }
   }
@@ -3645,6 +3676,21 @@ function showReview() {
 }
 
 async function submitBooking() {
+  // #20 二重送信防止：処理中はボタンを無効化し、再入をガード（finally で必ず復帰）
+  if (window.__submitInFlight) return;
+  window.__submitInFlight = true;
+  const __btn = document.getElementById('confirm-submit-btn');
+  const __btnText = __btn ? __btn.textContent : '';
+  if (__btn) { __btn.disabled = true; __btn.textContent = '送信中…'; }
+  try {
+    await _submitBookingInner();
+  } finally {
+    window.__submitInFlight = false;
+    if (__btn) { __btn.disabled = false; __btn.textContent = __btnText; }
+  }
+}
+
+async function _submitBookingInner() {
   const name = document.getElementById('confirm-name').value.trim();
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
@@ -3711,10 +3757,15 @@ async function submitBooking() {
     console.error('slot expand error', e);
   }
 
+  // #21 slot 生成失敗（例外 or 0件）なら偽の完了画面に進めず中断する
+  if (slotKeys.length === 0) {
+    alert('予約枠の生成に失敗しました。お手数ですが日付・プランを選び直してください。');
+    return;
+  }
+
   // === Firestore API に送信 ===
   let apiResId = null;
-  if (slotKeys.length > 0) {
-    try {
+  try {
       const startDate = state.selectedDate;
       const endDate = (state.selectedNights && state.selectedNights > 0)
         ? addDays(startDate, state.selectedNights)
@@ -3774,8 +3825,10 @@ async function submitBooking() {
       };
       if (isFutamiSauna) payload.guestCount = futamiSeats;
       if (isCamp) payload.guestCount = state.selectedCampSites.length;
-      const apiResult = await submitReservation(payload);
+      state.idempotencyKey = state.idempotencyKey || generateIdempotencyKey();
+      const apiResult = await submitReservation(payload, state.idempotencyKey);
       apiResId = apiResult.reservationId;
+      state.idempotencyKey = null; // #19 成功 → キー破棄
       // 即座にローカルSetに反映（再ロードまで待たない）
       if (isTennis) {
         slotKeys.forEach(k => TENNIS_SLOTS.add(k));
@@ -3785,22 +3838,48 @@ async function submitBooking() {
       }
     } catch (e) {
       if (e && e.code === 'slot_conflict') {
+        state.idempotencyKey = null;
         alert('申し訳ありません、その時間帯は先ほど他の方が予約されました。お手数ですが、もう一度お選びください。');
         await loadAvailabilityData();
         return;
       }
       if (e && e.code === 'capacity_exceeded') {
+        state.idempotencyKey = null;
         alert('申し訳ありません、選択した区画が満室です。別の区画または別の日程をお選びください。');
         await loadAvailabilityData();
         return;
       }
+      if (e && e.code === 'api_error') {
+        // #25/#26 サーバ400（入力起因）は原因に即した案内（通信エラー誤案内を防ぐ）
+        state.idempotencyKey = null;
+        const code = e.detail && e.detail.error;
+        const msg = {
+          invalid_guest_count: 'ご利用人数が条件に合いません（ふたみの日サウナは2〜8名）。人数をご確認ください。',
+          not_futami_day: '選択された日はふたみの日（サウナ貸切日）ではありません。日付をご確認ください。',
+          invalid_customer_name: 'お名前の入力をご確認ください（50文字以内）。',
+          invalid_customer_phone: '電話番号の入力をご確認ください（20文字以内）。',
+          invalid_customer_email: 'メールアドレスの入力をご確認ください（100文字以内）。',
+          invalid_note: '備考が長すぎます（団体名を含め500文字以内）。短くしてお試しください。',
+          slot_room_mismatch: '予約枠の指定に不整合がありました。お手数ですが選び直してください。',
+          invalid_roomIds: '施設の選択に不整合がありました。お手数ですが選び直してください。',
+          booking_too_far: 'ご予約可能期間を超えています。日付をご確認ください。',
+          invalid_pricing_total: '料金の計算でエラーが発生しました。お手数ですが選び直してください。',
+        }[code];
+        alert(msg || ('入力内容をご確認ください（' + (code || '不明なエラー') + '）。'));
+        return;
+      }
+      // ネットワーク断等（code 無し）はキーを保持し、同一キーでの再試行で二重予約を防ぐ（#19）
       console.error('予約API失敗', e);
       alert('予約の送信に失敗しました。通信環境を確認してもう一度お試しください。');
       return;
     }
-  }
 
-  const bookingId = apiResId || ('FTM-' + Date.now().toString(36).toUpperCase());
+  // #21 予約番号は必ず API レスポンス由来（FTM- フォールバック採番を廃止）
+  const bookingId = apiResId;
+  if (!bookingId) {
+    alert('予約番号の取得に失敗しました。恐れ入りますが、お電話でご確認ください。');
+    return;
+  }
 
   const booking = {
     id: bookingId,
