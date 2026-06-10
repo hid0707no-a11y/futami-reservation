@@ -5,6 +5,7 @@
 // このファイルでは「何をチェックするか」「どう通知するか」だけを管理する。
 
 import * as admin from 'firebase-admin';
+import { google } from 'googleapis';
 import { sendMonitorAlert } from '../lib/mail';
 import { HOLIDAY_TABLE_END, HOLIDAY_WARN_FROM } from '../constants';
 
@@ -104,6 +105,31 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
     checks.ttl_policy_check = false;
     // 失敗は通知に含めるがメイン処理は続行（クエリエラーで監視全体を落とさない）
     failures.push(`TTL Policy 間接チェックエラー: ${e.message || e}`);
+  }
+
+  // --- Check 7: スプシ同期の鮮度（#31）---
+  // sheetsSync が meta!B2 に毎回書く「最終同期時刻」を読み、26h 以上古ければ同期停止疑い。
+  // SHEETS_SYNC_ID 未設定（ローカル/テスト等）は同期自体が無効なのでスキップ。
+  const SHEETS_SYNC_ID = process.env.SHEETS_SYNC_ID || '';
+  if (SHEETS_SYNC_ID) {
+    try {
+      const auth = new google.auth.GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
+      const sheets = google.sheets({ version: 'v4', auth: (await auth.getClient()) as any });
+      const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEETS_SYNC_ID, range: 'meta!B2' });
+      const lastSyncStr = resp.data.values?.[0]?.[0] as string | undefined;
+      const lastSyncMs = lastSyncStr ? Date.parse(lastSyncStr) : NaN;
+      const ageH = Number.isFinite(lastSyncMs) ? (Date.now() - lastSyncMs) / 3_600_000 : Infinity;
+      checks.sheets_sync_fresh = ageH <= 26;
+      if (ageH > 26) {
+        failures.push(
+          `スプシ同期が停止している疑い：meta!B2 最終同期時刻=${lastSyncStr || '(空)'}` +
+          `（${Number.isFinite(ageH) ? Math.round(ageH) + 'h前' : '解析不可'}）。dailySyncToSheets のログを確認。`
+        );
+      }
+    } catch (e: any) {
+      checks.sheets_sync_fresh = false;
+      failures.push(`スプシ同期鮮度チェックエラー: ${e.message || e}`);
+    }
   }
 
   // --- 判定 + 通知 ---
