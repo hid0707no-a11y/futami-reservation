@@ -12,6 +12,25 @@ export const STAFF_EMAIL = process.env.STAFF_EMAIL || 'info@fureai-iyosasaeru.co
 
 export const MONITOR_NOTIFY_EMAILS = [STAFF_EMAIL, 'hid0707no@gmail.com'];
 
+// #32 監視アラートの第二経路（SMTP 単一依存の解消）。
+// DISCORD_WEBHOOK_URL 設定時のみ有効・既定は no-op（社長が env を入れれば有効化）。
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
+
+async function postDiscordAlert(subject: string, body: string): Promise<void> {
+  if (!DISCORD_WEBHOOK_URL) return;
+  try {
+    const content = `**${subject}**\n${body}`.slice(0, 1900); // Discord 2000字制限
+    const resp = await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'futami-monitor/1.0' }, // UA 無しだと 403
+      body: JSON.stringify({ content }),
+    });
+    if (!resp.ok) console.error('[monitor] discord webhook non-OK:', resp.status);
+  } catch (e: any) {
+    console.error('[monitor] discord webhook failed:', e?.message || e);
+  }
+}
+
 export const transporter = SMTP_USER && SMTP_PASS
   ? nodemailer.createTransport({
       service: 'gmail',
@@ -139,8 +158,10 @@ TEL: 089-986-0522
 
 /** staffHealthMonitor 用アラートメール。失敗しても監視ループ自体は止めない。 */
 export async function sendMonitorAlert(subject: string, body: string): Promise<void> {
+  // #32 SMTP に加えて Discord webhook（設定時のみ）にも通知＝アラート単一経路依存の解消
+  await postDiscordAlert(subject, body);
   if (!transporter) {
-    console.error('[monitor] transporter 未設定のためメール通知スキップ');
+    console.error('[monitor] transporter 未設定のためメール通知スキップ（Discord 経路は上で試行済）');
     return;
   }
   try {
