@@ -31,6 +31,7 @@ jest.mock('../../src/lib/mail', () => ({
 
 import * as admin from 'firebase-admin';
 import { updateReservation, cancelReservation } from '../../src/handlers/reservation';
+import { createReservation } from '../../src/handlers/createReservation';
 
 const db = admin.firestore();
 
@@ -152,5 +153,53 @@ describe('cancelReservation（#4）', () => {
     expect(r.body.alreadyCancelled).toBe(true);
     const slot = await db.collection('slots').doc('room_27|2026-07-03|10').get();
     expect(slot.exists).toBe(true); // 触っていない
+  });
+});
+
+// #36 createReservation の実コードを emulator で叩く（テスト内コピーでなく本物のトランザクションを検証）
+describe('createReservation 実コード（#36 real-path / #3 突合）', () => {
+  const base = (over: any = {}) => ({
+    method: 'POST', query: {}, headers: {},
+    body: {
+      planId: 'normal_27', roomIds: ['room_27'],
+      slots: ['room_27|2026-07-10|10'],
+      startDate: '2026-07-10', endDate: '2026-07-10',
+      customer: { name: '山田', phone: '090-0000-0000' },
+      ...over,
+    },
+  });
+
+  it('競合なしの通常予約が成立し slots/reservations に書かれる', async () => {
+    const r = await invoke(createReservation, base());
+    expect(r.statusCode).toBe(201);
+    expect(r.body.status).toBe('confirmed');
+    const slot = await db.collection('slots').doc('room_27|2026-07-10|10').get();
+    expect(slot.exists).toBe(true);
+  });
+
+  it('同一 slot の2件目は 409 slot_conflict（実トランザクション）', async () => {
+    const first = await invoke(createReservation, base());
+    expect(first.statusCode).toBe(201);
+    const second = await invoke(createReservation, base());
+    expect(second.statusCode).toBe(409);
+    expect(second.body.error).toBe('slot_conflict');
+    // 2件目で reservations が増えていない（atomic）
+    const snap = await db.collection('reservations').get();
+    expect(snap.size).toBe(1);
+  });
+
+  it('#3 court_* と他カテゴリ混在ペイロードは 400 invalid_roomIds', async () => {
+    const r = await invoke(createReservation, base({
+      roomIds: ['court_1', 'camp_1'],
+      slots: ['court_1|2026-07-10|10:00', 'camp_1|2026-07-10|14'],
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('invalid_roomIds');
+  });
+
+  it('#3 slot の roomId が roomIds 外なら 400 slot_room_mismatch', async () => {
+    const r = await invoke(createReservation, base({ roomIds: ['room_27'], slots: ['court_1|2026-07-10|10'] }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('slot_room_mismatch');
   });
 });
