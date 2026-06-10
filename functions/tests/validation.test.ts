@@ -1,10 +1,10 @@
 // 予約入力バリデーションのユニットテスト
 // 2026-05-05 新設（/gfu Phase A-2）
 
-import { validateReservationBody } from '../src/lib/validation';
+import { validateReservationBody, validateUpdateFields } from '../src/lib/validation';
 
 const VALID_ROOMS = new Set([
-  'room_27', 'room_6_1', 'court_1', 'midori', 'sauna', 'camp_1', 'lodge_a',
+  'room_27', 'room_6_1', 'court_1', 'court_2', 'midori', 'sauna', 'camp_1', 'camp_2', 'lodge_a',
 ]);
 
 const FIXED_NOW = new Date('2026-05-05T00:00:00+09:00');
@@ -139,5 +139,100 @@ describe('validateReservationBody — 拒否ケース', () => {
     const body: any = { ...baseValid(), note: 'x'.repeat(501) };
     const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
     expect(r).toEqual({ ok: false, error: 'invalid_note' });
+  });
+});
+
+// #3 slot 突合・混在カテゴリ検査
+describe('validateReservationBody — slot 突合（#3）', () => {
+  it('正：テニス複数slot（court_1・同日30分単位）が通過する', () => {
+    const body = {
+      ...baseValid(), planId: 'tennis', roomIds: ['court_1'],
+      slots: ['court_1|2026-05-10|10:00', 'court_1|2026-05-10|10:30'],
+      startDate: '2026-05-10', endDate: '2026-05-10',
+    };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }).ok).toBe(true);
+  });
+  it('正：宿泊の翌朝またぎ（endDate のスロット）が通過する', () => {
+    const body = {
+      ...baseValid(), roomIds: ['room_27'],
+      slots: ['room_27|2026-05-10|16', 'room_27|2026-05-11|9'],
+      startDate: '2026-05-10', endDate: '2026-05-11',
+    };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }).ok).toBe(true);
+  });
+  it('正：キャンプ複数区画（camp_1・camp_2）が通過する', () => {
+    const body = {
+      ...baseValid(), planId: 'camp', roomIds: ['camp_1', 'camp_2'],
+      slots: ['camp_1|2026-05-10|14', 'camp_2|2026-05-10|14'],
+      startDate: '2026-05-10', endDate: '2026-05-10',
+    };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }).ok).toBe(true);
+  });
+  it('拒否：slot の roomId が roomIds に含まれない（取り違え）', () => {
+    const body = {
+      ...baseValid(), roomIds: ['room_27'],
+      slots: ['court_1|2026-05-10|10'], // court_1 は roomIds 外
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'slot_room_mismatch', detail: 'court_1|2026-05-10|10' });
+  });
+  it('拒否：court_* と他カテゴリの混在ペイロード（二重予約の温床）', () => {
+    const body = {
+      ...baseValid(), roomIds: ['court_1', 'camp_1'],
+      slots: ['court_1|2026-05-10|10', 'camp_1|2026-05-10|14'],
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'invalid_roomIds', detail: 'tennis_mixed' });
+  });
+  it('拒否：slot 日付が startDate〜endDate の範囲外', () => {
+    const body = {
+      ...baseValid(), roomIds: ['room_27'],
+      slots: ['room_27|2026-05-20|10'],
+      startDate: '2026-05-10', endDate: '2026-05-10',
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'slot_date_out_of_range', detail: 'room_27|2026-05-20|10' });
+  });
+  it('拒否：slot 重複', () => {
+    const body = {
+      ...baseValid(), roomIds: ['room_27'],
+      slots: ['room_27|2026-05-10|10', 'room_27|2026-05-10|10'],
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'duplicate_slot', detail: 'room_27|2026-05-10|10' });
+  });
+  it('拒否：slot が3分割でない（形式不正）', () => {
+    const body = { ...baseValid(), roomIds: ['room_27'], slots: ['room_27|2026-05-10'] };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'invalid_slot_format', detail: 'room_27|2026-05-10' });
+  });
+});
+
+// #2 部分更新フィールド検証
+describe('validateUpdateFields（#2）', () => {
+  it('正：status / note / customer / payment を検証して updates に格納', () => {
+    const r = validateUpdateFields({ status: 'checked_in', note: 'メモ', customer: { name: '新名' }, payment: { status: 'paid' } });
+    expect(r.ok).toBe(true);
+    expect(r.updates).toEqual({ status: 'checked_in', note: 'メモ', customer: { name: '新名' }, payment: { status: 'paid' } });
+  });
+  it('正：note=null（クリア）も許容', () => {
+    const r = validateUpdateFields({ note: null });
+    expect(r.ok).toBe(true);
+    expect(r.updates).toEqual({ note: null });
+  });
+  it('拒否：更新フィールドが一つも無い', () => {
+    expect(validateUpdateFields({ id: 'x' })).toEqual({ ok: false, error: 'no_updatable_fields' });
+  });
+  it('拒否：note 501文字', () => {
+    expect(validateUpdateFields({ note: 'x'.repeat(501) })).toEqual({ ok: false, error: 'invalid_note' });
+  });
+  it('拒否：customer がオブジェクトでない', () => {
+    expect(validateUpdateFields({ customer: 'evil' })).toEqual({ ok: false, error: 'invalid_customer' });
+  });
+  it('拒否：customer.name 51文字', () => {
+    expect(validateUpdateFields({ customer: { name: 'x'.repeat(51) } })).toEqual({ ok: false, error: 'invalid_customer_name' });
+  });
+  it('拒否：status が30文字超', () => {
+    expect(validateUpdateFields({ status: 'x'.repeat(31) })).toEqual({ ok: false, error: 'invalid_status' });
   });
 });
