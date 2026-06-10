@@ -6,7 +6,7 @@
 ## ステータス
 - **本番稼働中**（2026-04-10〜）
 - フロントエンド: Firebase Auth 化済み、テニス料金は実料金表準拠
-- バックエンド: Cloud Functions 8 本稼働中
+- バックエンド: Cloud Functions 13 本稼働中（onRequest 11 + onSchedule 2・3層構造）
 - 決済: 未実装
 
 ## 公開URL
@@ -26,13 +26,21 @@ futami-reservation/
 ├── firebase.json          # Firebase プロジェクト設定
 ├── firestore.rules        # Firestore セキュリティルール
 ├── .firebaserc            # プロジェクトエイリアス
-├── functions/             # Cloud Functions（TypeScript）
-│   ├── src/index.ts
+├── functions/             # Cloud Functions（TypeScript・3層構造）
+│   ├── src/
+│   │   ├── index.ts       # topology のみ（onRequest/onSchedule 定義・re-export）★新規関数追加禁止
+│   │   ├── handlers/      # REST ハンドラ（createReservation/reservation/availability/admin）
+│   │   ├── services/      # ドメインサービス（sheetsSync/healthMonitor）
+│   │   ├── lib/           # ユーティリティ（validation/auth/idempotency/sheets/mail 等）
+│   │   ├── constants.ts   # 定数 SSOT（SHEET_HEADERS は lib/sheets.ts を re-export）
+│   │   └── migrations/    # スキーマ migration（reversible 契約）
+│   ├── tests/             # Jest（ユニット + integration/）
 │   ├── package.json
 │   └── tsconfig.json
+├── assets/js/             # HTML共通ロジック（auth-bootstrap.js / pricing.js）
 ├── scripts/               # 管理スクリプト（スタッフ作成等）
-│   └── create_staff_user.js
-├── docs/                  # 設計ドキュメント・議事録
+├── .github/workflows/     # CI（tsc → jest → 構文/credential/[sheet-schema] ゲート）
+├── docs/                  # 設計ドキュメント・RUNBOOK・議事録
 └── hooks/                 # git pre-commit hook
     ├── install.sh
     └── pre-commit
@@ -70,10 +78,13 @@ git push origin main  # GitHub Pages が 30秒〜1分で反映
 
 ### Cloud Functions の変更
 ```bash
-vi functions/src/index.ts
-cd functions && npm run build && cd ..   # TS → JS
-firebase deploy --only functions         # 本番反映
-git add functions/src/index.ts
+# 該当する handlers/ services/ lib/ ファイルを編集（index.ts への新規関数追加は禁止）
+# 詳細は 00_projects/futami_reservation/CLAUDE.md「★崩壊防止6ルール」を参照
+vi functions/src/handlers/<endpoint>.ts
+cd functions && npx tsc --noEmit && npx jest    # 型チェック + テスト（コミット前必須）
+npm run build && cd ..                           # TS → JS
+firebase deploy --only functions                 # 本番反映
+git add functions/src/
 git commit -m "..."
 git push origin main
 ```
@@ -174,7 +185,7 @@ ECのセット品番と同じ考え方で在庫を管理する。
 |---|---|---|
 | フロントエンド（予約者） | HTML/JS単一ファイル → GitHub Pages | **完了** |
 | フロントエンド（スタッフ） | PWA HTML/JS → GitHub Pages | **完了** |
-| バックエンド | GCP Cloud Functions + Firestore | **4/8着手** |
+| バックエンド | GCP Cloud Functions + Firestore | **稼働中（13関数・3層構造）** |
 | 決済 | Airペイ オンライン（既存Airペイ対面と統合） | **後日** |
 | Wix埋め込み | iframe | **後日** |
 

@@ -5,8 +5,8 @@
 ## 0. 障害判断フロー
 
 ```
-Sentry / staffHealthMonitor / dailySyncToSheets アラート受信
-   ↓
+staffHealthMonitor（SMTP）/ dailySyncToSheets 失敗通知（SMTP）アラート受信
+   ↓  ※エラートラッキング（Sentry 等）は未導入。フロントの JS エラーは自動通知されない
 1. 影響範囲を切り分け：
    - 予約画面（GitHub Pages）が落ちている → §3 GitHub Pages
    - 予約作成・キャンセル API が500 → §2 Functions
@@ -198,9 +198,11 @@ TTL Policy を**初めて**有効化すると、過去に書き込まれたド�
 
 **Cloud Functions 動作中の影響なし**を確認。これらは「すでに有効期限を過ぎた」レコードのため、削除されても機能に影響しない。
 
+> **※ rate_limits コレクションは2026-06時点で本番未配線**：本番のレート制限は in-memory（`lib/rateLimit.ts`・インスタンスローカル）で稼働しており、Firestore 版 `lib/rateLimitFirestore.ts` は実装済みだが src からの import 0件＝未使用。上表の rate_limits TTL は同コレクションが配線された後に効く設計値で、現状は書き込みゼロ。下記 Check 6 の rate_limits 残留検知も配線までは常に空振り（合格）になる点に注意。
+
 ### TTL Policy の後退検知
 
-`staffHealthMonitor` （毎朝08:30 onSchedule）に TTL state チェックを組み込み予定（次スプリント）。それまでは月1回手動で `gcloud firestore fields ttls list` を実行し ACTIVE 状態を確認すること。
+`staffHealthMonitor`（毎朝08:30 onSchedule）に TTL state の間接検証を **2026-05-13 実装済**（`healthMonitor.ts` Check 6・`idempotency_keys` / `rate_limits` の48h残留を検知し SMTP アラート）。フォールバック（healthMonitor 障害時）として月1回手動で `gcloud firestore fields ttls list` を実行し ACTIVE 状態を確認する。
 
 ## 12. 過去の障害履歴
 
