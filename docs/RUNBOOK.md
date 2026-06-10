@@ -112,20 +112,35 @@ Firestore Console で該当 reservation document を編集。
 
 ## 7. Migration ロールバック
 
+> 2026-06-11 修正（backlog #43）：旧記載の `run_migration.js` は**存在しない**。また `functions/migrations/`
+> は `tsconfig` の `rootDir:"src"`/`include:["src/**/*"]` の**対象外**で `npm run build` ではビルドされない。
+> 下記の実行可能手順に置き換える。`down()` の挙動は `functions/tests/integration/migration004.integration.test.ts`
+> （emulator）で検証済み。
+
+migration 004 の関数シグネチャ：`up/down(db, { dryRun: boolean })`（`dryRun:true` は件数のみ・無書込み）。
+
 ```bash
-# migrations/004_backfill_display_id_20260513.ts の down() を実行
-# ※ ランナー実装は Phase B-1 まで未完成のため、手動で run_migration.js から呼び出す
+cd /Users/hid07/futami-reservation/functions
+
+# 1) migration を単体コンパイル（src 外なので個別に出す）
+npx tsc migrations/004_backfill_display_id_20260513.ts \
+  --outDir /tmp/futami_mig --module commonjs --target es2020 \
+  --esModuleInterop --skipLibCheck
+
+# 2) 本番 ADC で down() を dry-run（削除“予定”件数のみ・実書込みなし）
+#    ※ functions/ ディレクトリから実行（firebase-admin を node_modules から解決させる）
+GOOGLE_CLOUD_PROJECT=futami-yoyaku-492607 NODE_PATH="$PWD/node_modules" node -e '
+  const admin = require("firebase-admin"); admin.initializeApp();
+  const { down } = require("/tmp/futami_mig/004_backfill_display_id_20260513.js");
+  down(admin.firestore(), { dryRun: true }).then(r => { console.log("dry-run:", r); process.exit(0); })
+                                            .catch(e => { console.error(e); process.exit(1); });
+'
+
+# 3) 件数を確認して問題なければ dryRun:false で実削除（上記の dryRun を false に）
 ```
 
-現状の migrations/004 の `down()` は本番未検証。実行する場合は dry-run から：
-```typescript
-// 例：手動実行
-import { down } from './functions/migrations/004_backfill_display_id_20260513';
-import * as admin from 'firebase-admin';
-admin.initializeApp();
-await down(admin.firestore(), { dryRun: true });   // 削除予定件数表示
-await down(admin.firestore(), { dryRun: false });  // 実削除
-```
+> ⚠️ 本番実行前に必ず (1) emulator で `npm run test:integration -- migration004` を通し、
+> (2) dry-run の件数が想定どおりか確認すること。ワンボタンの `scripts/run_migration.js` 整備は follow-up（未着手）。
 
 ## 8. 緊急連絡先
 
