@@ -145,7 +145,8 @@ export async function sendMonitorAlert(subject: string, body: string): Promise<v
   }
   try {
     await transporter.sendMail({
-      from: STAFF_EMAIL,
+      from: `"ふたみ予約監視" <${SMTP_USER}>`,
+      replyTo: STAFF_EMAIL,
       to: MONITOR_NOTIFY_EMAILS.join(','),
       subject,
       text: body,
