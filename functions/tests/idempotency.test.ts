@@ -83,6 +83,23 @@ describe('checkIdempotency', () => {
     expect(result).toBe(false);
     expect(res.bodyJson).toEqual({ error: 'duplicate_request' });
   });
+
+  // #15 文字種検証
+  it('"/" を含むキーは true（無視）で Firestore に触れない（doc(key) パス事故/500回避）', async () => {
+    const db = makeMockDb();
+    const res = makeRes();
+    const result = await checkIdempotency(db, { headers: { 'x-idempotency-key': 'evil/../path' } }, res);
+    expect(result).toBe(true);
+    expect(db.collection).not.toHaveBeenCalled();
+  });
+
+  it('8文字未満の短すぎるキーは true（無視）', async () => {
+    const db = makeMockDb();
+    const res = makeRes();
+    const result = await checkIdempotency(db, { headers: { 'x-idempotency-key': 'abc' } }, res);
+    expect(result).toBe(true);
+    expect(db.collection).not.toHaveBeenCalled();
+  });
 });
 
 describe('saveIdempotencyKey', () => {
