@@ -6,9 +6,7 @@
 
 import * as admin from 'firebase-admin';
 import { sendMonitorAlert } from '../lib/mail';
-
-const HOLIDAY_TABLE_END = '2027-12-31';
-const HOLIDAY_WARN_FROM = '2027-10-01';
+import { HOLIDAY_TABLE_END, HOLIDAY_WARN_FROM } from '../constants';
 
 export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promise<void> {
   const failures: string[] = [];
@@ -59,13 +57,15 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
   }
 
   // --- Check 5: 祝日テーブル期限（index.html JP_HOLIDAYS_2026_2027）---
-  const today = new Date().toISOString().slice(0, 10);
+  // JST 基準の今日。onSchedule は 08:30 JST（=UTC 前日 23:30）実行のため、
+  // UTC の toISOString だと判定日が1日早まる。+9h して JST 日付に補正する。
+  const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   if (today >= HOLIDAY_WARN_FROM) {
     checks.holiday_table_current = false;
     failures.push(
       `祝日テーブル JP_HOLIDAYS_2026_2027 が ${HOLIDAY_TABLE_END} で失効間近（今日=${today}）。` +
       'index.html の JP_HOLIDAYS_2026_2027 を 2028-2029 用に更新してください。' +
-      ' 手順: 00_projects/futami_reservation/CLAUDE.md L60-79 を参照。'
+      ' 手順: 00_projects/futami_reservation/CLAUDE.md「年次メンテナンスタスク」節を参照。'
     );
   } else {
     checks.holiday_table_current = true;

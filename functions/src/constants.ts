@@ -87,7 +87,7 @@ export const HOLIDAY_WARN_FROM = '2027-10-01';
 // ─────────────────────────────────────────────
 // rateLimitStore: Map は単一インスタンス内ローカル。
 // Cloud Functions Gen2 は同時インスタンスを増やすため、IP別カウントは共有されない。
-// 冪等性キー（idempotency_keys）が最終防衛線。Phase A で Firestore 移行予定。
+// 冪等性キー（idempotency_keys）が最終防衛線。Firestore版(lib/rateLimitFirestore.ts)は実装済み・未配線。
 export const RATE_LIMIT_KNOWN_CONSTRAINTS = {
   isInMemory: true,
   sharedAcrossInstances: false,
