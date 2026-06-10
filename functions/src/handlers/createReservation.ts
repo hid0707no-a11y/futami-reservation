@@ -19,7 +19,7 @@ import { detectDisplayIdCollision } from '../lib/displayId';
 import { MailData, sendConfirmationEmail, sendStaffNotification, sendMonitorAlert } from '../lib/mail';
 import { validateReservationBody } from '../lib/validation';
 import { VALID_ROOM_IDS } from '../constants';
-import { getFutamiDays } from '../lib/futamiDays';
+import { getFutamiDaysFresh } from '../lib/futamiDays';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
 
 /**
@@ -162,15 +162,21 @@ export const createReservation = onRequest(
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: tennisResult.displayId, isTennis: true,
           };
-          sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: tennisResult.id, type: 'tennis' }, req));
-          sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: tennisResult.id, type: 'tennis', kind: 'new' }, req));
-          // 2026-05-13: displayId 衝突検知（ランタイム警告のみ・本予約は内部IDで一意確保）
-          detectDisplayIdCollision(db, tennisResult.displayId, tennisResult.id).then(c => {
+          // #7 メール送信は応答前に await（Gen2 は応答後 CPU スロットリングで未完になり得る）
+          await Promise.allSettled([
+            sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: tennisResult.id, type: 'tennis' }, req)),
+            sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: tennisResult.id, type: 'tennis', kind: 'new' }, req)),
+          ]);
+          // #11 displayId 衝突検知を応答前に await（旧 fire-and-forget は CPU スロットリングで未実行→検知漏れ。
+          //     完全な衝突“防止”（tx内一意確保）は採番3経路に跨るため別途）
+          try {
+            const c = await detectDisplayIdCollision(db, tennisResult.displayId, tennisResult.id);
             if (c.collided) escalateDisplayIdCollision(tennisResult.displayId, tennisResult.id, c.existingIds, 'tennis');
-          }).catch(e => { console.error('[collision-check] failed:', e?.message || e); });
+          } catch (e: any) { console.error('[collision-check] failed:', e?.message || e); }
           auditLog('reservation.create', { reservationId: tennisResult.id, displayId: tennisResult.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'tennis' }, req);
           const tennisResp = { reservationId: tennisResult.displayId, internalId: tennisResult.id, status: 'confirmed', isTennis: true };
-          saveIdempotencyKey(req, tennisResp).catch(logIdempotencyFailure(tennisResult.id, req));
+          // #6 冪等性キー保存を応答前に await（保存前リトライの素通り窓を塞ぐ）
+          await saveIdempotencyKey(req, tennisResp).catch(logIdempotencyFailure(tennisResult.id, req));
           res.status(201).json(tennisResp);
           return;
         } catch (e: any) {
@@ -190,7 +196,8 @@ export const createReservation = onRequest(
           res.status(400).json({ error: 'invalid_guest_count', detail: '2〜8人' });
           return;
         }
-        const futamiSet = await getFutamiDays();
+        // #16 TOCTOU 対策：30秒キャッシュを使わず config/special_days を直読みして判定
+        const futamiSet = await getFutamiDaysFresh();
         for (const key of slots) {
           const date = key.split('|')[1];
           if (!futamiSet.has(date)) {
@@ -237,14 +244,20 @@ export const createReservation = onRequest(
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
             saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
           };
-          sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: 'futami_sauna', seats }, req));
-          sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: 'futami_sauna', kind: 'new' }, req));
-          detectDisplayIdCollision(db, result.displayId, result.id).then(c => {
+          // #7 メール送信は応答前に await
+          await Promise.allSettled([
+            sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: 'futami_sauna', seats }, req)),
+            sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: 'futami_sauna', kind: 'new' }, req)),
+          ]);
+          // #11 displayId 衝突検知を応答前に await
+          try {
+            const c = await detectDisplayIdCollision(db, result.displayId, result.id);
             if (c.collided) escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, 'futami_sauna');
-          }).catch(e => { console.error('[collision-check] failed:', e?.message || e); });
+          } catch (e: any) { console.error('[collision-check] failed:', e?.message || e); }
           auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'futami_sauna', seats }, req);
           const futamiResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', isFutamiDay: true, seats };
-          saveIdempotencyKey(req, futamiResp).catch(logIdempotencyFailure(result.id, req));
+          // #6 冪等性キー保存を応答前に await
+          await saveIdempotencyKey(req, futamiResp).catch(logIdempotencyFailure(result.id, req));
           res.status(201).json(futamiResp);
           return;
         } catch (e: any) {
@@ -265,8 +278,11 @@ export const createReservation = onRequest(
           res.status(400).json({ error: 'too_many_camp_sites', detail: `${CAMP_MAX_SITES}区画まで` });
           return;
         }
-        if (typeof nights === 'number' && nights > CAMP_MAX_NIGHTS) {
-          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで` });
+        // #12 nights を Number 正規化：文字列等で型チェックを外す bypass を防ぐ
+        // （slot 個数・日付範囲は validateReservationBody の #3 検査で別途担保）
+        const nn = Number(nights);
+        if (!Number.isFinite(nn) || nn > CAMP_MAX_NIGHTS) {
+          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで（数値で指定）` });
           return;
         }
       }
@@ -315,14 +331,20 @@ export const createReservation = onRequest(
         ...(isCamp ? { isCamp: true, guestCount: roomIds.length } : {}),
         saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
       };
-      sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: isCamp ? 'camp' : 'normal' }, req));
-      sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: isCamp ? 'camp' : 'normal', kind: 'new' }, req));
-      detectDisplayIdCollision(db, result.displayId, result.id).then(c => {
+      // #7 メール送信は応答前に await
+      await Promise.allSettled([
+        sendConfirmationEmail(mailData).catch(logMailFailure('confirmation', { reservationId: result.id, type: isCamp ? 'camp' : 'normal' }, req)),
+        sendStaffNotification(mailData, 'new').catch(logMailFailure('staff', { reservationId: result.id, type: isCamp ? 'camp' : 'normal', kind: 'new' }, req)),
+      ]);
+      // #11 displayId 衝突検知を応答前に await
+      try {
+        const c = await detectDisplayIdCollision(db, result.displayId, result.id);
         if (c.collided) escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, isCamp ? 'camp' : 'normal');
-      }).catch(e => { console.error('[collision-check] failed:', e?.message || e); });
+      } catch (e: any) { console.error('[collision-check] failed:', e?.message || e); }
       auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: isCamp ? 'camp' : 'normal' }, req);
       const normalResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', ...(isCamp ? { isCamp: true, sites: roomIds.length } : {}) };
-      saveIdempotencyKey(req, normalResp).catch(logIdempotencyFailure(result.id, req));
+      // #6 冪等性キー保存を応答前に await
+      await saveIdempotencyKey(req, normalResp).catch(logIdempotencyFailure(result.id, req));
 
       res.status(201).json(normalResp);
     } catch (e: any) {
