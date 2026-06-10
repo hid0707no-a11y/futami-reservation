@@ -12,6 +12,8 @@ import { requireStaffAuth } from '../lib/auth';
 import { audit as auditLog, logMailFailure } from '../lib/logger';
 import { formatCustomerAddress, generateDisplayId } from '../lib/format';
 import { MailData, sendCancellationEmail, sendStaffNotification } from '../lib/mail';
+import { validateUpdateFields } from '../lib/validation';
+import { RESERVATION_STATUS } from '../constants';
 
 /** GET /listReservations?date=&status=&from=&to= — スタッフ用予約一覧 */
 export const listReservations = onRequest(
@@ -59,22 +61,71 @@ export const updateReservation = onRequest(
       return;
     }
 
-    try {
-      const id = (req.query.id as string) || (req.body?.id as string);
-      if (!id) { res.status(400).json({ error: 'id_required' }); return; }
+    const id = (req.query.id as string) || (req.body?.id as string);
+    if (!id) { res.status(400).json({ error: 'id_required' }); return; }
 
-      const updates: any = {
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      const allowedFields = ['status', 'note', 'customer', 'payment'];
-      allowedFields.forEach(f => {
-        if (req.body?.[f] !== undefined) updates[f] = req.body[f];
+    // #2 入力検証（型・長さ）。検証を通ったフィールドだけ更新対象にする。
+    const valid = validateUpdateFields(req.body);
+    if (!valid.ok) { res.status(400).json({ error: valid.error }); return; }
+    const fields = valid.updates as Record<string, any>;
+
+    try {
+      // #5/#9 トランザクション内で存在確認 → 更新 → audit_log を同一 tx で書く（★3 準拠）
+      const result = await db.runTransaction(async tx => {
+        const resRef = db.collection('reservations').doc(id);
+        const resDoc = await tx.get(resRef);
+        if (!resDoc.exists) throw { code: 'not_found' };
+        const cur = resDoc.data() as any;
+
+        // #2/#5 status 遷移ガード：スロット整合を壊す遷移はこの経路で禁止
+        if (fields.status !== undefined && fields.status !== cur.status) {
+          // → cancelled は slot 物理削除が必要なので cancelReservation へ誘導
+          if (fields.status === RESERVATION_STATUS.CANCELLED) throw { code: 'use_cancel_endpoint' };
+          // cancelled からの復活は slot 再取得＋競合検出が必要なため不可（新規予約を作成）
+          if (cur.status === RESERVATION_STATUS.CANCELLED) throw { code: 'revival_not_supported' };
+        }
+
+        const writes: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+        if (fields.status !== undefined) writes.status = fields.status;
+        if (fields.note !== undefined) writes.note = fields.note;
+        // #2 customer/payment は部分送信でのフィールド消失を防ぐため既存値とマージ
+        if (fields.customer !== undefined) writes.customer = { ...(cur.customer || {}), ...fields.customer };
+        if (fields.payment !== undefined) writes.payment = { ...(cur.payment || {}), ...fields.payment };
+
+        tx.update(resRef, writes);
+
+        const after: any = {};
+        if (writes.status !== undefined) after.status = writes.status;
+        if (writes.note !== undefined) after.note = writes.note;
+        if (writes.customer !== undefined) after.customer = writes.customer;
+        if (writes.payment !== undefined) after.payment = writes.payment;
+
+        const logRef = resRef.collection('audit_log').doc();
+        tx.set(logRef, {
+          at: admin.firestore.FieldValue.serverTimestamp(),
+          actor: ((req as any).auth?.email) || 'unknown',
+          action: 'update',
+          before: {
+            status: cur.status ?? null, note: cur.note ?? null,
+            customer: cur.customer ?? null, payment: cur.payment ?? null,
+          },
+          after,
+        });
+        return { updated: Object.keys(writes).filter(k => k !== 'updatedAt') };
       });
 
-      await db.collection('reservations').doc(id).update(updates);
-      auditLog('reservation.update', { reservationId: id, fields: Object.keys(updates) }, req);
-      res.status(200).json({ id, updated: Object.keys(updates) });
+      auditLog('reservation.update', { reservationId: id, fields: result.updated }, req);
+      res.status(200).json({ id, updated: result.updated });
     } catch (e: any) {
+      if (e?.code === 'not_found') { res.status(404).json({ error: 'not_found' }); return; }
+      if (e?.code === 'use_cancel_endpoint') {
+        res.status(400).json({ error: 'use_cancel_endpoint', detail: 'status=cancelled は cancelReservation を使用してください' });
+        return;
+      }
+      if (e?.code === 'revival_not_supported') {
+        res.status(400).json({ error: 'revival_not_supported', detail: 'キャンセル済予約は更新で復活できません。新規予約を作成してください' });
+        return;
+      }
       console.error(e);
       res.status(500).json({ error: 'internal_error' });
     }
@@ -228,6 +279,7 @@ export const cancelReservation = onRequest(
       if (!id) { res.status(400).json({ error: 'id_required' }); return; }
 
       let cancelledData: any = null;
+      let alreadyCancelled = false;
 
       await db.runTransaction(async tx => {
         const resRef = db.collection('reservations').doc(id);
@@ -236,6 +288,8 @@ export const cancelReservation = onRequest(
 
         const data = resDoc.data() as any;
         cancelledData = data;
+        // #4 再キャンセルガード（冪等）：既に cancelled なら slot を一切触らず終了
+        if (data.status === RESERVATION_STATUS.CANCELLED) { alreadyCancelled = true; return; }
         const slotKeys: string[] = data.slots || [];
         const isCampRes = !!data.isCamp;
         const isTennisRes = !!data.isTennis;
@@ -271,16 +325,28 @@ export const cancelReservation = onRequest(
         }
 
         // 通常：slots / tennis_slots を物理削除
+        // #4 所有権チェック：slot を読み、reservationId が自予約のものだけ削除する
+        // （A をキャンセル→解放→B が同じ slot を取得→A を再キャンセル、で B の slot を消す事故を防ぐ）
         const collection = isTennisRes ? 'tennis_slots' : 'slots';
+        const slotRefs = slotKeys.map(key => db.collection(collection).doc(key));
+        const slotDocs = await Promise.all(slotRefs.map(r => tx.get(r)));
         tx.update(resRef, {
           status: 'cancelled',
           cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-        slotKeys.forEach(key => {
-          tx.delete(db.collection(collection).doc(key));
+        slotDocs.forEach((d, i) => {
+          if (d.exists && (d.data() as any).reservationId === id) {
+            tx.delete(slotRefs[i]);
+          }
         });
       });
+
+      // #4 既にキャンセル済みなら冪等に 200 を返す（メール再送・slot 操作なし）
+      if (alreadyCancelled) {
+        res.status(200).json({ id, status: 'cancelled', alreadyCancelled: true });
+        return;
+      }
 
       // キャンセルメール送信（失敗は構造化ログへ）
       // 2026-05-13: メール表示 ID は displayId 優先（要望#8 のキャンセル経路でも顧客に短縮ID
@@ -296,8 +362,11 @@ export const cancelReservation = onRequest(
           note: cancelledData.note || '',
           reservationId: cancelDisplayId,
         };
-        sendCancellationEmail(mailData).catch(logMailFailure('cancellation', { reservationId: id, displayId: cancelDisplayId }, req));
-        sendStaffNotification(mailData, 'cancel').catch(logMailFailure('staff', { reservationId: id, displayId: cancelDisplayId, kind: 'cancel' }, req));
+        // #7 メール送信は応答前に await（Gen2 応答後 CPU スロットリング対策）
+        await Promise.allSettled([
+          sendCancellationEmail(mailData).catch(logMailFailure('cancellation', { reservationId: id, displayId: cancelDisplayId }, req)),
+          sendStaffNotification(mailData, 'cancel').catch(logMailFailure('staff', { reservationId: id, displayId: cancelDisplayId, kind: 'cancel' }, req)),
+        ]);
       }
 
       auditLog('reservation.cancel', { reservationId: id, displayId: cancelDisplayId, customerName: cancelledData?.customer?.name || '' }, req);
