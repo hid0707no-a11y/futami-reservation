@@ -57,6 +57,7 @@ export const dailySyncToSheets = onSchedule(
     timeZone: 'Asia/Tokyo',
     region: 'asia-northeast1',
     memory: '512MiB',
+    retryCount: 3, // #28 一時的失敗は再試行（v2 ScheduleOptions の直フィールド・効かせるため catch で re-throw）
   },
   async () => {
     try {
@@ -81,6 +82,7 @@ export const dailySyncToSheets = onSchedule(
           '対応: Firebase Console でログを確認してください。',
         ].join('\n'),
       );
+      throw e; // #28 retryConfig を効かせるため re-throw（Cloud Scheduler が最大3回再試行）
     }
   }
 );
