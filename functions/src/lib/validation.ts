@@ -139,6 +139,17 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
     return { ok: false, error: 'invalid_note' };
   }
 
+  // #17 pricing.total の最低限サニティ（正の有限数・上限内）。
+  // curl 直叩きで total:0/負/NaN/巨額の予約が confirmed 化するのを防ぐ。
+  // ※ pricing.js をサーバ同梱して planId/slots から総額を完全再計算する根治は別タスク（朝送り）。
+  const pricing = (body || {}).pricing;
+  if (pricing != null) {
+    const total = pricing.total;
+    if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0 || total > 10_000_000) {
+      return { ok: false, error: 'invalid_pricing_total' };
+    }
+  }
+
   return { ok: true };
 }
 

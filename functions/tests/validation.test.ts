@@ -208,6 +208,29 @@ describe('validateReservationBody — slot 突合（#3）', () => {
   });
 });
 
+// #17 pricing サニティ
+describe('validateReservationBody — pricing サニティ（#17）', () => {
+  it('正：pricing 未指定は通過（既存挙動）', () => {
+    expect(validateReservationBody(baseValid(), { validRoomIds: VALID_ROOMS, now: FIXED_NOW }).ok).toBe(true);
+  });
+  it('正：pricing.total が正の数なら通過', () => {
+    const b: any = { ...baseValid(), pricing: { total: 5000 } };
+    expect(validateReservationBody(b, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }).ok).toBe(true);
+  });
+  it('拒否：pricing.total = 0（total:0 確定の悪用防止）', () => {
+    const b: any = { ...baseValid(), pricing: { total: 0 } };
+    expect(validateReservationBody(b, { validRoomIds: VALID_ROOMS, now: FIXED_NOW })).toEqual({ ok: false, error: 'invalid_pricing_total' });
+  });
+  it('拒否：pricing.total が負', () => {
+    const b: any = { ...baseValid(), pricing: { total: -100 } };
+    expect(validateReservationBody(b, { validRoomIds: VALID_ROOMS, now: FIXED_NOW })).toEqual({ ok: false, error: 'invalid_pricing_total' });
+  });
+  it('拒否：pricing.total が数値でない', () => {
+    const b: any = { ...baseValid(), pricing: { total: '5000' } };
+    expect(validateReservationBody(b, { validRoomIds: VALID_ROOMS, now: FIXED_NOW })).toEqual({ ok: false, error: 'invalid_pricing_total' });
+  });
+});
+
 // #2 部分更新フィールド検証
 describe('validateUpdateFields（#2）', () => {
   it('正：status / note / customer / payment を検証して updates に格納', () => {
