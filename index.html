@@ -4,34 +4,39 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ふたみ潮風ふれあい公園 予約システム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 /* ========== RESET & BASE ========== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --main: #7EAEC2;
-  --main-dark: #5a8fa8;
-  --main-light: #b5d4e2;
-  --accent: #D4A047;
-  --accent-dark: #b8872e;
-  --bg: #F5F0EB;
+  /* Official brand palette — fureai-iyosasaeru.com (Wix) re-skin 2026-06-12 */
+  --main: #5DA5C5;        /* 海空ブルー: secondary accent (sea) */
+  --main-dark: #3f8aab;
+  --main-light: #d6ebf3;
+  --accent: #EA9B24;      /* マリーゴールド橙: primary brand / CTA */
+  --accent-dark: #C07E12;
+  --bg: #F8F4ED;          /* 暖色オフ白 (cards still read on it) */
   --white: #ffffff;
-  --text: #333333;
-  --text-light: #666666;
-  --text-muted: #999999;
-  --border: #e0d8d0;
+  --text: #464442;        /* やわらかチャコール (公式と同一) */
+  --text-light: #747271;
+  --text-muted: #968F84;
+  --border: #e8e2d8;
   --danger: #e05555;
   --success: #4caf50;
-  --shadow: 0 2px 12px rgba(0,0,0,0.08);
-  --shadow-hover: 0 4px 20px rgba(0,0,0,0.12);
+  --shadow: 0 1px 6px rgba(70,68,66,0.07);
+  --shadow-hover: 0 3px 14px rgba(70,68,66,0.11);
   --radius: 16px;
   --radius-sm: 10px;
+  --radius-pill: 999px;   /* ピルボタン (公式CTAに合わせる) */
   --max-width: 480px;
 }
 
 html { font-size: 16px; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Segoe UI", Meiryo, sans-serif;
+  font-family: "Zen Maru Gothic", -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Segoe UI", Meiryo, sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
@@ -62,14 +67,15 @@ body {
 
 /* ========== HEADER ========== */
 .header {
-  background: linear-gradient(135deg, var(--main) 0%, var(--main-dark) 100%);
-  color: var(--white);
-  padding: 20px 16px 16px;
+  background: var(--white);
+  color: var(--text);
+  padding: 18px 16px 14px;
   text-align: center;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 6px rgba(70,68,66,0.05);
 }
 .header-logo {
   font-size: 1.3rem;
@@ -78,7 +84,9 @@ body {
 }
 .header-sub {
   font-size: 0.8rem;
-  opacity: 0.9;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.04em;
   margin-top: 2px;
 }
 
@@ -90,14 +98,14 @@ body {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: var(--white);
+  color: var(--text);
   font-size: 1.5rem;
   cursor: pointer;
   padding: 8px;
   line-height: 1;
   border-radius: 8px;
 }
-.header-back:active { background: rgba(255,255,255,0.2); }
+.header-back:active { background: rgba(70,68,66,0.08); }
 .header-back.hidden { display: none; }
 
 /* ========== BUTTONS ========== */
@@ -109,9 +117,9 @@ body {
   min-height: 52px;
   padding: 14px 24px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   font-size: 1.05rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
   text-decoration: none;
@@ -120,11 +128,11 @@ body {
 .btn:active { transform: scale(0.98); }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  background: var(--accent);
   color: var(--white);
-  box-shadow: 0 3px 12px rgba(212,160,71,0.3);
+  box-shadow: 0 2px 8px rgba(234,155,36,0.28);
 }
-.btn-primary:hover { box-shadow: 0 4px 16px rgba(212,160,71,0.4); }
+.btn-primary:hover { background: var(--accent-dark); box-shadow: 0 3px 12px rgba(234,155,36,0.36); }
 
 .btn-secondary {
   background: var(--white);
@@ -162,7 +170,7 @@ body {
 .top-hero-title {
   font-size: 1.2rem;
   font-weight: 700;
-  color: var(--main-dark);
+  color: var(--accent);
   margin-bottom: 2px;
 }
 .top-hero-desc {
@@ -390,7 +398,7 @@ body {
 }
 .room-card:hover { border-color: var(--main); }
 .room-card:active { transform: scale(0.98); }
-.room-card.selected { border-color: var(--main); background: #f0f7fa; }
+.room-card.selected { border-color: var(--main); background: #e9f3f8; }
 .room-name { font-weight: 700; font-size: 1rem; }
 .room-detail {
   font-size: 0.85rem;
