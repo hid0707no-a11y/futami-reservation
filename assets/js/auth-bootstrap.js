@@ -29,6 +29,20 @@ var _fbAuth = firebase.auth();
 var _fbUser = null;
 var API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
 
+// 共通エスケープ（2026-07-19 セキュリティバッチで staff 3画面のローカル実装を集約）。
+// 旧実装（textNode 経由）は引用符を素通しし、href="tel:..." 等の属性文脈で
+// " onclick=... による属性脱出XSSが成立していた。テキスト・属性の両文脈で安全な5文字エスケープに統一。
+// ⚠️ インライン onclick の JS 文字列へ顧客データを渡すのは引き続き禁止
+// （エンティティは属性デコード後に JS 解釈されるため防げない）。ハンドラには id だけ渡すこと。
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 _fbAuth.onAuthStateChanged(function(user) {
   if (user) {
     _fbUser = user;

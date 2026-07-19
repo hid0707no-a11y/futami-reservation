@@ -896,12 +896,7 @@ function formatDateDisplay(d) {
 }
 
 // ===== セキュリティユーティリティ =====
-function escapeHtml(s) {
-  if (!s) return '';
-  const d = document.createElement('div');
-  d.appendChild(document.createTextNode(s));
-  return d.innerHTML;
-}
+// escapeHtml は assets/js/auth-bootstrap.js の共通実装（引用符もエスケープ）を使用（2026-07-19 集約）
 
 // ===== Firestore API 由来データ =====
 // API_BASE は assets/js/auth-bootstrap.js で window.API_BASE として定義済（2026-05-05 Phase B-2）
@@ -1475,9 +1470,10 @@ function showDetail(resId) {
   html += `<div id="auditLogArea" style="margin-top:10px"></div>`;
 
   // === キャンセルボタン（要API） ===
+  // \u9867\u5BA2\u540D\u3092 onclick \u306E JS \u6587\u5B57\u5217\u306B\u57CB\u3081\u308B\u306E\u306F XSS/\u6587\u5B57\u5217\u7834\u58CA\u306E\u6E29\u5E8A\u306E\u305F\u3081 id \u3060\u3051\u6E21\u3057\u3001
+  // \u540D\u524D\u306F\u30CF\u30F3\u30C9\u30E9\u5185\u3067\u5F15\u304F\uFF082026-07-19 \u81EA\u5DF1\u30EC\u30D3\u30E5\u30FC #4\u30FB\u30C6\u30CB\u30B9\u753B\u9762\u3068\u540C\u578B\u306B\u7D71\u4E00\uFF09
   const cancelId = res._origId || res.id;
-  const safeName = escapeHtml((res.name||'').replace(/'/g,''));
-  html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${cancelId}','${safeName}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
+  html += `<button class="checkin-btn" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;margin-top:8px" onclick="cancelReservationApi('${cancelId}')">\u3053\u306E\u4E88\u7D04\u3092\u30AD\u30E3\u30F3\u30BB\u30EB</button>`;
 
   document.getElementById('detailContent').innerHTML = html;
   document.getElementById('detailOverlay').classList.add('show');
@@ -1491,6 +1487,11 @@ function closeDetail() {
 
 // ===== 予約キャンセル（API） =====
 async function cancelReservationApi(resId, name) {
+  // 名前は id から引く（onclick へ生の顧客名を渡さない・2026-07-19）。互換のため引数 name も残す
+  if (!name) {
+    const found = loadReservations().find(r => (r._origId || r.id) === resId || r.id === resId);
+    name = found && found.name;
+  }
   const ok = confirm(`${name || 'この予約'}\u3092\u30AD\u30E3\u30F3\u30BB\u30EB\u3057\u3066\u3082\u3088\u308D\u3057\u3044\u3067\u3059\u304B\uFF1F\n\n\u30B9\u30ED\u30C3\u30C8\u306F\u4ED6\u306E\u4E88\u7D04\u306B\u958B\u653E\u3055\u308C\u307E\u3059\u3002`);
   if (!ok) return;
   try {

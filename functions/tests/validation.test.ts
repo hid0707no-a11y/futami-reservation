@@ -142,6 +142,79 @@ describe('validateReservationBody — 拒否ケース', () => {
   });
 });
 
+// 2026-07-19 セキュリティバッチ：メール形式・日付範囲の追加検証
+describe('validateReservationBody — メール形式検証（フィッシング増幅対策）', () => {
+  it('正：通常のメールアドレスは通過', () => {
+    const body = baseValid();
+    body.customer.email = 'user.name+tag@example.co.jp';
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r.ok).toBe(true);
+  });
+
+  it('拒否：@ が無い', () => {
+    const body = baseValid();
+    body.customer.email = 'not-an-email';
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'invalid_customer_email' });
+  });
+
+  it('拒否：カンマで複数宛先化（BCC 悪用の温床）', () => {
+    const body = baseValid();
+    body.customer.email = 'victim@example.com,attacker@evil.com';
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'invalid_customer_email' });
+  });
+
+  it('拒否：改行を含む（ヘッダ汚染狙い）', () => {
+    const body = baseValid();
+    body.customer.email = 'a@b.com\nBcc: x@y.com';
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'invalid_customer_email' });
+  });
+
+  it('メール空文字（任意項目）は通過', () => {
+    const body = baseValid();
+    body.customer.email = '';
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('validateReservationBody — endDate 範囲サニティ（在庫占有対策）', () => {
+  it('拒否：endDate が startDate から30日を超える（大量 slot 占有）', () => {
+    const body = {
+      ...baseValid(),
+      startDate: '2026-05-10',
+      endDate: '2026-08-10', // 92日先
+      slots: ['room_27|2026-05-10|10'],
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r).toEqual({ ok: false, error: 'invalid_date_range', detail: expect.any(String) });
+  });
+
+  it('拒否：endDate が startDate より前（逆転）', () => {
+    const body = {
+      ...baseValid(),
+      startDate: '2026-05-10',
+      endDate: '2026-05-09',
+      slots: ['room_27|2026-05-10|10'],
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect((r as any).error).toBe('invalid_date_range');
+  });
+
+  it('正：14泊（宿泊上限）は通過する', () => {
+    const body = {
+      ...baseValid(),
+      startDate: '2026-05-10',
+      endDate: '2026-05-24',
+      slots: ['room_27|2026-05-10|10'],
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
+    expect(r.ok).toBe(true);
+  });
+});
+
 // #3 slot 突合・混在カテゴリ検査
 describe('validateReservationBody — slot 突合（#3）', () => {
   it('正：テニス複数slot（court_1・同日30分単位）が通過する', () => {

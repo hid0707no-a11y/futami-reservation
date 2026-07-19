@@ -10,6 +10,14 @@
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// メールは単一アドレスの形式を強制（2026-07-19）：長さのみの検証だと、無認証の
+// createReservation 経由で任意文字列が nodemailer の to: に渡り、公式ドメインから
+// 第三者宛に「予約確認」風メールを送らせるフィッシング増幅に使える。
+// 空白（改行含む）・カンマ・セミコロン・山括弧・二重引用符を拒否＝複数宛先化とヘッダ/表示名汚染を封じる。
+// アポストロフィ（'）は o'brien@example.com 等の RFC 適法 local-part に現れ、かつ注入ベクタでは
+// ないため許容する（自己レビュー #6 の回帰是正：既存メールの再保存を阻害しない）。
+const EMAIL_RE = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
+
 const STAY_ROOMS = new Set([
   'room_27', 'room_6_1', 'room_6_2', 'room_6_3', 'room_6_4',
   'room_exp', 'room_train', 'room_kitchen',
@@ -105,6 +113,15 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
     return { ok: false, error: 'booking_too_far', detail: `${maxDays}日先まで予約可能です` };
   }
 
+  // endDate のサニティ（2026-07-19）：booking_too_far は startDate しか見ないため、
+  // endDate を数ヶ月先にして最大500 slot を1リクエストで confirmed 化する在庫占有が通っていた。
+  // 逆転禁止＋最長30日（宿泊の連泊上限14泊より十分な余裕を持った全プラン共通上限）。
+  const endDateD = new Date(endDate + 'T00:00:00');
+  const spanDays = (endDateD.getTime() - bookingDate.getTime()) / 86400000;
+  if (!Number.isFinite(spanDays) || spanDays < 0 || spanDays > 30) {
+    return { ok: false, error: 'invalid_date_range', detail: 'endDate は startDate から30日以内' };
+  }
+
   // slot の日付は startDate〜endDate の範囲内であること（#3 任意日付の在庫汚染防止）。
   // 宿泊・キャンプの翌朝スロットは endDate（チェックアウト日）に収まる前提。
   for (const s of slots) {
@@ -121,7 +138,7 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   if (!customer?.phone || typeof customer.phone !== 'string' || customer.phone.length > 20) {
     return { ok: false, error: 'invalid_customer_phone' };
   }
-  if (customer.email && (typeof customer.email !== 'string' || customer.email.length > 100)) {
+  if (customer.email && (typeof customer.email !== 'string' || customer.email.length > 100 || !EMAIL_RE.test(customer.email))) {
     return { ok: false, error: 'invalid_customer_email' };
   }
   if (customer.zip && (typeof customer.zip !== 'string' || customer.zip.length > 10)) {
@@ -188,7 +205,7 @@ export function validateUpdateFields(body: any): UpdateValidationResult {
     }
     if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 50)) return { ok: false, error: 'invalid_customer_name' };
     if (c.phone !== undefined && (typeof c.phone !== 'string' || c.phone.length > 20)) return { ok: false, error: 'invalid_customer_phone' };
-    if (c.email !== undefined && c.email !== '' && (typeof c.email !== 'string' || c.email.length > 100)) return { ok: false, error: 'invalid_customer_email' };
+    if (c.email !== undefined && c.email !== '' && (typeof c.email !== 'string' || c.email.length > 100 || !EMAIL_RE.test(c.email))) return { ok: false, error: 'invalid_customer_email' };
     if (c.zip !== undefined && (typeof c.zip !== 'string' || c.zip.length > 10)) return { ok: false, error: 'invalid_customer_zip' };
     if (c.address1 !== undefined && (typeof c.address1 !== 'string' || c.address1.length > 100)) return { ok: false, error: 'invalid_customer_address1' };
     if (c.address2 !== undefined && (typeof c.address2 !== 'string' || c.address2.length > 100)) return { ok: false, error: 'invalid_customer_address2' };
