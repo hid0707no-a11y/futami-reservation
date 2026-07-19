@@ -346,6 +346,35 @@ function todayStr() {
   const d = new Date();
   return dateStr(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
+function safeStoredInteger(value, min, max) {
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
+}
+function isRealIsoDateString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+function validateCalendarPayload(data) {
+  if (!data || !Array.isArray(data.defaultClosedDays)
+      || !data.defaultClosedDays.every(d => Number.isInteger(d) && d >= 0 && d <= 6)
+      || !Array.isArray(data.forceOpen) || !data.forceOpen.every(isRealIsoDateString)
+      || !Array.isArray(data.forceClosed) || !data.forceClosed.every(isRealIsoDateString)) {
+    throw new Error('businessCalendar returned malformed data');
+  }
+  return {
+    defaultClosedDays: data.defaultClosedDays.slice(),
+    forceOpen: data.forceOpen.slice(),
+    forceClosed: data.forceClosed.slice(),
+  };
+}
+function cloneCalendarSettings(value) {
+  return {
+    defaultClosedDays: (value.defaultClosedDays || []).slice(),
+    forceOpen: (value.forceOpen || []).slice(),
+    forceClosed: (value.forceClosed || []).slice(),
+  };
+}
 
 // ===== データ取得 =====
 async function loadData() {
@@ -358,11 +387,18 @@ async function loadData() {
       fetch(API_BASE + '/futamiDays?t=' + Date.now()),
       fetch(API_BASE + '/businessCalendar?t=' + Date.now()),
     ]);
-    const dataA = await resA.json();
-    const dataF = await resF.json();
-    if (resC.ok) { const dataC = await resC.json(); CAL_SETTINGS = dataC; }
+    if (!resA.ok || !resF.ok || !resC.ok) {
+      throw new Error('API HTTP error: reservations=' + resA.status + ', futami=' + resF.status + ', calendar=' + resC.status);
+    }
+    const [dataA, dataF, dataC] = await Promise.all([resA.json(), resF.json(), resC.json()]);
+    if (!dataA || !Array.isArray(dataA.reservations) || !dataF || !Array.isArray(dataF.dates)) {
+      throw new Error('API returned malformed data');
+    }
+    const nextCalendar = validateCalendarPayload(dataC);
     RESERVATIONS = (dataA.reservations || []).filter(r => r.status !== 'cancelled');
     FUTAMI_DAYS = new Set(dataF.dates || []);
+    CAL_SETTINGS = nextCalendar;
+    LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(nextCalendar);
     LAST_SYNC = new Date();
     document.getElementById('syncIndicator').textContent = '最終同期: ' + LAST_SYNC.toLocaleTimeString();
     document.getElementById('syncIndicator').style.background = 'rgba(40,140,80,0.85)';
@@ -495,10 +531,14 @@ function showCellDetail(roomId, ds, roomName) {
     const badgeLabel = { stay: '🌙宿泊', day: '☀️日帰り', sport: '🎾スポーツ', sauna: '🧖サウナ', outdoor: '⛺アウトドア' }[cat] || '予約';
     // 予約番号表示（displayId 優先・既存予約は Auto ID 先頭6文字で代替）
     const displayId = r.displayId || (r.id ? 'F-' + String(r.id).substring(0, 6).toUpperCase() : '');
+    const guestCount = safeStoredInteger(r.guestCount, 1, 150);
+    const guestCountHtml = guestCount === null
+      ? ''
+      : '<span style="color:#6b7280;font-size:11px">' + escapeHtml(guestCount) + '名</span>';
     html += `
       <div class="res-item">
         <div>
-          <div class="name">${escapeHtml(name)} ${r.guestCount ? '<span style="color:#6b7280;font-size:11px">'+r.guestCount+'名</span>' : ''} <span style="color:#0c4a6e;font-family:monospace;font-size:11px;background:#f0f9ff;padding:2px 6px;border-radius:4px;margin-left:6px">${escapeHtml(displayId)}</span></div>
+          <div class="name">${escapeHtml(name)} ${guestCountHtml} <span style="color:#0c4a6e;font-family:monospace;font-size:11px;background:#f0f9ff;padding:2px 6px;border-radius:4px;margin-left:6px">${escapeHtml(displayId)}</span></div>
           <div class="meta">${time}${phone ? ' / ' + escapeHtml(phone) : ''}</div>
         </div>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
@@ -566,19 +606,29 @@ function setCategory(cat) {
 
 // ===== 営業カレンダー管理 =====
 var CAL_SETTINGS = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+var LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(CAL_SETTINGS);
 
 async function loadCalendarSettings() {
-  try {
-    const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
-    if (res.ok) CAL_SETTINGS = await res.json();
-  } catch(e) {}
+  const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
+  if (!res.ok) throw new Error('businessCalendar HTTP ' + res.status);
+  const next = validateCalendarPayload(await res.json());
+  CAL_SETTINGS = next;
+  LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(next);
 }
 
 async function openCalendarSettings() {
   document.getElementById('calModal').style.display = 'flex';
   document.getElementById('calModalBody').innerHTML = '<p style="text-align:center;color:#666;">読み込み中...</p>';
-  await loadCalendarSettings();
-  renderCalendarModal();
+  try {
+    await loadCalendarSettings();
+    renderCalendarModal();
+  } catch (e) {
+    console.error('calendar settings load failed', e);
+    document.getElementById('calModalBody').innerHTML =
+      '<div style="text-align:center;color:#b91c1c;line-height:1.7">' +
+      '<strong>営業カレンダーを取得できませんでした。</strong><br>安全のため編集を停止しています。' +
+      '<br><button onclick="openCalendarSettings()" style="margin-top:12px;padding:7px 14px">再試行</button></div>';
+  }
 }
 
 function closeCalendarModal() {
@@ -642,8 +692,7 @@ async function toggleClosedDay(dow) {
   if (arr.includes(dow)) arr = arr.filter(d => d !== dow);
   else arr.push(dow);
   CAL_SETTINGS.defaultClosedDays = arr;
-  await saveCalendarSettings();
-  renderCalendarModal();
+  if (await saveCalendarSettings()) renderCalendarModal();
 }
 
 async function addForceDate(field) {
@@ -653,8 +702,7 @@ async function addForceDate(field) {
   if (!CAL_SETTINGS[field]) CAL_SETTINGS[field] = [];
   if (!CAL_SETTINGS[field].includes(val)) CAL_SETTINGS[field].push(val);
   input.value = '';
-  await saveCalendarSettings();
-  renderCalendarModal();
+  if (await saveCalendarSettings()) renderCalendarModal();
 }
 
 async function addForceRange(field) {
@@ -688,9 +736,10 @@ async function addForceRange(field) {
   document.getElementById(fromId).value = '';
   document.getElementById(toId).value = '';
   if (count > 0) {
-    await saveCalendarSettings();
-    renderCalendarModal();
-    alert(count + '日追加しました');
+    if (await saveCalendarSettings()) {
+      renderCalendarModal();
+      alert(count + '日追加しました');
+    }
   } else {
     alert('追加対象の日がありませんでした');
   }
@@ -698,19 +747,27 @@ async function addForceRange(field) {
 
 async function removeForceDate(field, date) {
   CAL_SETTINGS[field] = (CAL_SETTINGS[field] || []).filter(d => d !== date);
-  await saveCalendarSettings();
-  renderCalendarModal();
+  if (await saveCalendarSettings()) renderCalendarModal();
 }
 
 async function saveCalendarSettings() {
   try {
     const authH = await getAuthHeader();
-    await fetch(API_BASE + '/businessCalendar', {
+    const res = await fetch(API_BASE + '/businessCalendar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authH },
       body: JSON.stringify(CAL_SETTINGS),
     });
-  } catch(e) { alert('保存に失敗しました'); }
+    if (!res.ok) throw new Error('businessCalendar save HTTP ' + res.status);
+    LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(CAL_SETTINGS);
+    return true;
+  } catch(e) {
+    console.error('calendar settings save failed', e);
+    CAL_SETTINGS = cloneCalendarSettings(LAST_GOOD_CAL_SETTINGS);
+    renderCalendarModal();
+    alert('保存に失敗しました。変更前の設定に戻しました');
+    return false;
+  }
 }
 
 // ===== 初期化（ログイン後にonAuthStateChangedから呼ばれる） =====

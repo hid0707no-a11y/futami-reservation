@@ -40,6 +40,8 @@ export const staffHealthMonitor = onSchedule(
     schedule: '30 8 * * *',
     timeZone: 'Asia/Tokyo',
     region: 'asia-northeast1',
+    timeoutSeconds: 60,
+    retryCount: 3,
   },
   async () => { await runStaffHealthCheck(db); },
 );
@@ -71,17 +73,21 @@ export const dailySyncToSheets = onSchedule(
       }));
     } catch (e: any) {
       console.error('[sync] failed:', e.message || e);
-      await sendMonitorAlert(
-        '[ふたみ予約] 日次スプシ同期エラー',
-        [
-          'dailySyncToSheets が失敗しました。',
-          '',
-          `エラー: ${e.message || e}`,
-          `時刻: ${new Date().toISOString()}`,
-          '',
-          '対応: Firebase Console でログを確認してください。',
-        ].join('\n'),
-      );
+      try {
+        await sendMonitorAlert(
+          '[ふたみ予約] 日次スプシ同期エラー',
+          [
+            'dailySyncToSheets が失敗しました。',
+            '',
+            `エラー: ${e.message || e}`,
+            `時刻: ${new Date().toISOString()}`,
+            '',
+            '対応: Firebase Console でログを確認してください。',
+          ].join('\n'),
+        );
+      } catch (alertError: any) {
+        console.error('[sync] alert delivery also failed:', alertError?.message || alertError);
+      }
       throw e; // #28 retryConfig を効かせるため re-throw（Cloud Scheduler が最大3回再試行）
     }
   }

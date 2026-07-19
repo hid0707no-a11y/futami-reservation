@@ -14,6 +14,32 @@ import * as admin from 'firebase-admin';
 import { audit } from './logger';
 import { checkAuthFailRateLimit, recordAuthFailure } from './rateLimit';
 
+function decodedTokenHasStaffAccess(decoded: any): boolean {
+  const allowlist = (process.env.STAFF_ALLOWLIST || '')
+    .split(/[,，;\r\n]+/)
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+  return decoded?.staff === true
+    || (!!decoded?.email
+      && decoded.email_verified === true
+      && allowlist.includes(decoded.email.toLowerCase()));
+}
+
+/**
+ * 公開予約APIの任意Bearerを検証し、staff由来かだけを返す。
+ * 無効/権限なしでも公開予約自体は拒否せず、createdByをwebへ固定するために使う。
+ */
+export async function isVerifiedStaffRequest(req: any): Promise<boolean> {
+  const authHeader = req.headers?.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) return false;
+  try {
+    const decoded = await admin.auth().verifyIdToken(authHeader.slice(7));
+    return decodedTokenHasStaffAccess(decoded);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Bearer トークン検証 + スタッフ権限確認。
  *
@@ -30,15 +56,7 @@ export async function requireStaffAuth(req: any, res: any): Promise<boolean> {
   if (authHeader.startsWith('Bearer ')) {
     try {
       const decoded = await admin.auth().verifyIdToken(authHeader.slice(7));
-      const isStaffClaim = decoded.staff === true;
-      const allowlist = (process.env.STAFF_ALLOWLIST || '')
-        .split(/[,，;\r\n]+/)
-        .map(s => s.trim().toLowerCase())
-        .filter(Boolean);
-      const emailAllowed = !!decoded.email
-        && decoded.email_verified === true
-        && allowlist.includes(decoded.email.toLowerCase());
-      if (isStaffClaim || emailAllowed) {
+      if (decodedTokenHasStaffAccess(decoded)) {
         req.auth = decoded;
         return true;
       }

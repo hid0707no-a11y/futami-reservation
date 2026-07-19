@@ -11,6 +11,13 @@ import { checkRateLimit } from '../lib/rateLimit';
 import { requireStaffAuth } from '../lib/auth';
 import { audit as auditLog } from '../lib/logger';
 import { SHARED_SLOT_CAPACITY, getFutamiDays, _clearFutamiDaysCache } from '../lib/futamiDays';
+import { businessCalendarFromData } from '../lib/businessDays';
+
+function isRealIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
 
 /** GET /availability?from=&to= — 占有スロット・shared_slots・tennis_slots を返す（公開） */
 export const availability = onRequest(
@@ -48,7 +55,24 @@ export const availability = onRequest(
       if (from) tennisQuery = tennisQuery.where('date', '>=', from);
       if (to) tennisQuery = tennisQuery.where('date', '<=', to);
       const tennisSnap = await tennisQuery.get();
-      const tennisSlots = tennisSnap.docs.map(d => d.id);
+      const tennisSlotSet = new Set<string>();
+      tennisSnap.docs.forEach(d => {
+        const id = d.id;
+        const [courtId, date, time] = id.split('|');
+        // staff旧形式（整数時）は公開画面が使う30分HHMMキーへ展開して返す。
+        // 新規書込みはcreateReservation側でHHMMへcanonicalizeする。
+        if (courtId && date && /^(?:0?[8-9]|1[0-9]|2[01])$/.test(time || '')) {
+          const hour = String(Number(time)).padStart(2, '0');
+          tennisSlotSet.add(`${courtId}|${date}|${hour}00`);
+          tennisSlotSet.add(`${courtId}|${date}|${hour}30`);
+        } else if (courtId && date && /^(?:0?[8-9]|1[0-9]|2[01]):(?:00|30)$/.test(time || '')) {
+          const [hour, minute] = time.split(':');
+          tennisSlotSet.add(`${courtId}|${date}|${String(Number(hour)).padStart(2, '0')}${minute}`);
+        } else {
+          tennisSlotSet.add(id);
+        }
+      });
+      const tennisSlots = Array.from(tennisSlotSet);
 
       res.status(200).json({
         generatedAt: new Date().toISOString(),
@@ -76,9 +100,8 @@ export const futamiDays = onRequest(
         if (!checkOrigin(req, res)) return;
         const dates: string[] = req.body?.dates || [];
         // #10 businessCalendar と同基準で全要素を検証（型・YYYY-MM-DD・365件上限）
-        const dateRe = /^\d{4}-\d{2}-\d{2}$/;
         if (!Array.isArray(dates) || dates.length > 365
-            || !dates.every((d: any) => typeof d === 'string' && dateRe.test(d))) {
+            || !dates.every(isRealIsoDate)) {
           res.status(400).json({ error: 'invalid_dates' });
           return;
         }
@@ -117,9 +140,9 @@ export const businessCalendar = onRequest(
         if (!(await requireStaffAuth(req, res))) return;
         if (!checkOrigin(req, res)) return;
         const { defaultClosedDays, forceOpen, forceClosed } = req.body || {};
-        const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-        const validateDates = (arr: any[]) => Array.isArray(arr) && arr.length <= 365 && arr.every((d: any) => typeof d === 'string' && dateRe.test(d));
-        if (Array.isArray(defaultClosedDays) && !defaultClosedDays.every((d: any) => typeof d === 'number' && d >= 0 && d <= 6)) {
+        const validateDates = (arr: any[]) => Array.isArray(arr) && arr.length <= 365 && arr.every(isRealIsoDate);
+        if (Array.isArray(defaultClosedDays)
+            && !defaultClosedDays.every((d: any) => Number.isInteger(d) && d >= 0 && d <= 6)) {
           res.status(400).json({ error: 'invalid_defaultClosedDays' }); return;
         }
         if (Array.isArray(forceOpen) && !validateDates(forceOpen)) {
@@ -148,7 +171,9 @@ export const businessCalendar = onRequest(
         return;
       }
       const doc = await db.doc('config/business_calendar').get();
-      const data = doc.exists ? doc.data() : { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+      // GETも保存データをそのまま返さず、予約確定側と同じ正規化を通す。
+      // 手動編集や過去データに壊れた値があっても、各HTMLへ不正な営業日設定を伝播させない。
+      const data = businessCalendarFromData(doc.exists ? doc.data() : {});
       _calendarCache = { data, expiresAt: now + CALENDAR_CACHE_TTL_MS };
       res.status(200).json(data);
     } catch (e: any) {

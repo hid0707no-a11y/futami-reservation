@@ -20,7 +20,7 @@ jest.mock('../src/lib/logger', () => ({
 
 import * as admin from 'firebase-admin';
 import { checkAuthFailRateLimit, recordAuthFailure } from '../src/lib/rateLimit';
-import { requireStaffAuth } from '../src/lib/auth';
+import { isVerifiedStaffRequest, requireStaffAuth } from '../src/lib/auth';
 
 const mockVerifyIdToken = jest.fn();
 const mockedAuth = admin.auth as unknown as jest.Mock;
@@ -129,5 +129,26 @@ describe('requireStaffAuth（認可境界・backlog #1）', () => {
     const ok = await requireStaffAuth(req, res);
     expect(ok).toBe(false);
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('isVerifiedStaffRequest（公開予約のcreatedBy偽装防止）', () => {
+  it('Bearer無し・無効・権限なしはfalse', async () => {
+    expect(await isVerifiedStaffRequest({ headers: {} })).toBe(false);
+    mockVerifyIdToken.mockRejectedValueOnce(new Error('bad token'));
+    expect(await isVerifiedStaffRequest({ headers: { authorization: 'Bearer bad' } })).toBe(false);
+    mockVerifyIdToken.mockResolvedValueOnce({ staff: false, email: 'x@example.com', email_verified: true });
+    expect(await isVerifiedStaffRequest({ headers: { authorization: 'Bearer user' } })).toBe(false);
+  });
+
+  it('staff claimまたは検証済みallowlistだけtrue', async () => {
+    mockVerifyIdToken.mockResolvedValueOnce({ staff: true });
+    expect(await isVerifiedStaffRequest({ headers: { authorization: 'Bearer staff' } })).toBe(true);
+
+    process.env.STAFF_ALLOWLIST = 'staff@example.com';
+    mockVerifyIdToken.mockResolvedValueOnce({
+      staff: false, email: 'Staff@Example.com', email_verified: true,
+    });
+    expect(await isVerifiedStaffRequest({ headers: { authorization: 'Bearer allow' } })).toBe(true);
   });
 });

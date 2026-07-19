@@ -215,6 +215,82 @@ describe('validateReservationBody — endDate 範囲サニティ（在庫占有�
   });
 });
 
+describe('validateReservationBody — 実在日・過去日・書込み上限', () => {
+  it.each(['2026-02-30', '2026-13-01', '2026-00-10'])('実在しない日付 %s を拒否', badDate => {
+    const body = { ...baseValid(), startDate: badDate, endDate: badDate };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'invalid_date_format' });
+  });
+
+  it('日本時間の今日より前はbooking_in_past', () => {
+    const body = {
+      ...baseValid(),
+      startDate: '2026-05-04',
+      endDate: '2026-05-04',
+      slots: ['room_27|2026-05-04|10'],
+    };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'booking_in_past' });
+  });
+
+  it('slot 500件は予約doc込みでtransaction上限を超えるため拒否', () => {
+    const slots = Array.from({ length: 500 }, (_, i) => 'room_27|2026-05-10|' + i);
+    expect(validateReservationBody({ ...baseValid(), slots }, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'invalid_slots' });
+  });
+});
+
+describe('validateReservationBody — メール件名制御文字', () => {
+  it.each(['山田\r\nBcc: victim@example.com', '山田\n偽件名'])('顧客名の改行 %p を拒否', name => {
+    const body = { ...baseValid(), customer: { ...baseValid().customer, name } };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'invalid_customer_name' });
+  });
+});
+
+describe('validateReservationBody — 人数型（保存型XSS対策）', () => {
+  it('正常なguestsとguestCountは通過', () => {
+    const body: any = {
+      ...baseValid(),
+      guests: { adult: 2, elementary: 1, child: 0 },
+      guestCount: 3,
+    };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }).ok).toBe(true);
+  });
+
+  it.each([
+    '<img src=x onerror=alert(1)>',
+    -1,
+    1.5,
+    151,
+    Number.NaN,
+  ])('guests内の不正値 %p を拒否', value => {
+    const body: any = {
+      ...baseValid(),
+      guests: { adult: value, elementary: 0, child: 0 },
+    };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'invalid_guest_count' });
+  });
+
+  it('guestsの配列・余分なキー・合計151人を拒否', () => {
+    const cases: any[] = [
+      [],
+      { adult: 1, elementary: 0, child: 0, html: '<script>' },
+      { adult: 100, elementary: 51, child: 0 },
+    ];
+    for (const guests of cases) {
+      expect(validateReservationBody({ ...baseValid(), guests }, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+        .toEqual({ ok: false, error: 'invalid_guest_count' });
+    }
+  });
+
+  it.each(['<svg/onload=alert(1)>', 0, 1.5, 151])('不正guestCount %p を拒否', guestCount => {
+    expect(validateReservationBody({ ...baseValid(), guestCount }, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'invalid_guest_count' });
+  });
+});
+
 // #3 slot 突合・混在カテゴリ検査
 describe('validateReservationBody — slot 突合（#3）', () => {
   it('正：テニス複数slot（court_1・同日30分単位）が通過する', () => {

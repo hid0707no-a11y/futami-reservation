@@ -712,6 +712,7 @@ body {
 .avail-badge.few { background: #fff3e0; color: #e65100; }
 .avail-badge.none { background: #fce4ec; color: #c62828; }
 .avail-badge.closed { background: #efedea; color: #6b6864; }
+.avail-badge.unknown { background: #f3f4f6; color: #6b7280; }
 
 /* ========== OPTIONS (camp extras etc) ========== */
 .option-row {
@@ -1438,22 +1439,19 @@ const state = {
 };
 
 /* ================================================================
-   ふたみの日 判定（毎月23日、火曜なら前日22日に振替）
+   ふたみの日 判定（サーバ config/special_days が正本）
    ================================================================ */
-function isFutamiDay(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDate();
-  const dow = d.getDay(); // 0=日, 2=火
+const FUTAMI_DAYS = new Set();
+let FUTAMI_DAYS_LOADED = false;
 
-  // 23日が火曜 → 22日(月)に振替。dateStrが22日かつ翌23日が火曜ならtrue
-  if (day === 22) {
-    const next = new Date(d);
-    next.setDate(23);
-    return next.getDay() === 2; // 翌23日が火曜→22日がふたみの日
-  }
-  // 23日で火曜以外ならtrue
-  if (day === 23 && dow !== 2) return true;
-  return false;
+function isRealIsoDateString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+function isFutamiDay(dateStr) {
+  return FUTAMI_DAYS_LOADED && FUTAMI_DAYS.has(dateStr);
 }
 
 // ふたみの日料金
@@ -1507,9 +1505,25 @@ const OCCUPIED_SLOTS = new Set();
 const SHARED_SLOTS = {}; // ふたみの日サウナ用 { slotKey: {capacity, used, remaining} }
 const TENNIS_SLOTS = new Set(); // テニス30分単位
 let DATA_LOADED = false;
+let FRESH_AVAILABILITY_LOADED = false;
+let BUSINESS_CALENDAR_LOADED = false;
 
 const API_BASE = 'https://asia-northeast1-futami-yoyaku-492607.cloudfunctions.net';
 const AVAILABILITY_URL = 'https://availability-6ry33ad4oa-an.a.run.app';
+
+async function loadFutamiDays() {
+  // 再取得中・失敗時に古い設定で通常/特別プランを逆送信しない。
+  FUTAMI_DAYS_LOADED = false;
+  const res = await fetch(API_BASE + '/futamiDays?t=' + Date.now());
+  if (!res.ok) throw new Error('futamiDays HTTP ' + res.status);
+  const data = await res.json();
+  if (!data || !Array.isArray(data.dates) || !data.dates.every(isRealIsoDateString)) {
+    throw new Error('futamiDays returned malformed data');
+  }
+  FUTAMI_DAYS.clear();
+  data.dates.forEach(d => FUTAMI_DAYS.add(d));
+  FUTAMI_DAYS_LOADED = true;
+}
 
 // #27 古い data.json フォールバック使用中である事を画面上部で告知するバナー
 function showStaleDataBanner() {
@@ -1518,7 +1532,7 @@ function showStaleDataBanner() {
     b = document.createElement('div');
     b.id = 'stale-data-banner';
     b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;padding:8px 12px;font-size:13px;line-height:1.5;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.25)';
-    b.textContent = '⚠️ 最新の空き状況を取得できていません。表示は参考値です（時間をおいて再読込してください）。';
+    b.textContent = '⚠️ 最新の空き状況・営業日・特別日情報の一部を取得できていません。表示は参考値です（時間をおいて再読込してください）。';
     document.body.appendChild(b);
   }
   b.style.display = 'block';
@@ -1528,15 +1542,43 @@ function hideStaleDataBanner() {
   if (b) b.style.display = 'none';
 }
 
+function refreshAvailabilityView() {
+  if (typeof renderSearchResults === 'function' && state.flow === 'date' && state.searchDate) {
+    renderSearchResults();
+  }
+  const monthlyScreen = document.getElementById('screen-monthly-calendar');
+  if (monthlyScreen && monthlyScreen.classList.contains('active')
+      && typeof renderMonthlyCalendar === 'function' && calState.fgId) {
+    renderMonthlyCalendar();
+  }
+  const planScreen = document.getElementById('screen-plan-select');
+  if (planScreen && planScreen.classList.contains('active')) {
+    const list = planScreen.querySelector('[id^="plan-list-"]');
+    const dateInput = document.getElementById('plan-select-date');
+    if (list && dateInput && dateInput.value && typeof updatePlanAvailability === 'function') {
+      updatePlanAvailability(list.id.slice('plan-list-'.length));
+    }
+  }
+}
+
 async function loadAvailabilityData() {
+  DATA_LOADED = false;
+  FRESH_AVAILABILITY_LOADED = false;
   try {
-    // 営業カレンダーも同時に取得
-    const [, res] = await Promise.all([
-      loadBusinessCalendar().catch(() => {}),
+    // 営業カレンダー・ふたみの日も同時に取得
+    const [calendarResult, futamiResult, availabilityResult] = await Promise.allSettled([
+      loadBusinessCalendar(),
+      loadFutamiDays(),
       fetch(AVAILABILITY_URL + '?t=' + Date.now()),
     ]);
+    if (availabilityResult.status !== 'fulfilled') throw availabilityResult.reason;
+    const res = availabilityResult.value;
     if (!res.ok) throw new Error('availability API fetch failed');
     const data = await res.json();
+    if (!data || !Array.isArray(data.occupiedSlots) || !Array.isArray(data.tennisSlots)
+        || !data.sharedSlots || typeof data.sharedSlots !== 'object' || Array.isArray(data.sharedSlots)) {
+      throw new Error('availability API returned malformed data');
+    }
     OCCUPIED_SLOTS.clear();
     (data.occupiedSlots || []).forEach(s => OCCUPIED_SLOTS.add(s));
     // 共有スロット（ふたみの日）
@@ -1548,12 +1590,17 @@ async function loadAvailabilityData() {
     TENNIS_SLOTS.clear();
     (data.tennisSlots || []).forEach(s => TENNIS_SLOTS.add(s));
     DATA_LOADED = true;
-    hideStaleDataBanner(); // #27 最新取得成功 → バナー解除
-    console.log('[api] loaded', OCCUPIED_SLOTS.size, 'slots,', TENNIS_SLOTS.size, 'tennis,', Object.keys(SHARED_SLOTS).length, 'shared');
-    // 既に表示中の画面があれば再描画
-    if (typeof renderSearchResults === 'function' && state.flow === 'date' && state.searchDate) {
-      renderSearchResults();
+    FRESH_AVAILABILITY_LOADED = true;
+    if (calendarResult.status === 'fulfilled' && futamiResult.status === 'fulfilled') {
+      hideStaleDataBanner();
+    } else {
+      if (calendarResult.status === 'rejected') console.warn('[api] business calendar load failed:', calendarResult.reason);
+      if (futamiResult.status === 'rejected') console.warn('[api] futami days load failed:', futamiResult.reason);
+      showStaleDataBanner();
     }
+    console.log('[api] loaded', OCCUPIED_SLOTS.size, 'slots,', TENNIS_SLOTS.size, 'tennis,', Object.keys(SHARED_SLOTS).length, 'shared');
+    // 読み込み中に開かれた画面の「確認中」を最新状態へ更新。
+    refreshAvailabilityView();
   } catch (e) {
     console.warn('[api] load failed, falling back to data.json:', e);
     showStaleDataBanner(); // #27 フォールバック中は参考値である旨を告知
@@ -1561,12 +1608,14 @@ async function loadAvailabilityData() {
       const res2 = await fetch('data.json?t=' + Date.now());
       if (res2.ok) {
         const data2 = await res2.json();
-        (data2.occupiedSlots || []).forEach(s => OCCUPIED_SLOTS.add(s));
+        if (!data2 || !Array.isArray(data2.occupiedSlots)) throw new Error('data.json returned malformed data');
+        data2.occupiedSlots.forEach(s => OCCUPIED_SLOTS.add(s));
+        DATA_LOADED = true;
+        refreshAvailabilityView();
       }
     } catch (e2) {
       console.warn('[data] fallback also failed:', e2);
     }
-    DATA_LOADED = true;
   }
 }
 
@@ -1645,6 +1694,12 @@ function getAvailabilityLevel(plan, date) {
   // 日付検索・日付直接入力から火曜に「空きあり」→予約確定まで到達できた
   if (isClosedDay(date)) return 'closed';
 
+  // 空きデータ未取得時は、空集合を「全枠空き」と誤認しない。
+  if (!DATA_LOADED || !BUSINESS_CALENDAR_LOADED) return 'unknown';
+
+  // 特別日設定を取得できない間は通常/特別サウナを判別できないためサウナだけ停止。
+  if (plan.planType === 'sauna' && !FUTAMI_DAYS_LOADED) return 'unknown';
+
   // ふたみの日サウナは1予約で完売（occupied_slotsで判定）
   if (plan.planType === 'sauna' && isFutamiDay(date)) {
     return isFutamiSaunaSoldOut(plan, date) ? 'none' : 'ok';
@@ -1663,8 +1718,8 @@ function getAvailabilityLevel(plan, date) {
 }
 
 function availBadge(level) {
-  const labels = { ok: '空きあり', few: '残りわずか', none: '満室', closed: '定休日' };
-  return '<span class="avail-badge ' + level + '">' + labels[level] + '</span>';
+  const labels = { ok: '空きあり', few: '残りわずか', none: '満室', closed: '定休日', unknown: '確認中' };
+  return '<span class="avail-badge ' + level + '">' + (labels[level] || '確認中') + '</span>';
 }
 
 /* ================================================================
@@ -1866,7 +1921,7 @@ function renderSearchResults() {
     }
     groups[catKey].forEach(item => {
       const room = ROOMS.find(r => r.id === item.plan.rooms[0]);
-      const isFull = item.level === 'none' || item.level === 'closed';
+      const isFull = item.level === 'none' || item.level === 'closed' || item.level === 'unknown';
       const clickAttr = isFull ? '' : ' onclick="selectPlanFromSearch(\'' + item.plan.id + '\')"';
       const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
       html += '<div class="facility-card"' + fullStyle + clickAttr + '>';
@@ -1999,6 +2054,8 @@ function calNavMonth(delta) {
 // Returns: 'closed', 'full', 'some', 'few', 'ok'
 function getDayAvailability(fg, dateStr) {
   if (isClosedDay(dateStr)) return 'closed';
+  if (!DATA_LOADED || !BUSINESS_CALENDAR_LOADED
+      || (fg.category === 'sauna' && !FUTAMI_DAYS_LOADED)) return 'unknown';
 
   const plans = fg.plans.map(pid => PLANS.find(p => p.id === pid)).filter(Boolean);
   if (plans.length === 0) return 'full';
@@ -2065,7 +2122,7 @@ function renderMonthlyCalendar() {
     const isPast = dateStr < todayStr;
     const isToday = dateStr === todayStr;
     const avail = isPast ? 'past' : getDayAvailability(fg, dateStr);
-    const disabled = isPast || avail === 'closed';
+    const disabled = isPast || avail === 'closed' || avail === 'unknown';
 
     let cellClass = 'cal-cell';
     if (dayOfWeek === 0) cellClass += ' cal-sun';
@@ -2088,6 +2145,8 @@ function renderMonthlyCalendar() {
       html += '<span class="cal-status cal-status-closed">-</span>';
     } else if (avail === 'closed') {
       html += '<span class="cal-status cal-status-closed">休</span>';
+    } else if (avail === 'unknown') {
+      html += '<span class="cal-status cal-status-closed">…</span>';
     } else if (avail === 'ok') {
       html += '<span class="cal-status cal-status-ok">\u25CE</span>';
     } else if (avail === 'few') {
@@ -2110,6 +2169,7 @@ function renderMonthlyCalendar() {
   html += '<span><span class="cal-status cal-status-some">\u25B3</span>一部のみ</span>';
   html += '<span><span class="cal-status cal-status-full">\u00D7</span>満室</span>';
   html += '<span><span class="cal-status cal-status-closed">休</span>定休日</span>';
+  html += '<span><span class="cal-status cal-status-closed">…</span>確認中</span>';
   html += '</div>';
 
   html += '</div>'; // card
@@ -2213,7 +2273,7 @@ function renderFutamiDayAppeal(dateStr, category) {
 
 function renderPlanCard(plan, dateStr) {
   const level = dateStr ? getAvailabilityLevel(plan, dateStr) : 'ok';
-  const isFull = level === 'none' || level === 'closed';
+  const isFull = level === 'none' || level === 'closed' || level === 'unknown';
   const clickAttr = isFull ? '' : ' onclick="selectPlan(\'' + plan.id + '\')"';
   const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
   let html = '<div class="plan-card"' + fullStyle + clickAttr + '>';
@@ -3020,10 +3080,22 @@ function stepNights(delta) {
 var BUSINESS_CALENDAR = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
 
 async function loadBusinessCalendar() {
-  try {
-    const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
-    if (res.ok) BUSINESS_CALENDAR = await res.json();
-  } catch (e) { console.warn('businessCalendar load failed', e); }
+  BUSINESS_CALENDAR_LOADED = false;
+  const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
+  if (!res.ok) throw new Error('businessCalendar HTTP ' + res.status);
+  const data = await res.json();
+  if (!data || !Array.isArray(data.defaultClosedDays)
+      || !data.defaultClosedDays.every(d => Number.isInteger(d) && d >= 0 && d <= 6)
+      || !Array.isArray(data.forceOpen) || !data.forceOpen.every(isRealIsoDateString)
+      || !Array.isArray(data.forceClosed) || !data.forceClosed.every(isRealIsoDateString)) {
+    throw new Error('businessCalendar returned malformed data');
+  }
+  BUSINESS_CALENDAR = {
+    defaultClosedDays: data.defaultClosedDays.slice(),
+    forceOpen: data.forceOpen.slice(),
+    forceClosed: data.forceClosed.slice(),
+  };
+  BUSINESS_CALENDAR_LOADED = true;
 }
 
 function isClosedDay(dateStr) {
@@ -3050,16 +3122,21 @@ function getMaxNights() {
   // → 他の部屋が将来日で埋まっていても「予約可」と誤判定するバグの修正
   const isCamp = plan.planType === 'camp';
   const isMultiSelectActive = plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0;
-  const checkRoomIds = isCamp
+  const checkRoomIds = plan.requiresAllRooms
+    ? plan.rooms.slice()
+    : isCamp
     ? (state.selectedCampSites && state.selectedCampSites.length > 0 ? state.selectedCampSites : ['camp_1'])
     : (isMultiSelectActive ? state.selectedRoomIds.slice() : [state.selectedRoomId]);
 
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
   if (slots.length === 0) return planCap;
   if (!checkRoomIds[0]) return planCap;
+  // slot doc + reservation doc がFirestore transaction 500 writesを超えない上限。
+  const transactionCap = Math.max(1, Math.floor(499 / (slots.length * checkRoomIds.length)));
+  const effectivePlanCap = Math.min(planCap, transactionCap);
 
   let max = 0;
-  for (let n = 0; n < planCap; n++) {
+  for (let n = 0; n < effectivePlanCap; n++) {
     const stayDate = addDays(baseDate, n);
     if (n > 0 && isClosedDay(stayDate)) break;
 
@@ -3160,6 +3237,10 @@ function renderHourlyGrid() {
   const date = state.selectedDate;
   const range = plan.hourlyRange || { start: 8, end: 22 };
   const isTennis = roomId && roomId.startsWith('court_');
+  const activeCourtIds = isTennis && plan.allowMultiSelect
+    && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0
+    ? state.selectedRoomIds.slice()
+    : [roomId];
 
   let html = '';
   if (isTennis) {
@@ -3184,8 +3265,10 @@ function renderHourlyGrid() {
       const midSlot = addMinutes(startKey, 30);
       const isSelected = state.selectedHours.includes(startKey);
       // 1) 他の予約と衝突
-      const apiAvail = isTennisSlotFree(roomId, date, startKey)
-                    && isTennisSlotFree(roomId, date, midSlot);
+      const apiAvail = activeCourtIds.every(courtId =>
+        isTennisSlotFree(courtId, date, startKey)
+        && isTennisSlotFree(courtId, date, midSlot)
+      );
       // 2) 自分の他の選択と重複
       let overlapMine = false;
       if (!isSelected) {
@@ -3401,6 +3484,19 @@ function proceedToConfirm() {
   }
   const plan = state.selectedPlan;
   const pt = plan.planType;
+
+  if (!FRESH_AVAILABILITY_LOADED) {
+    alert('最新の空き状況を確認できていません。通信環境をご確認のうえ、ページを再読み込みしてください。');
+    return;
+  }
+  if (!BUSINESS_CALENDAR_LOADED) {
+    alert('最新の営業日情報を確認できていません。ページを再読み込みしてからお試しください。');
+    return;
+  }
+  if (pt === 'sauna' && !FUTAMI_DAYS_LOADED) {
+    alert('サウナの特別日情報を確認できていません。ページを再読み込みしてからお試しください。');
+    return;
+  }
 
   // 定休日ガード（2026-07-19）：月間カレンダー以外の導線（日付検索・日付直接入力）はここが最終ゲート。
   // 対象はチェックイン日＋各宿泊日（チェックアウト日は対象外＝getMaxNights の連泊判定と同仕様）。
@@ -3737,6 +3833,11 @@ async function _submitBookingInner() {
   const address2 = document.getElementById('confirm-address2').value.trim();
 
   const plan = state.selectedPlan;
+  if (!FRESH_AVAILABILITY_LOADED || !BUSINESS_CALENDAR_LOADED
+      || (plan.planType === 'sauna' && !FUTAMI_DAYS_LOADED)) {
+    alert('最新の予約情報を確認できていません。ページを再読み込みしてからお試しください。');
+    return;
+  }
 
   // === ふたみの日サウナ判定 ===
   const isFutamiSauna = plan.planType === 'sauna' && isFutamiDay(state.selectedDate);
@@ -3744,11 +3845,15 @@ async function _submitBookingInner() {
   const isCamp = plan.planType === 'camp';
   // === テニス判定 ===
   const isTennis = state.selectedRoomId && state.selectedRoomId.startsWith('court_');
+  const isOvernight = plan.planType === 'stay' || plan.planType === 'stay_simple' || isCamp;
+  const payloadNights = isOvernight ? (state.selectedNights || 1) : 0;
 
   // === API送信用 slot キー配列を生成 ===
   // 複数選択プランは state.selectedRoomIds、その他は [state.selectedRoomId]
   const isMultiSelectActive = plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0;
-  const activeRoomIds = isMultiSelectActive ? state.selectedRoomIds.slice() : [state.selectedRoomId];
+  const activeRoomIds = plan.requiresAllRooms
+    ? plan.rooms.slice()
+    : (isMultiSelectActive ? state.selectedRoomIds.slice() : [state.selectedRoomId]);
   let slotKeys = [];
   try {
     if (isTennis && Array.isArray(state.selectedHours)) {
@@ -3767,14 +3872,21 @@ async function _submitBookingInner() {
       slotKeys = Array.from(set);
     } else if (isCamp) {
       // キャンプ: 選択した区画 × 連泊スロットを全展開
-      const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
+      const expanded = expandStaySlots(plan, state.selectedDate, payloadNights);
       for (const rid of state.selectedCampSites) {
         for (const s of expanded) {
           slotKeys.push(rid + '|' + s.date + '|' + s.hour);
         }
       }
+    } else if (plan.planType === 'hourly') {
+      // ロッジ日帰りは実際に選択した時間だけ占有する。
+      for (const rid of activeRoomIds) {
+        for (const hour of state.selectedHours) {
+          if (Number.isInteger(hour)) slotKeys.push(rid + '|' + state.selectedDate + '|' + hour);
+        }
+      }
     } else {
-      const expanded = expandStaySlots(plan, state.selectedDate, state.selectedNights || 1);
+      const expanded = expandStaySlots(plan, state.selectedDate, isOvernight ? payloadNights : 1);
       if (isFutamiSauna) {
         slotKeys = expanded.map(s => 'sauna_share|' + s.date + '|' + s.hour);
       } else {
@@ -3799,8 +3911,8 @@ async function _submitBookingInner() {
   let apiResId = null;
   try {
       const startDate = state.selectedDate;
-      const endDate = (state.selectedNights && state.selectedNights > 0)
-        ? addDays(startDate, state.selectedNights)
+      const endDate = payloadNights > 0
+        ? addDays(startDate, payloadNights)
         : startDate;
       // ふたみの日サウナの場合は人数を guestCount に。state.guests がサウナの人数。
       const futamiSeats = isFutamiSauna ? (state.guests || 1) : null;
@@ -3834,15 +3946,15 @@ async function _submitBookingInner() {
       let payloadRoomIds;
       if (isFutamiSauna) payloadRoomIds = ['sauna_share'];
       else if (isCamp) payloadRoomIds = state.selectedCampSites.slice();
-      else if (isMultiSelectActive) payloadRoomIds = state.selectedRoomIds.slice();
-      else payloadRoomIds = [state.selectedRoomId];
+      else payloadRoomIds = activeRoomIds.slice();
       const payload = {
+        inventoryVersion: 2,
         planId: isFutamiSauna ? 'plan_sauna_futami' : plan.id,
         roomIds: payloadRoomIds,
         slots: slotKeys,
         startDate,
         endDate,
-        nights: state.selectedNights || 0,
+        nights: payloadNights,
         customer: { name, phone, email, zip, address1, address2, isMember: !!state.isResident },
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
         pricing: {
@@ -3899,6 +4011,16 @@ async function _submitBookingInner() {
           closed_day: '選択された日は定休日のため予約できません。日付をご確認ください。',
           invalid_date_range: '日程の指定に不整合がありました。お手数ですが選び直してください。',
           too_many_nights: 'キャンプは3泊までご予約いただけます。泊数をご確認ください。',
+          invalid_nights: '泊数の指定に不整合がありました。日程を選び直してください。',
+          invalid_planId: 'プラン情報が更新されています。ページを再読み込みして選び直してください。',
+          plan_room_mismatch: 'プランと施設の組み合わせに不整合がありました。ページを再読み込みしてください。',
+          plan_slot_mismatch: '予約時間の指定に不整合がありました。ページを再読み込みして選び直してください。',
+          plan_date_mismatch: '予約日程の指定に不整合がありました。ページを再読み込みして選び直してください。',
+          duplicate_roomId: '同じ施設が重複して選択されています。選び直してください。',
+          invalid_date_format: '日付の指定が正しくありません。選び直してください。',
+          booking_in_past: '過去の日付は予約できません。日付を選び直してください。',
+          futami_day_requires_shared_sauna: 'この日は「ふたみの日」です。ページを再読み込みして専用プランから予約してください。',
+          client_update_required: '予約画面が更新されています。ページを再読み込みして、もう一度お選びください。',
         }[code];
         alert(msg || ('入力内容をご確認ください（' + (code || '不明なエラー') + '）。'));
         return;

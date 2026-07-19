@@ -9,6 +9,14 @@
 //  - { ok: false, error: 'xxx', detail?: 'yyy' } バリデーション失敗
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_GUESTS = 150;
+const HEADER_CONTROL_RE = /[\r\n]/;
+
+function isRealDate(dateStr: string): boolean {
+  if (!DATE_RE.test(dateStr)) return false;
+  const d = new Date(dateStr + 'T00:00:00Z');
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === dateStr;
+}
 
 // メールは単一アドレスの形式を強制（2026-07-19）：長さのみの検証だと、無認証の
 // createReservation 経由で任意文字列が nodemailer の to: に渡り、公式ドメインから
@@ -43,7 +51,7 @@ export interface ValidationOptions {
 }
 
 export function validateReservationBody(body: any, opts: ValidationOptions): ValidationResult {
-  const { planId, roomIds, slots, startDate, endDate, customer, note } = body || {};
+  const { planId, roomIds, slots, startDate, endDate, customer, guests, guestCount, note } = body || {};
 
   // planId
   if (typeof planId !== 'string' || planId.length > 100) {
@@ -75,7 +83,8 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   }
 
   // slots：構造（roomId|date|time）と roomIds との突合・重複検査（#3）
-  if (!Array.isArray(slots) || slots.length === 0 || slots.length > 500) {
+  // Firestore transaction は予約doc 1件も同時に書くため、slotは最大499件。
+  if (!Array.isArray(slots) || slots.length === 0 || slots.length > 499) {
     return { ok: false, error: 'invalid_slots' };
   }
   const roomIdSet = new Set<string>(roomIds);
@@ -99,7 +108,8 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   }
 
   // 日付フォーマット
-  if (!DATE_RE.test(startDate) || !DATE_RE.test(endDate)) {
+  if (typeof startDate !== 'string' || typeof endDate !== 'string'
+      || !isRealDate(startDate) || !isRealDate(endDate)) {
     return { ok: false, error: 'invalid_date_format' };
   }
 
@@ -107,7 +117,12 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   const isStayCategory = roomIds.every((r: string) => STAY_ROOMS.has(r));
   const maxDays = isStayCategory ? 365 : 90;
   const now = opts.now ?? new Date();
-  const maxDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + maxDays);
+  const todayJst = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (startDate < todayJst) {
+    return { ok: false, error: 'booking_in_past' };
+  }
+  const maxDate = new Date(todayJst + 'T00:00:00Z');
+  maxDate.setUTCDate(maxDate.getUTCDate() + maxDays);
   const bookingDate = new Date(startDate + 'T00:00:00');
   if (bookingDate > maxDate) {
     return { ok: false, error: 'booking_too_far', detail: `${maxDays}日先まで予約可能です` };
@@ -132,7 +147,8 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   }
 
   // customer
-  if (!customer?.name || typeof customer.name !== 'string' || customer.name.length > 50) {
+  if (!customer?.name || typeof customer.name !== 'string' || customer.name.length > 50
+      || HEADER_CONTROL_RE.test(customer.name)) {
     return { ok: false, error: 'invalid_customer_name' };
   }
   if (!customer?.phone || typeof customer.phone !== 'string' || customer.phone.length > 20) {
@@ -149,6 +165,31 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   }
   if (customer.address2 && (typeof customer.address2 !== 'string' || customer.address2.length > 100)) {
     return { ok: false, error: 'invalid_customer_address2' };
+  }
+
+  // 人数はスタッフ画面で表示される保存データ。文字列を許すと innerHTML sink と結合して
+  // 保存型 XSS になるため、受信時点で安全な整数だけに限定する。
+  if (guests !== undefined && guests !== null) {
+    if (typeof guests !== 'object' || Array.isArray(guests)) {
+      return { ok: false, error: 'invalid_guest_count' };
+    }
+    const allowedKeys = new Set(['adult', 'elementary', 'child']);
+    if (Object.keys(guests).some(k => !allowedKeys.has(k))) {
+      return { ok: false, error: 'invalid_guest_count' };
+    }
+    let totalGuests = 0;
+    for (const key of allowedKeys) {
+      const value = guests[key] ?? 0;
+      if (!Number.isSafeInteger(value) || value < 0 || value > MAX_GUESTS) {
+        return { ok: false, error: 'invalid_guest_count' };
+      }
+      totalGuests += value;
+    }
+    if (totalGuests > MAX_GUESTS) return { ok: false, error: 'invalid_guest_count' };
+  }
+  if (guestCount !== undefined
+      && (!Number.isSafeInteger(guestCount) || guestCount < 1 || guestCount > MAX_GUESTS)) {
+    return { ok: false, error: 'invalid_guest_count' };
   }
 
   // note
@@ -203,7 +244,7 @@ export function validateUpdateFields(body: any): UpdateValidationResult {
     if (typeof c !== 'object' || c === null || Array.isArray(c)) {
       return { ok: false, error: 'invalid_customer' };
     }
-    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 50)) return { ok: false, error: 'invalid_customer_name' };
+    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 50 || HEADER_CONTROL_RE.test(c.name))) return { ok: false, error: 'invalid_customer_name' };
     if (c.phone !== undefined && (typeof c.phone !== 'string' || c.phone.length > 20)) return { ok: false, error: 'invalid_customer_phone' };
     if (c.email !== undefined && c.email !== '' && (typeof c.email !== 'string' || c.email.length > 100 || !EMAIL_RE.test(c.email))) return { ok: false, error: 'invalid_customer_email' };
     if (c.zip !== undefined && (typeof c.zip !== 'string' || c.zip.length > 10)) return { ok: false, error: 'invalid_customer_zip' };

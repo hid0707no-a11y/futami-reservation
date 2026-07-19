@@ -6,7 +6,13 @@
 
 import * as admin from 'firebase-admin';
 import { google } from 'googleapis';
-import { sendMonitorAlert, transporter } from '../lib/mail';
+import {
+  isDiscordConfigured,
+  isSmtpConfigured,
+  sendMonitorAlert,
+  verifyDiscordConnection,
+  verifySmtpConnection,
+} from '../lib/mail';
 import { HOLIDAY_TABLE_END, HOLIDAY_WARN_FROM } from '../constants';
 
 export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promise<void> {
@@ -115,7 +121,10 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
     try {
       const auth = new google.auth.GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
       const sheets = google.sheets({ version: 'v4', auth: (await auth.getClient()) as any });
-      const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEETS_SYNC_ID, range: 'meta!B2' });
+      const resp = await sheets.spreadsheets.values.get(
+        { spreadsheetId: SHEETS_SYNC_ID, range: 'meta!B2' },
+        { timeout: 10_000 },
+      );
       const lastSyncStr = resp.data.values?.[0]?.[0] as string | undefined;
       const lastSyncMs = lastSyncStr ? Date.parse(lastSyncStr) : NaN;
       const ageH = Number.isFinite(lastSyncMs) ? (Date.now() - lastSyncMs) / 3_600_000 : Infinity;
@@ -136,28 +145,35 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
   // SMTP env 欠落時は transporter=null で全メールが無ログスキップされる沈黙死モードだった。
   // 未構成の検知と、構成済みでも認証・接続が死んでいないかの verify を毎朝行う。
   // ここで failure になっても本アラート自体は Discord 第二経路（#32）が拾える。
-  // ⚠️ verify() は nodemailer 既定で最大120sブロックし得る。onSchedule 既定 60s タイムアウトを
-  // 超えると「アラート送信前に関数が殺され全通知が沈黙する」= 監視の自己サイレンス化になるため、
-  // 8s で打ち切る（打ち切り自体を failure として扱い、Discord 経路でアラートは飛ぶ）。
+  // Nodemailer transport 側に DNS/接続/挨拶/ソケット timeout を設定しているため、
+  // Promise.race で接続を裏に残さず、verify 自体の完了を待つ。
+  let smtpHealthy = false;
   try {
-    if (!transporter) {
+    if (!isSmtpConfigured()) {
       checks.smtp_configured = false;
       failures.push('SMTP transporter 未構成（SMTP_USER/SMTP_PASS 欠落）：顧客確認メールが全停止しています');
     } else {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        await Promise.race([
-          transporter.verify(),
-          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('verify timeout 8s')), 8000); }),
-        ]);
-      } finally {
-        if (timer) clearTimeout(timer); // タイマー残留を後始末（verify が先に解決してもリークさせない）
-      }
+      await verifySmtpConnection();
       checks.smtp_configured = true;
+      smtpHealthy = true;
     }
   } catch (e: any) {
     checks.smtp_configured = false;
     failures.push(`SMTP verify 失敗（認証切れ・接続不可・応答遅延の疑い）: ${e.message || e}`);
+  }
+
+  // --- Check 9: SMTP 障害を知らせる独立経路 ---
+  if (!isDiscordConfigured()) {
+    checks.monitor_secondary_channel = false;
+    failures.push('DISCORD_WEBHOOK_URL 未設定：SMTP 障害時の独立通知経路がありません');
+  } else {
+    try {
+      await verifyDiscordConnection();
+      checks.monitor_secondary_channel = true;
+    } catch (e: any) {
+      checks.monitor_secondary_channel = false;
+      failures.push(`Discord webhook 到達確認失敗（削除・失効・通信障害の疑い）: ${e.message || e}`);
+    }
   }
 
   // --- 判定 + 通知 ---
@@ -189,7 +205,11 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
       '',
       'このメールは staffHealthMonitor Cloud Function が自動送信しています。',
     ].join('\n');
-    await sendMonitorAlert('[ふたみ予約] スタッフ機能ヘルスチェック失敗', body);
+    await sendMonitorAlert(
+      '[ふたみ予約] スタッフ機能ヘルスチェック失敗',
+      body,
+      { useSmtp: smtpHealthy },
+    );
   } else {
     console.log('[monitor] all checks passed');
   }

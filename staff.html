@@ -844,10 +844,11 @@ const PLANS = [
     slots: [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9],
     price: '4,720円/棟', badge: '\uD83C\uDF19 宿泊', color: '#6366f1' },
   { id: 'lodge_day', name: 'ロッジ日帰り', rooms: ['lodge_a','lodge_b'],
-    slots: [10,11,12,13,14,15], price: '330円/時', badge: '\u2600\uFE0F 日帰り', color: '#f59e0b' },
+    slots: 'hourly', allowedHours: [10,11,12,13,14,15],
+    price: '330円/時', badge: '\u2600\uFE0F 日帰り', color: '#f59e0b' },
 
   // テニス（時間を都度選ぶ）
-  { id: 'tennis', name: 'テニスコート', rooms: ['court_1','court_2','court_3','court_4','court_5'],
+  { id: 'tennis_full', name: 'テニスコート', rooms: ['court_1','court_2','court_3','court_4','court_5'],
     slots: 'hourly', price: '市民630円/市外760円/面/時', badge: '\uD83C\uDFBE', color: '#0ea5e9' },
   // みどりの広場（3コマ制）
   { id: 'midori_am', name: 'みどりの広場 午前', rooms: ['midori'],
@@ -903,11 +904,61 @@ function formatDateDisplay(d) {
 // APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 let GCAL_BOOKINGS = [];
 let LAST_SYNC_AT = null;
+let FUTAMI_DAYS = new Set();
+let FUTAMI_DAYS_LOADED = false;
+
+function safeStoredInteger(value, min, max, fallback) {
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= min && n <= max ? n : fallback;
+}
+
+function isRealIsoDateString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+function normalizeStoredTennisTimes(value) {
+  if (typeof value !== 'string') return [];
+  if (/^(?:0[8-9]|1[0-9]|2[01])(?:00|30)$/.test(value)) return [value];
+  const colon = value.match(/^(0?[8-9]|1[0-9]|2[01]):(00|30)$/);
+  if (colon) return [String(Number(colon[1])).padStart(2, '0') + colon[2]];
+  if (/^(?:0?[8-9]|1[0-9]|2[01])$/.test(value)) {
+    const hour = String(Number(value)).padStart(2, '0');
+    return [hour + '00', hour + '30'];
+  }
+  return [];
+}
+
+function formatTennisTimeRanges(values) {
+  const minutes = Array.from(new Set((values || []).map(value => {
+    if (!/^\d{4}$/.test(value)) return null;
+    const hour = Number(value.slice(0, 2));
+    const minute = Number(value.slice(2));
+    return Number.isInteger(hour) && (minute === 0 || minute === 30) ? hour * 60 + minute : null;
+  }).filter(value => value !== null))).sort((a, b) => a - b);
+  if (minutes.length === 0) return '';
+  const label = total => String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+  const ranges = [];
+  let start = minutes[0];
+  let last = minutes[0];
+  for (let i = 1; i < minutes.length; i++) {
+    if (minutes[i] === last + 30) {
+      last = minutes[i];
+    } else {
+      ranges.push(label(start) + ' 〜 ' + label(last + 30));
+      start = last = minutes[i];
+    }
+  }
+  ranges.push(label(start) + ' 〜 ' + label(last + 30));
+  return ranges.join('、');
+}
 
 // API レスポンスの予約 → staff用形式に変換（複数部屋なら複数レコード）
 function convertApiReservation(r) {
   // 該当プランの定義からチェックイン時刻を取得（slots[0]＝チェックイン時刻）
-  const planDef = PLANS.find(p => p.id === r.planId);
+  const normalizedPlanId = r.planId === 'tennis' ? 'tennis_full' : r.planId;
+  const planDef = PLANS.find(p => p.id === normalizedPlanId);
   const planCheckinHour = (planDef && Array.isArray(planDef.slots) && planDef.slots.length > 0)
     ? planDef.slots[0]
     : 14;
@@ -928,18 +979,24 @@ function convertApiReservation(r) {
   }
 
   let guestsTotal = 1;
-  if (r.guestCount) {
-    guestsTotal = r.guestCount;
+  const safeGuestCount = safeStoredInteger(r.guestCount, 1, 150, null);
+  if (safeGuestCount !== null) {
+    guestsTotal = safeGuestCount;
   } else if (r.guests && typeof r.guests === 'object') {
-    guestsTotal = (r.guests.adult || 0) + (r.guests.elementary || 0) + (r.guests.child || 0);
-    if (guestsTotal === 0) guestsTotal = 1;
+    const adult = safeStoredInteger(r.guests.adult, 0, 150, 0);
+    const elementary = safeStoredInteger(r.guests.elementary, 0, 150, 0);
+    const child = safeStoredInteger(r.guests.child, 0, 150, 0);
+    const total = adult + elementary + child;
+    guestsTotal = total > 0 && total <= 150 ? total : 1;
   }
+  const safeNights = safeStoredInteger(r.nights, 0, 14, 0);
 
   const records = [];
   const roomList = Array.from(allRooms);
   for (const roomId of roomList) {
     const todayHours = [];
     const nextDayHours = [];
+    const tennisTimes = [];
     if (Array.isArray(r.slots)) {
       for (const k of r.slots) {
         const parts = k.split('|');
@@ -947,7 +1004,14 @@ function convertApiReservation(r) {
         const slotRoom = parts[0] === 'sauna_share' ? 'sauna' : parts[0];
         if (slotRoom !== roomId) continue;
         const slotDate = parts[1];
-        const hour = parseInt(parts[2], 10);
+        const rawTime = parts[2];
+        if (roomId.startsWith('court_')) {
+          tennisTimes.push(...normalizeStoredTennisTimes(rawTime));
+        }
+        const hour = /^\d{4}$/.test(rawTime)
+          ? parseInt(rawTime.slice(0, 2), 10)
+          : parseInt(rawTime, 10);
+        if (!Number.isInteger(hour) || hour < 0 || hour > 23) continue;
         if (slotDate === r.startDate) todayHours.push(hour);
         else nextDayHours.push(hour);
       }
@@ -961,16 +1025,16 @@ function convertApiReservation(r) {
       return aAdj - bAdj;
     });
     nextDayHours.sort((a, b) => a - b);
-    let combinedHours = [...todayHours, ...nextDayHours];
+    let combinedHours = Array.from(new Set([...todayHours, ...nextDayHours]));
     records.push({
       id: r.id + (roomList.length > 1 ? '_' + roomId : ''),
       _origId: r.id,
       displayId: r.displayId || null, // 2026-05-13 要望#8: 短縮表示用ID（未保存の旧予約は null、staff.html:renderDetail で fallback）
       date: r.startDate,
       endDate: r.endDate,
-      nights: r.nights || 0,
+      nights: safeNights,
       roomId,
-      planId: r.planId,
+      planId: normalizedPlanId,
       name: (r.customer && r.customer.name) || '',
       phone: (r.customer && r.customer.phone) || '',
       email: (r.customer && r.customer.email) || '',
@@ -979,9 +1043,10 @@ function convertApiReservation(r) {
       address2: (r.customer && r.customer.address2) || '',
       guests: guestsTotal,
       slotsOverride: combinedHours.length > 0 ? combinedHours : undefined,
+      tennisTimes: tennisTimes.length > 0 ? Array.from(new Set(tennisTimes)) : undefined,
       checkedIn: r.status === 'checked_in',
       isFutamiDay: !!r.isFutamiDay,
-      guestCount: r.guestCount || null,
+      guestCount: safeGuestCount,
       pricingTotal: (r.pricing && typeof r.pricing.total === 'number') ? r.pricing.total : null,
       isCamp: !!r.isCamp,
       campRoomIds: Array.isArray(r.roomIds) ? r.roomIds.filter(x => typeof x === 'string' && x.startsWith('camp_')) : [],
@@ -995,17 +1060,28 @@ function convertApiReservation(r) {
 }
 
 async function loadGcalData() {
+  // 再同期が失敗した場合、古い特別日Setで通常/特別サウナを逆送信しない。
+  FUTAMI_DAYS_LOADED = false;
   try {
     const authH = await getAuthHeader();
-    const res = await fetch(API_BASE + '/listReservations?t=' + Date.now(), {
-      headers: authH
-    });
-    if (!res.ok) throw new Error('API fetch failed: ' + res.status);
-    const data = await res.json();
+    const [res, futamiRes] = await Promise.all([
+      fetch(API_BASE + '/listReservations?t=' + Date.now(), { headers: authH }),
+      fetch(API_BASE + '/futamiDays?t=' + Date.now()),
+    ]);
+    if (!res.ok) throw new Error('reservation API fetch failed: ' + res.status);
+    if (!futamiRes.ok) throw new Error('futamiDays API fetch failed: ' + futamiRes.status);
+    const [data, futamiData] = await Promise.all([res.json(), futamiRes.json()]);
+    if (!data || !Array.isArray(data.reservations)
+        || !futamiData || !Array.isArray(futamiData.dates)
+        || !futamiData.dates.every(isRealIsoDateString)) {
+      throw new Error('API returned malformed data');
+    }
     const reservations = data.reservations || [];
     GCAL_BOOKINGS = reservations
       .filter(r => r.status !== 'cancelled')
       .flatMap(convertApiReservation);
+    FUTAMI_DAYS = new Set(futamiData.dates);
+    FUTAMI_DAYS_LOADED = true;
     LAST_SYNC_AT = new Date();
     console.log('[api] loaded', GCAL_BOOKINGS.length, 'reservations at', LAST_SYNC_AT.toLocaleTimeString());
     updateSyncIndicator();
@@ -1420,7 +1496,9 @@ function showDetail(resId) {
         slotsText = `${first}:00 \u301C ${lastEnd === 0 ? 24 : lastEnd}:00`;
       }
     }
-    if (plan.slots === 'hourly' && res.slotsOverride) {
+    if (plan.id === 'tennis_full' && Array.isArray(res.tennisTimes) && res.tennisTimes.length > 0) {
+      slotsText = formatTennisTimeRanges(res.tennisTimes);
+    } else if (plan.slots === 'hourly' && res.slotsOverride) {
       const sorted = [...res.slotsOverride].sort((a, b) => a - b);
       slotsText = `${sorted[0]}:00 \u301C ${sorted[sorted.length - 1] + 1}:00`;
     }
@@ -1441,11 +1519,11 @@ function showDetail(resId) {
     <div class="detail-row"><span class="label">\u30D7\u30E9\u30F3</span><span class="value">${plan ? plan.badge + ' ' + plan.name : '-'}</span></div>
     <div class="detail-row"><span class="label">\u6642\u9593</span><span class="value">${slotsText || '-'}</span></div>
     ${res.isCamp ? `
-      <div class="detail-row"><span class="label">\u533A\u753B\u6570</span><span class="value">${(res.campRoomIds && res.campRoomIds.length) || res.guestCount || 1}\u533A\u753B</span></div>
+      <div class="detail-row"><span class="label">\u533A\u753B\u6570</span><span class="value">${escapeHtml(safeStoredInteger((res.campRoomIds && res.campRoomIds.length) || res.guestCount, 1, 8, 1))}\u533A\u753B</span></div>
       <div class="detail-row"><span class="label">\u3054\u5229\u7528\u533A\u753B</span><span class="value">${(res.campRoomIds && res.campRoomIds.length > 0 ? res.campRoomIds.slice().sort().map(rid => '\u533A\u753B' + ['\u2460','\u2461','\u2462','\u2463','\u2464','\u2465','\u2466','\u2467'][parseInt(rid.split('_')[1], 10) - 1]).join('\u30FB') : '\u2014')}</span></div>
-      <div class="detail-row"><span class="label">\u6CCA\u6570</span><span class="value">${res.nights || 1}\u6CCA</span></div>
+      <div class="detail-row"><span class="label">\u6CCA\u6570</span><span class="value">${escapeHtml(safeStoredInteger(res.nights, 1, 14, 1))}\u6CCA</span></div>
     ` : `
-      <div class="detail-row"><span class="label">\u4EBA\u6570</span><span class="value">${res.guests}\u540D</span></div>
+      <div class="detail-row"><span class="label">\u4EBA\u6570</span><span class="value">${escapeHtml(safeStoredInteger(res.guests, 1, 150, 1))}\u540D</span></div>
     `}
     <div class="detail-row" style="background:#fff8e1;margin:4px -16px;padding:12px 16px;border-radius:8px"><span class="label" style="color:#b45309;font-weight:700">\u3054\u8acb\u6c42\u91d1\u984d</span><span class="value" style="color:#dc2626;font-weight:800;font-size:1.15rem">${typeof res.pricingTotal === 'number' ? res.pricingTotal.toLocaleString() + '\u5186' : '\u2014'}</span></div>
     <div class="detail-row"><span class="label">\u6599\u91D1\u4F53\u7CFB</span><span class="value" style="font-size:0.85rem;color:#666">${plan ? plan.price : '-'}</span></div>
@@ -1873,7 +1951,8 @@ function selectPlan(planId) {
     const slotMap = getSlotMap(roomId, ds, allRes);
 
     let html = '';
-    for (const h of DISPLAY_HOURS) {
+    const selectableHours = Array.isArray(plan.allowedHours) ? plan.allowedHours : DISPLAY_HOURS;
+    for (const h of selectableHours) {
       const occupied = !!slotMap[h];
       const cls = occupied ? 'hour-chip disabled' : 'hour-chip';
       html += `<div class="${cls}" data-hour="${h}" onclick="${occupied ? '' : `toggleHourSlot(${h})`}">${h}:00</div>`;
@@ -2031,7 +2110,20 @@ async function submitReservation() {
   }
 
   const plan = PLANS.find(p => p.id === selectedPlanId);
+  if (!plan) {
+    showToast('プラン情報が更新されています。画面を再読み込みしてください');
+    return;
+  }
   const roomId = selectedRoomId || roomIdFromSelect;
+  const isSaunaPlan = /^sauna_[1-4]$/.test(plan.id);
+  if (isSaunaPlan && !FUTAMI_DAYS_LOADED) {
+    showToast('ふたみの日情報を取得できていません。同期後にもう一度お試しください');
+    return;
+  }
+  const isFutamiSauna = isSaunaPlan && FUTAMI_DAYS.has(ds);
+  const payloadRoomIds = isFutamiSauna
+    ? ['sauna_share']
+    : (plan.id === 'stay_all' ? plan.rooms.slice() : [roomId]);
 
   // テニス等hourlyプランはslotsOverrideを設定
   let slotsOverride = null;
@@ -2045,44 +2137,49 @@ async function submitReservation() {
 
   // 在庫の最終チェック
   const allRes = loadReservations();
-  const slotMap = getSlotMap(roomId, ds, allRes);
-  const carryMap = getOvernightCarryover(roomId, ds, allRes);
-  const merged = {};
-  for (const h of DISPLAY_HOURS) {
-    merged[h] = carryMap[h] || slotMap[h] || null;
-  }
   const checkSlots = slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
-  const conflicting = checkSlots.filter(s => s >= 8 && s <= 21 && merged[s]);
-  if (conflicting.length > 0) {
-    showToast('\u9078\u629E\u3057\u305F\u6642\u9593\u5E2F\u306F\u65E2\u306B\u57CB\u307E\u3063\u3066\u3044\u307E\u3059');
-    return;
+  const localCheckRoomIds = isFutamiSauna ? ['sauna'] : payloadRoomIds;
+  for (const checkRoomId of localCheckRoomIds) {
+    const slotMap = getSlotMap(checkRoomId, ds, allRes);
+    const carryMap = getOvernightCarryover(checkRoomId, ds, allRes);
+    const conflicting = checkSlots.filter(s => s >= 8 && s <= 21 && (carryMap[s] || slotMap[s]));
+    if (conflicting.length > 0) {
+      showToast('\u9078\u629E\u3057\u305F\u6642\u9593\u5E2F\u306F\u65E2\u306B\u57CB\u307E\u3063\u3066\u3044\u307E\u3059');
+      return;
+    }
   }
 
   // === API送信用 slotKey 配列を生成 ===
   const planSlots = slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
   const slotKeys = [];
-  // 宿泊系: 翌日にまたがるスロット(0-9)は翌日扱い
-  const isStay = plan.planType === 'stay' || (planSlots.includes(16) && planSlots.includes(0));
+  // 宿泊系: slots先頭のチェックイン時刻より前は翌日扱い。
+  const isStay = planSlots.includes(0) && planSlots.length > 0;
   const nextDay = (function(){
     const d = new Date(ds + 'T00:00:00');
     d.setDate(d.getDate() + 1);
     return dateStr(d);
   })();
-  for (const h of planSlots) {
-    if (isStay && h >= 0 && h <= 9) {
-      slotKeys.push(`${roomId}|${nextDay}|${h}`);
-    } else {
-      slotKeys.push(`${roomId}|${ds}|${h}`);
+  for (const slotRoomId of payloadRoomIds) {
+    for (const h of planSlots) {
+      if (plan.id === 'tennis_full') {
+        const hour = String(h).padStart(2, '0');
+        slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '00');
+        slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '30');
+      } else if (isStay && h < planSlots[0]) {
+        slotKeys.push(slotRoomId + '|' + nextDay + '|' + h);
+      } else {
+        slotKeys.push(slotRoomId + '|' + ds + '|' + h);
+      }
     }
   }
 
   const startDate = ds;
   const endDate = isStay ? nextDay : ds;
-  const isFutamiSauna = (plan.planType === 'sauna' && (typeof isFutamiDayDate === 'function' ? isFutamiDayDate(ds) : false));
 
   const payload = {
-    planId: selectedPlanId,
-    roomIds: [roomId],
+    inventoryVersion: 2,
+    planId: isFutamiSauna ? 'plan_sauna_futami' : selectedPlanId,
+    roomIds: payloadRoomIds,
     slots: slotKeys,
     startDate,
     endDate,
@@ -2097,9 +2194,10 @@ async function submitReservation() {
 
   // API送信
   try {
+    const authH = await getAuthHeader();
     const res = await fetch(API_BASE + '/createReservation', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authH },
       body: JSON.stringify(payload),
     });
     if (res.status === 409) {

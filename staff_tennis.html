@@ -244,11 +244,26 @@ body {
 // APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 
 var BUSINESS_CAL = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+function isRealIsoDateString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
 async function loadBusinessCal() {
-  try {
-    const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
-    if (res.ok) BUSINESS_CAL = await res.json();
-  } catch(e) {}
+  const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
+  if (!res.ok) throw new Error('businessCalendar HTTP ' + res.status);
+  const data = await res.json();
+  if (!data || !Array.isArray(data.defaultClosedDays)
+      || !data.defaultClosedDays.every(d => Number.isInteger(d) && d >= 0 && d <= 6)
+      || !Array.isArray(data.forceOpen) || !data.forceOpen.every(isRealIsoDateString)
+      || !Array.isArray(data.forceClosed) || !data.forceClosed.every(isRealIsoDateString)) {
+    throw new Error('businessCalendar returned malformed data');
+  }
+  BUSINESS_CAL = {
+    defaultClosedDays: data.defaultClosedDays.slice(),
+    forceOpen: data.forceOpen.slice(),
+    forceClosed: data.forceClosed.slice(),
+  };
 }
 function isClosedDay(ds) {
   if (BUSINESS_CAL.forceClosed && BUSINESS_CAL.forceClosed.includes(ds)) return true;
@@ -274,6 +289,17 @@ for (let h = 8; h <= 21; h++) {
 }
 function timeLabel(t) { return `${t.slice(0,2)}:${t.slice(2)}`; }
 function isHourStart(t) { return t.endsWith('00'); }
+function normalizeStoredTennisTimes(value) {
+  if (typeof value !== 'string') return [];
+  if (/^(?:0[8-9]|1[0-9]|2[01])(?:00|30)$/.test(value)) return [value];
+  const colon = value.match(/^(0?[8-9]|1[0-9]|2[01]):(00|30)$/);
+  if (colon) return [String(Number(colon[1])).padStart(2, '0') + colon[2]];
+  if (/^(?:0?[8-9]|1[0-9]|2[01])$/.test(value)) {
+    const hour = String(Number(value)).padStart(2, '0');
+    return [hour + '00', hour + '30'];
+  }
+  return [];
+}
 
 // 予約者名 → 色のマッピング（同じ名前なら同じ色）
 const NAME_COLORS = [
@@ -307,11 +333,14 @@ async function loadData() {
   document.getElementById('syncIndicator').textContent = '同期中...';
   document.getElementById('syncIndicator').style.background = 'rgba(100,100,100,0.85)';
   try {
-    loadBusinessCal().catch(() => {});
-    const res = await fetch(API_BASE + '/listReservations?t=' + Date.now(), {
-      headers: await getAuthHeader()
-    });
+    const authH = await getAuthHeader();
+    const [, res] = await Promise.all([
+      loadBusinessCal(),
+      fetch(API_BASE + '/listReservations?t=' + Date.now(), { headers: authH }),
+    ]);
+    if (!res.ok) throw new Error('listReservations HTTP ' + res.status);
     const data = await res.json();
+    if (!data || !Array.isArray(data.reservations)) throw new Error('listReservations returned malformed data');
     // テニスコートのみ
     RESERVATIONS = (data.reservations || [])
       .filter(r => r.status !== 'cancelled')
@@ -341,17 +370,8 @@ function buildLookup() {
       if (!courtId.startsWith('court_')) continue;
       const date = parts[1];
       const time = parts[2];
-      // 旧形式（hour整数）も30分単位に変換
-      let normalizedTimes = [];
-      if (/^\d{4}$/.test(time)) {
-        normalizedTimes = [time];
-      } else {
-        // hour整数 → "HH00" と "HH30" 両方
-        const h = parseInt(time, 10);
-        if (!isNaN(h)) {
-          normalizedTimes = [`${String(h).padStart(2,'0')}00`, `${String(h).padStart(2,'0')}30`];
-        }
-      }
+      // canonical HHMM / 旧colon30分 / 旧整数1時間を同じ規則で正規化。
+      const normalizedTimes = normalizeStoredTennisTimes(time);
       for (const t of normalizedTimes) {
         map[`${date}|${courtId}|${t}`] = r;
       }
@@ -449,17 +469,9 @@ function showDetail(resId) {
     if (parts.length !== 3) continue;
     const c = parts[0];
     const t = parts[2];
+    if (!COURTS.some(court => court.id === c)) continue;
     if (!courts[c]) courts[c] = [];
-    // 30分単位に正規化
-    if (/^\d{4}$/.test(t)) {
-      courts[c].push(t);
-    } else {
-      const h = parseInt(t, 10);
-      if (!isNaN(h)) {
-        courts[c].push(`${String(h).padStart(2,'0')}00`);
-        courts[c].push(`${String(h).padStart(2,'0')}30`);
-      }
-    }
+    courts[c].push(...normalizeStoredTennisTimes(t));
   }
   let body = '';
   for (const [cid, times] of Object.entries(courts)) {

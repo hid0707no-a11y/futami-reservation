@@ -13,21 +13,25 @@ export const STAFF_EMAIL = process.env.STAFF_EMAIL || 'info@fureai-iyosasaeru.co
 export const MONITOR_NOTIFY_EMAILS = [STAFF_EMAIL, 'hid0707no@gmail.com'];
 
 // #32 監視アラートの第二経路（SMTP 単一依存の解消）。
-// DISCORD_WEBHOOK_URL 設定時のみ有効・既定は no-op（社長が env を入れれば有効化）。
+// DISCORD_WEBHOOK_URL 設定時のみ有効。未設定は healthMonitor が異常として通知する。
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
+const DISCORD_TIMEOUT_MS = 5000;
 
 async function postDiscordAlert(subject: string, body: string): Promise<void> {
-  if (!DISCORD_WEBHOOK_URL) return;
+  if (!DISCORD_WEBHOOK_URL) throw new Error('discord_not_configured');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DISCORD_TIMEOUT_MS);
   try {
     const content = `**${subject}**\n${body}`.slice(0, 1900); // Discord 2000字制限
     const resp = await fetch(DISCORD_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': 'futami-monitor/1.0' }, // UA 無しだと 403
       body: JSON.stringify({ content }),
+      signal: controller.signal,
     });
-    if (!resp.ok) console.error('[monitor] discord webhook non-OK:', resp.status);
-  } catch (e: any) {
-    console.error('[monitor] discord webhook failed:', e?.message || e);
+    if (!resp.ok) throw new Error(`discord_http_${resp.status}`);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -35,8 +39,44 @@ export const transporter = SMTP_USER && SMTP_PASS
   ? nodemailer.createTransport({
       service: 'gmail',
       auth: { user: SMTP_USER, pass: SMTP_PASS },
+      // Promise.race では Nodemailer 側の接続を中断できない。transport 自体に上限を持たせ、
+      // verify/sendMail のいずれも Cloud Functions の実行時間内に必ず終了させる。
+      dnsTimeout: 5000,
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 10000,
     })
   : null;
+
+export function isSmtpConfigured(): boolean {
+  return transporter !== null;
+}
+
+export function isDiscordConfigured(): boolean {
+  return DISCORD_WEBHOOK_URL.length > 0;
+}
+
+/** Discord webhookを投稿せずGETし、失効・削除・到達不能を毎朝検出する。 */
+export async function verifyDiscordConnection(): Promise<void> {
+  if (!DISCORD_WEBHOOK_URL) throw new Error('discord_not_configured');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DISCORD_TIMEOUT_MS);
+  try {
+    const resp = await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'GET',
+      headers: { 'User-Agent': 'futami-monitor/1.0' },
+      signal: controller.signal,
+    });
+    if (!resp.ok) throw new Error(`discord_verify_http_${resp.status}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function verifySmtpConnection(): Promise<void> {
+  if (!transporter) throw new Error('smtp_not_configured');
+  await transporter.verify();
+}
 
 // SMTP env 欠落時の沈黙死対策（2026-07-19）：従来は transporter=null だと全メールが
 // 無ログでスキップされ、確認メール全停止に気づく経路がゼロだった。ERROR ログで
@@ -181,24 +221,82 @@ TEL: 089-986-0522
   }
 }
 
-/** staffHealthMonitor 用アラートメール。失敗しても監視ループ自体は止めない。 */
-export async function sendMonitorAlert(subject: string, body: string): Promise<void> {
-  // #32 SMTP に加えて Discord webhook（設定時のみ）にも通知＝アラート単一経路依存の解消
-  await postDiscordAlert(subject, body);
-  if (!transporter) {
-    console.error('[monitor] transporter 未設定のためメール通知スキップ（Discord 経路は上で試行済）');
-    return;
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+export interface MonitorAlertOptions {
+  /** SMTP の verify が失敗済みなら false を渡し、同じ死んだ経路を再度待たない。 */
+  useSmtp?: boolean;
+}
+
+/**
+ * staffHealthMonitor 用アラート。
+ * 構成済み経路へ並列送信し、1経路以上の成功をもって通知成功とする。
+ * 全経路失敗（または経路未構成）は throw し、onSchedule の retryCount を効かせる。
+ */
+export async function sendMonitorAlert(
+  subject: string,
+  body: string,
+  options: MonitorAlertOptions = {},
+): Promise<void> {
+  const attempts: Array<{ channel: 'discord' | 'smtp'; promise: Promise<void> }> = [];
+
+  if (isDiscordConfigured()) {
+    attempts.push({ channel: 'discord', promise: postDiscordAlert(subject, body) });
   }
-  try {
-    await transporter.sendMail({
+  if (options.useSmtp !== false && transporter) {
+    attempts.push({
+      channel: 'smtp',
+      promise: transporter.sendMail({
       from: `"ふたみ予約監視" <${SMTP_USER}>`,
       replyTo: STAFF_EMAIL,
       to: MONITOR_NOTIFY_EMAILS.join(','),
       subject,
       text: body,
+      }).then(() => undefined),
     });
-    console.log('[monitor] alert email sent');
-  } catch (e) {
-    console.error('[monitor] alert email failed:', e);
   }
+
+  if (attempts.length === 0) {
+    console.error(JSON.stringify({
+      severity: 'CRITICAL',
+      audit: true,
+      action: 'monitor.alert_delivery_failed',
+      reason: 'no_configured_channel',
+      timestamp: new Date().toISOString(),
+    }));
+    throw new Error('monitor_alert_no_configured_channel');
+  }
+
+  const settled = await Promise.allSettled(attempts.map(a => a.promise));
+  const delivered = settled
+    .map((result, index) => result.status === 'fulfilled' ? attempts[index].channel : null)
+    .filter((channel): channel is 'discord' | 'smtp' => channel !== null);
+  const failed = settled
+    .map((result, index) => result.status === 'rejected'
+      ? { channel: attempts[index].channel, error: errorMessage(result.reason) }
+      : null)
+    .filter((entry): entry is { channel: 'discord' | 'smtp'; error: string } => entry !== null);
+
+  if (delivered.length > 0) {
+    console.log(JSON.stringify({
+      severity: failed.length > 0 ? 'WARNING' : 'INFO',
+      audit: true,
+      action: 'monitor.alert_delivered',
+      channels: delivered,
+      failed,
+      timestamp: new Date().toISOString(),
+    }));
+    return;
+  }
+
+  console.error(JSON.stringify({
+    severity: 'CRITICAL',
+    audit: true,
+    action: 'monitor.alert_delivery_failed',
+    failed,
+    timestamp: new Date().toISOString(),
+  }));
+  throw new Error('monitor_alert_all_channels_failed');
 }

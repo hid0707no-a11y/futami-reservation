@@ -18,7 +18,22 @@ process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '12
 process.env.GCLOUD_PROJECT = 'futami-yoyaku-492607';
 process.env.GOOGLE_CLOUD_PROJECT = 'futami-yoyaku-492607';
 
+jest.mock('../../src/lib/mail', () => ({
+  isSmtpConfigured: jest.fn(),
+  isDiscordConfigured: jest.fn(),
+  verifyDiscordConnection: jest.fn(),
+  verifySmtpConnection: jest.fn(),
+  sendMonitorAlert: jest.fn(),
+}));
+
 import * as admin from 'firebase-admin';
+import {
+  isDiscordConfigured,
+  isSmtpConfigured,
+  sendMonitorAlert,
+  verifyDiscordConnection,
+  verifySmtpConnection,
+} from '../../src/lib/mail';
 
 if (!admin.apps.length) {
   admin.initializeApp({ projectId: 'futami-yoyaku-492607' });
@@ -29,6 +44,12 @@ import { runStaffHealthCheck } from '../../src/services/healthMonitor';
 
 describe('healthMonitor integration (emulator)', () => {
   beforeEach(async () => {
+    jest.clearAllMocks();
+    (isSmtpConfigured as jest.Mock).mockReturnValue(true);
+    (isDiscordConfigured as jest.Mock).mockReturnValue(true);
+    (verifyDiscordConnection as jest.Mock).mockResolvedValue(undefined);
+    (verifySmtpConnection as jest.Mock).mockResolvedValue(undefined);
+    (sendMonitorAlert as jest.Mock).mockResolvedValue(undefined);
     // 各テスト前に Firestore データをクリア（emulator API）
     await fetch(
       'http://127.0.0.1:8080/emulator/v1/projects/futami-yoyaku-492607/databases/(default)/documents',
@@ -50,6 +71,35 @@ describe('healthMonitor integration (emulator)', () => {
     // reservations / tennis_slots は空でも true（クエリ自体は通る）
     expect(entry.checks.firestore_reservations).toBe(true);
     expect(entry.checks.firestore_tennis_slots).toBe(true);
+    expect(sendMonitorAlert).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      { useSmtp: true },
+    );
+    logSpy.mockRestore();
+  }, 15000);
+
+  it('SMTP verify失敗時はSMTPを再試行せずDiscord経路だけで通知', async () => {
+    (verifySmtpConnection as jest.Mock).mockRejectedValue(new Error('smtp auth failed'));
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => { /* noop */ });
+    await runStaffHealthCheck(db);
+    expect(sendMonitorAlert).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('SMTP verify 失敗'),
+      { useSmtp: false },
+    );
+    logSpy.mockRestore();
+  }, 15000);
+
+  it('Discord webhook到達確認失敗はSMTP経路で通知内容に載せる', async () => {
+    (verifyDiscordConnection as jest.Mock).mockRejectedValue(new Error('discord_verify_http_404'));
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => { /* noop */ });
+    await runStaffHealthCheck(db);
+    expect(sendMonitorAlert).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('Discord webhook 到達確認失敗'),
+      { useSmtp: true },
+    );
     logSpy.mockRestore();
   }, 15000);
 

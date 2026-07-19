@@ -12,6 +12,7 @@ import * as admin from 'firebase-admin';
 import { onRequest } from 'firebase-functions/v2/https';
 import { db } from '../lib/firestore';
 import { setCors, checkOrigin } from '../lib/cors';
+import { isVerifiedStaffRequest } from '../lib/auth';
 import { checkRateLimit } from '../lib/rateLimit';
 import { audit as auditLog, logMailFailure, logIdempotencyFailure } from '../lib/logger';
 import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../lib/format';
@@ -20,7 +21,12 @@ import { MailData, sendConfirmationEmail, sendStaffNotification, sendMonitorAler
 import { validateReservationBody } from '../lib/validation';
 import { VALID_ROOM_IDS } from '../constants';
 import { getFutamiDaysFresh } from '../lib/futamiDays';
-import { getBusinessCalendarFresh, findClosedDayInReservation } from '../lib/businessDays';
+import {
+  businessCalendarFromData,
+  findClosedDayInServiceDates,
+  getBusinessCalendarFresh,
+} from '../lib/businessDays';
+import { canonicalizeReservation } from '../lib/reservationPlans';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
 
 /**
@@ -33,12 +39,12 @@ import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdemp
  *
  * 失敗（メール送信エラー等）は console.error に握り、本予約成功には影響させない。
  */
-function escalateDisplayIdCollision(
+async function escalateDisplayIdCollision(
   displayId: string,
   newId: string,
   existingIds: string[],
   reservationType: string,
-): void {
+): Promise<void> {
   console.error(JSON.stringify({
     severity: 'CRITICAL',
     audit: true,
@@ -63,9 +69,11 @@ function escalateDisplayIdCollision(
     ``,
     `参照: docs/RUNBOOK.md §6 Firestore データ復旧`,
   ].join('\n');
-  sendMonitorAlert('[ふたみ予約] displayId 衝突 (要手動対応)', body).catch(e => {
+  try {
+    await sendMonitorAlert('[ふたみ予約] displayId 衝突 (要手動対応)', body);
+  } catch (e: any) {
     console.error('[collision] sendMonitorAlert failed:', e?.message || e);
-  });
+  }
 }
 
 /**
@@ -82,6 +90,30 @@ export function isTennisPayload(roomIds: unknown): boolean {
   return Array.isArray(roomIds)
     && roomIds.length > 0
     && roomIds.every((r: unknown) => typeof r === 'string' && r.startsWith('court_'));
+}
+
+function legacyTennisKeysForCanonicalSlots(slots: string[]): string[] {
+  const keys = new Set<string>();
+  for (const slot of slots) {
+    const [roomId, date, time] = slot.split('|');
+    if (!roomId || !date || !/^\d{4}$/.test(time || '')) continue;
+    const hourPadded = time.slice(0, 2);
+    const hour = String(Number(hourPadded));
+    const minute = time.slice(2);
+    // 旧staff整数時（8/08）は1時間占有、旧colon形式は30分docとして照合する。
+    keys.add(`${roomId}|${date}|${hour}`);
+    keys.add(`${roomId}|${date}|${hourPadded}`);
+    keys.add(`${roomId}|${date}|${hour}:${minute}`);
+    keys.add(`${roomId}|${date}|${hourPadded}:${minute}`);
+  }
+  return Array.from(keys);
+}
+
+function alternateSaunaKeys(slots: string[], targetRoomId: 'sauna' | 'sauna_share'): string[] {
+  return slots.map(key => {
+    const [, date, hour] = key.split('|');
+    return `${targetRoomId}|${date}|${hour}`;
+  });
 }
 
 // 薄いラッパ：db を束ねる（互換維持）
@@ -111,39 +143,77 @@ export const createReservation = onRequest(
 
     try {
       const body = req.body || {};
-      const {
+      let {
         planId, roomIds, slots,
         startDate, endDate,
         nights = 0,
         customer, guests, pricing,
-        createdBy = 'web',
         note,
         guestCount, // ふたみの日用：占有人数（1〜8）
       } = body;
 
       if (!checkOrigin(req, res)) return;
       if (!validateAndRespond(body, res)) return;
+      // 旧payloadで既に成立した予約の応答再取得を、canonical移行後も先に通す。
       if (!(await checkIdempotency(req, res))) return;
 
-      // 定休日チェック（2026-07-19）：フロントは月間カレンダー経路しか定休日を見ないため、
-      // 日付検索・日付直接入力・API 直叩きの最終防衛としてサーバ側で全ルート共通に拒否する。
+      // planId/room/date/slots をサーバ側カタログから再導出し、完全一致した予約だけを受理する。
+      // 以降の分岐・Firestore書込みではクライアント申告値でなくcanonical値を使用する。
+      const canonicalResult = canonicalizeReservation(body);
+      if (!canonicalResult.ok) {
+        const payload: any = { error: canonicalResult.error };
+        if (canonicalResult.detail) payload.detail = canonicalResult.detail;
+        res.status(400).json(payload);
+        return;
+      }
+      const canonical = canonicalResult.value;
+      planId = canonical.planId;
+      roomIds = canonical.roomIds;
+      slots = canonical.slots;
+      startDate = canonical.startDate;
+      endDate = canonical.endDate;
+      nights = canonical.nights;
+
+      // createdBy はクライアント申告を信用せず、任意Bearerの実検証結果から決める。
+      const createdBy = await isVerifiedStaffRequest(req) ? 'staff' : 'web';
+
+      // 定休日はcanonical planから導出したサービス提供日だけで判定する。
+      // checkout時刻の推測やクライアントslot省略に依存しない。
       const businessCal = await getBusinessCalendarFresh();
-      const closedDay = findClosedDayInReservation(slots, startDate, endDate, businessCal);
+      const closedDay = findClosedDayInServiceDates(canonical.serviceDates, businessCal);
       if (closedDay) {
         res.status(400).json({ error: 'closed_day', detail: closedDay });
         return;
       }
 
       // ===== テニス専用ルート（tennis_slots 30分単位）=====
-      const isTennis = isTennisPayload(roomIds);
+      const isTennis = canonical.kind === 'tennis' && isTennisPayload(roomIds);
       if (isTennis) {
         try {
           const tennisResult = await db.runTransaction(async tx => {
+            const calendarDoc = await tx.get(db.doc('config/business_calendar'));
+            const txClosedDay = findClosedDayInServiceDates(
+              canonical.serviceDates,
+              businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {}),
+            );
+            if (txClosedDay) throw { code: 'closed_day', detail: txClosedDay };
+
             const slotRefs = slots.map((key: string) => db.collection('tennis_slots').doc(key));
-            const slotDocs = await Promise.all(slotRefs.map((ref: any) => tx.get(ref)));
-            const conflicts = slotDocs
+            // staff旧形式（court|date|8）が残っていても、新HHMM形式と二重予約させない。
+            const legacyKeys = legacyTennisKeysForCanonicalSlots(slots);
+            const legacyRefs = legacyKeys.map(key => db.collection('tennis_slots').doc(key));
+            const [slotDocs, legacyDocs] = await Promise.all([
+              Promise.all(slotRefs.map((ref: any) => tx.get(ref))),
+              Promise.all(legacyRefs.map((ref: any) => tx.get(ref))),
+            ]);
+            const conflicts = [
+              ...slotDocs
               .map((d: any, i: number) => (d.exists ? slots[i] : null))
-              .filter((x: any) => x !== null);
+              .filter((x: any) => x !== null),
+              ...legacyDocs
+                .map((d: any, i: number) => (d.exists ? legacyKeys[i] : null))
+                .filter((x: any) => x !== null),
+            ];
             if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
             const resRef = db.collection('reservations').doc();
             const displayId = generateDisplayId(resRef.id);
@@ -181,7 +251,7 @@ export const createReservation = onRequest(
           //     完全な衝突“防止”（tx内一意確保）は採番3経路に跨るため別途）
           try {
             const c = await detectDisplayIdCollision(db, tennisResult.displayId, tennisResult.id);
-            if (c.collided) escalateDisplayIdCollision(tennisResult.displayId, tennisResult.id, c.existingIds, 'tennis');
+            if (c.collided) await escalateDisplayIdCollision(tennisResult.displayId, tennisResult.id, c.existingIds, 'tennis');
           } catch (e: any) { console.error('[collision-check] failed:', e?.message || e); }
           auditLog('reservation.create', { reservationId: tennisResult.id, displayId: tennisResult.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'tennis' }, req);
           const tennisResp = { reservationId: tennisResult.displayId, internalId: tennisResult.id, status: 'confirmed', isTennis: true };
@@ -199,7 +269,21 @@ export const createReservation = onRequest(
       }
 
       // ===== ふたみの日サウナ専用ルート =====
-      const isFutamiSauna = planId === 'plan_sauna_futami' || (roomIds[0] === 'sauna_share');
+      const isFutamiSauna = canonical.kind === 'futami_sauna';
+      const isRegularSauna = /^sauna_[1-4]$/.test(planId);
+      let futamiSet: Set<string> | null = null;
+      if (isFutamiSauna || isRegularSauna) {
+        futamiSet = await getFutamiDaysFresh();
+        const isSpecialDate = futamiSet.has(startDate);
+        if (isRegularSauna && isSpecialDate) {
+          res.status(400).json({ error: 'futami_day_requires_shared_sauna', detail: startDate });
+          return;
+        }
+        if (isFutamiSauna && !isSpecialDate) {
+          res.status(400).json({ error: 'not_futami_day', detail: startDate });
+          return;
+        }
+      }
       if (isFutamiSauna) {
         // roomIds は ['sauna_share'] のみ許可（2026-07-19）：planId だけで発火するため、
         // camp_*/room_* ペイロードをこのルートに逸らすとキャンプ上限をスキップでき、
@@ -208,28 +292,42 @@ export const createReservation = onRequest(
           res.status(400).json({ error: 'invalid_roomIds', detail: 'ふたみの日サウナは sauna_share のみ' });
           return;
         }
-        const seats = Number(guestCount || guests?.adult || 2);
-        if (seats < 2 || seats > 8) {
+        const seats = guestCount ?? guests?.adult ?? 2;
+        if (!Number.isSafeInteger(seats) || seats < 2 || seats > 8) {
           res.status(400).json({ error: 'invalid_guest_count', detail: '2〜8人' });
           return;
-        }
-        // #16 TOCTOU 対策：30秒キャッシュを使わず config/special_days を直読みして判定
-        const futamiSet = await getFutamiDaysFresh();
-        for (const key of slots) {
-          const date = key.split('|')[1];
-          if (!futamiSet.has(date)) {
-            res.status(400).json({ error: 'not_futami_day', detail: date });
-            return;
-          }
         }
 
         try {
           const result = await db.runTransaction(async tx => {
+            const [calendarDoc, specialDaysDoc] = await Promise.all([
+              tx.get(db.doc('config/business_calendar')),
+              tx.get(db.doc('config/special_days')),
+            ]);
+            const txClosedDay = findClosedDayInServiceDates(
+              canonical.serviceDates,
+              businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {}),
+            );
+            if (txClosedDay) throw { code: 'closed_day', detail: txClosedDay };
+            const txFutamiDates: string[] = specialDaysDoc.exists
+              && Array.isArray((specialDaysDoc.data() as any)?.sauna_capacity_days)
+              ? (specialDaysDoc.data() as any).sauna_capacity_days
+              : [];
+            if (!txFutamiDates.includes(startDate)) {
+              throw { code: 'not_futami_day', detail: startDate };
+            }
+
             const slotRefs = slots.map((key: string) => db.collection('slots').doc(key));
-            const slotDocs = await Promise.all(slotRefs.map((ref: any) => tx.get(ref)));
-            const conflicts = slotDocs
-              .map((d: any, i: number) => (d.exists ? slots[i] : null))
-              .filter((x: any) => x !== null);
+            const regularKeys = alternateSaunaKeys(slots, 'sauna');
+            const regularRefs = regularKeys.map(key => db.collection('slots').doc(key));
+            const [slotDocs, regularDocs] = await Promise.all([
+              Promise.all(slotRefs.map((ref: any) => tx.get(ref))),
+              Promise.all(regularRefs.map((ref: any) => tx.get(ref))),
+            ]);
+            const conflicts = [
+              ...slotDocs.map((d: any, i: number) => (d.exists ? slots[i] : null)),
+              ...regularDocs.map((d: any, i: number) => (d.exists ? regularKeys[i] : null)),
+            ].filter((x: any) => x !== null);
             if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
 
             const resRef = db.collection('reservations').doc();
@@ -269,7 +367,7 @@ export const createReservation = onRequest(
           // #11 displayId 衝突検知を応答前に await
           try {
             const c = await detectDisplayIdCollision(db, result.displayId, result.id);
-            if (c.collided) escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, 'futami_sauna');
+            if (c.collided) await escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, 'futami_sauna');
           } catch (e: any) { console.error('[collision-check] failed:', e?.message || e); }
           auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: 'futami_sauna', seats }, req);
           const futamiResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', isFutamiDay: true, seats };
@@ -287,48 +385,39 @@ export const createReservation = onRequest(
       }
 
       // ===== キャンプ場（2026-04-28〜 8区画個別管理）=====
-      const isCamp = roomIds.every((r: string) => r.startsWith('camp_'));
-      const CAMP_MAX_SITES = 3;
-      const CAMP_MAX_NIGHTS = 3;
-      if (isCamp) {
-        if (roomIds.length > CAMP_MAX_SITES) {
-          res.status(400).json({ error: 'too_many_camp_sites', detail: `${CAMP_MAX_SITES}区画まで` });
-          return;
-        }
-        // #12 nights を Number 正規化：文字列等で型チェックを外す bypass を防ぐ
-        const nn = Number(nights);
-        if (!Number.isFinite(nn) || nn > CAMP_MAX_NIGHTS) {
-          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで（数値で指定）` });
-          return;
-        }
-        // 泊数は申告値でなく slot 実体からも検証（2026-07-19）：nights=3 と偽って
-        // 長期間の slot を並べる直叩きバイパスを防ぐ。宿泊日 = endDate（チェックアウト日）以外の slot 日付。
-        const campNightDates = new Set(
-          slots.map((k: string) => k.split('|')[1]).filter((d: string) => d && d !== endDate),
-        );
-        if (campNightDates.size > CAMP_MAX_NIGHTS) {
-          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで` });
-          return;
-        }
-        // 多重防御（2026-07-19 自己レビュー #3）：宿泊スパン（endDate-startDate）自体も3泊以内に縛る。
-        // 4泊目を endDate に載せて campNightDates の endDate 除外をすり抜ける占有を封じる。
-        // ※ endDate の「夜スロット」まで数え切るには server 側 slot 再導出が要るため、
-        //   +1泊ぶんの残余は既知（RUNBOOK に追記）。ここでは span で上限を固く縛る。
-        const campSpanDays = (new Date(endDate + 'T00:00:00').getTime()
-          - new Date(startDate + 'T00:00:00').getTime()) / 86400000;
-        if (!Number.isFinite(campSpanDays) || campSpanDays < 0 || campSpanDays > CAMP_MAX_NIGHTS) {
-          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで` });
-          return;
-        }
-      }
+      const isCamp = canonical.kind === 'overnight' && planId === 'camp_stay';
 
       // ===== 通常プラン（slots collection）=====
       const result = await db.runTransaction(async tx => {
+        const calendarDoc = await tx.get(db.doc('config/business_calendar'));
+        const txClosedDay = findClosedDayInServiceDates(
+          canonical.serviceDates,
+          businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {}),
+        );
+        if (txClosedDay) throw { code: 'closed_day', detail: txClosedDay };
+
+        if (isRegularSauna) {
+          const specialDaysDoc = await tx.get(db.doc('config/special_days'));
+          const txFutamiDates: string[] = specialDaysDoc.exists
+            && Array.isArray((specialDaysDoc.data() as any)?.sauna_capacity_days)
+            ? (specialDaysDoc.data() as any).sauna_capacity_days
+            : [];
+          if (txFutamiDates.includes(startDate)) {
+            throw { code: 'futami_day_requires_shared_sauna', detail: startDate };
+          }
+        }
+
         const slotRefs = slots.map((key: string) => db.collection('slots').doc(key));
-        const slotDocs = await Promise.all(slotRefs.map((ref: any) => tx.get(ref)));
-        const conflicts = slotDocs
-          .map((d: any, i: number) => (d.exists ? slots[i] : null))
-          .filter((x: any) => x !== null);
+        const alternateKeys = isRegularSauna ? alternateSaunaKeys(slots, 'sauna_share') : [];
+        const alternateRefs = alternateKeys.map(key => db.collection('slots').doc(key));
+        const [slotDocs, alternateDocs] = await Promise.all([
+          Promise.all(slotRefs.map((ref: any) => tx.get(ref))),
+          Promise.all(alternateRefs.map((ref: any) => tx.get(ref))),
+        ]);
+        const conflicts = [
+          ...slotDocs.map((d: any, i: number) => (d.exists ? slots[i] : null)),
+          ...alternateDocs.map((d: any, i: number) => (d.exists ? alternateKeys[i] : null)),
+        ].filter((x: any) => x !== null);
         if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
 
         const resRef = db.collection('reservations').doc();
@@ -374,7 +463,7 @@ export const createReservation = onRequest(
       // #11 displayId 衝突検知を応答前に await
       try {
         const c = await detectDisplayIdCollision(db, result.displayId, result.id);
-        if (c.collided) escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, isCamp ? 'camp' : 'normal');
+        if (c.collided) await escalateDisplayIdCollision(result.displayId, result.id, c.existingIds, isCamp ? 'camp' : 'normal');
       } catch (e: any) { console.error('[collision-check] failed:', e?.message || e); }
       auditLog('reservation.create', { reservationId: result.id, displayId: result.displayId, planId, roomIds, startDate, customerName: customer.name, type: isCamp ? 'camp' : 'normal' }, req);
       const normalResp = { reservationId: result.displayId, internalId: result.id, status: 'confirmed', ...(isCamp ? { isCamp: true, sites: roomIds.length } : {}) };
@@ -385,6 +474,11 @@ export const createReservation = onRequest(
     } catch (e: any) {
       if (e?.code === 'slot_conflict') {
         res.status(409).json({ error: 'slot_conflict', conflicts: e.conflicts });
+        return;
+      }
+      if (e?.code === 'closed_day' || e?.code === 'not_futami_day'
+          || e?.code === 'futami_day_requires_shared_sauna') {
+        res.status(400).json({ error: e.code, detail: e.detail });
         return;
       }
       console.error(e);
