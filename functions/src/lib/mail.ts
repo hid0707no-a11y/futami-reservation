@@ -38,6 +38,20 @@ export const transporter = SMTP_USER && SMTP_PASS
     })
   : null;
 
+// SMTP env 欠落時の沈黙死対策（2026-07-19）：従来は transporter=null だと全メールが
+// 無ログでスキップされ、確認メール全停止に気づく経路がゼロだった。ERROR ログで
+// Cloud Logging から追えるようにする（能動検知は healthMonitor Check 8）。
+function logSmtpNotConfigured(kind: string, reservationId: string): void {
+  console.error(JSON.stringify({
+    severity: 'ERROR',
+    audit: true,
+    action: 'mail.skipped_smtp_not_configured',
+    kind,
+    reservationId,
+    detail: 'SMTP_USER/SMTP_PASS 未設定のためメール送信をスキップ',
+  }));
+}
+
 export interface MailData {
   planName: string;
   roomName: string;
@@ -58,7 +72,11 @@ export interface MailData {
 
 /** 予約確認メール（顧客向け）。送信失敗時は呼出側で .catch して logMailFailure へ。 */
 export async function sendConfirmationEmail(data: MailData): Promise<void> {
-  if (!transporter || !data.customerEmail) return;
+  if (!transporter) {
+    if (data.customerEmail) logSmtpNotConfigured('confirmation', data.reservationId);
+    return;
+  }
+  if (!data.customerEmail) return;
   try {
     const subject = `【ふたみふれあい公園】ご予約を受け付けました（${data.startDate}）`;
     const body = `${data.customerName} 様
@@ -94,7 +112,10 @@ TEL: 089-986-0522
 
 /** スタッフ通知メール（新規予約 / キャンセル）。 */
 export async function sendStaffNotification(data: MailData, type: 'new' | 'cancel'): Promise<void> {
-  if (!transporter) return;
+  if (!transporter) {
+    logSmtpNotConfigured(`staff_${type}`, data.reservationId);
+    return;
+  }
   try {
     const prefix = type === 'new' ? '【新規予約】' : '【キャンセル】';
     const subject = `${prefix} ${data.customerName}様 ${data.startDate} ${data.roomName}`;
@@ -124,7 +145,11 @@ export async function sendStaffNotification(data: MailData, type: 'new' | 'cance
 
 /** キャンセル確認メール（顧客向け）。 */
 export async function sendCancellationEmail(data: MailData): Promise<void> {
-  if (!transporter || !data.customerEmail) return;
+  if (!transporter) {
+    if (data.customerEmail) logSmtpNotConfigured('cancellation', data.reservationId);
+    return;
+  }
+  if (!data.customerEmail) return;
   try {
     const subject = `【ふたみふれあい公園】ご予約をキャンセルしました（${data.startDate}）`;
     const body = `${data.customerName} 様

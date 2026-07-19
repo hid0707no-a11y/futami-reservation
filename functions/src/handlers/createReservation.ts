@@ -20,6 +20,7 @@ import { MailData, sendConfirmationEmail, sendStaffNotification, sendMonitorAler
 import { validateReservationBody } from '../lib/validation';
 import { VALID_ROOM_IDS } from '../constants';
 import { getFutamiDaysFresh } from '../lib/futamiDays';
+import { getBusinessCalendarFresh, findClosedDayInReservation } from '../lib/businessDays';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
 
 /**
@@ -124,6 +125,15 @@ export const createReservation = onRequest(
       if (!validateAndRespond(body, res)) return;
       if (!(await checkIdempotency(req, res))) return;
 
+      // 定休日チェック（2026-07-19）：フロントは月間カレンダー経路しか定休日を見ないため、
+      // 日付検索・日付直接入力・API 直叩きの最終防衛としてサーバ側で全ルート共通に拒否する。
+      const businessCal = await getBusinessCalendarFresh();
+      const closedDay = findClosedDayInReservation(slots, startDate, endDate, businessCal);
+      if (closedDay) {
+        res.status(400).json({ error: 'closed_day', detail: closedDay });
+        return;
+      }
+
       // ===== テニス専用ルート（tennis_slots 30分単位）=====
       const isTennis = isTennisPayload(roomIds);
       if (isTennis) {
@@ -191,6 +201,13 @@ export const createReservation = onRequest(
       // ===== ふたみの日サウナ専用ルート =====
       const isFutamiSauna = planId === 'plan_sauna_futami' || (roomIds[0] === 'sauna_share');
       if (isFutamiSauna) {
+        // roomIds は ['sauna_share'] のみ許可（2026-07-19）：planId だけで発火するため、
+        // camp_*/room_* ペイロードをこのルートに逸らすとキャンプ上限をスキップでき、
+        // slot doc キーと roomId フィールドが食い違う腐敗データが在庫を封鎖する。
+        if (roomIds.length !== 1 || roomIds[0] !== 'sauna_share') {
+          res.status(400).json({ error: 'invalid_roomIds', detail: 'ふたみの日サウナは sauna_share のみ' });
+          return;
+        }
         const seats = Number(guestCount || guests?.adult || 2);
         if (seats < 2 || seats > 8) {
           res.status(400).json({ error: 'invalid_guest_count', detail: '2〜8人' });
@@ -279,10 +296,28 @@ export const createReservation = onRequest(
           return;
         }
         // #12 nights を Number 正規化：文字列等で型チェックを外す bypass を防ぐ
-        // （slot 個数・日付範囲は validateReservationBody の #3 検査で別途担保）
         const nn = Number(nights);
         if (!Number.isFinite(nn) || nn > CAMP_MAX_NIGHTS) {
           res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで（数値で指定）` });
+          return;
+        }
+        // 泊数は申告値でなく slot 実体からも検証（2026-07-19）：nights=3 と偽って
+        // 長期間の slot を並べる直叩きバイパスを防ぐ。宿泊日 = endDate（チェックアウト日）以外の slot 日付。
+        const campNightDates = new Set(
+          slots.map((k: string) => k.split('|')[1]).filter((d: string) => d && d !== endDate),
+        );
+        if (campNightDates.size > CAMP_MAX_NIGHTS) {
+          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで` });
+          return;
+        }
+        // 多重防御（2026-07-19 自己レビュー #3）：宿泊スパン（endDate-startDate）自体も3泊以内に縛る。
+        // 4泊目を endDate に載せて campNightDates の endDate 除外をすり抜ける占有を封じる。
+        // ※ endDate の「夜スロット」まで数え切るには server 側 slot 再導出が要るため、
+        //   +1泊ぶんの残余は既知（RUNBOOK に追記）。ここでは span で上限を固く縛る。
+        const campSpanDays = (new Date(endDate + 'T00:00:00').getTime()
+          - new Date(startDate + 'T00:00:00').getTime()) / 86400000;
+        if (!Number.isFinite(campSpanDays) || campSpanDays < 0 || campSpanDays > CAMP_MAX_NIGHTS) {
+          res.status(400).json({ error: 'too_many_nights', detail: `${CAMP_MAX_NIGHTS}泊まで` });
           return;
         }
       }

@@ -203,3 +203,101 @@ describe('createReservation 実コード（#36 real-path / #3 突合）', () => 
     expect(r.body.error).toBe('slot_room_mismatch');
   });
 });
+
+// 2026-07-19 セキュリティバッチ：定休日ガード・キャンプ泊数バイパス・サウナ roomIds 強制
+describe('createReservation セキュリティバッチ（2026-07-19・real-path）', () => {
+  const base = (over: any = {}) => ({
+    method: 'POST', query: {}, headers: {},
+    body: {
+      planId: 'normal_27', roomIds: ['room_27'],
+      slots: ['room_27|2026-08-05|10'],
+      startDate: '2026-08-05', endDate: '2026-08-05', // 水曜（定休日=火曜ではない）
+      customer: { name: '山田', phone: '090-0000-0000' },
+      ...over,
+    },
+  });
+
+  it('定休日（火曜 2026-07-14）は 400 closed_day で拒否（config 未設定＝既定 defaultClosedDays=[2]）', async () => {
+    const r = await invoke(createReservation, base({
+      slots: ['room_27|2026-07-14|10'], startDate: '2026-07-14', endDate: '2026-07-14',
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('closed_day');
+    expect(r.body.detail).toBe('2026-07-14');
+  });
+
+  it('非定休日（水曜）は通常どおり 201 成立', async () => {
+    const r = await invoke(createReservation, base());
+    expect(r.statusCode).toBe(201);
+    expect(r.body.status).toBe('confirmed');
+  });
+
+  it('単日予約で endDate を営業日にずらして定休日 slot を隠しても 400 closed_day（endDate除外バイパス封じ・自己レビュー#1）', async () => {
+    // startDate=月(営業)・endDate=火(定休)・slot=火。旧実装は火曜=endDate で検査から漏れていた
+    const r = await invoke(createReservation, base({
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|2026-07-14|10:00'],
+      startDate: '2026-07-13', endDate: '2026-07-14',
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('closed_day');
+    expect(r.body.detail).toBe('2026-07-14');
+  });
+
+  it('startDateにダミーslotを足して endDate 当日の日中slotを紛れ込ませても 400 closed_day（時刻ベース免除・自己レビュー2巡目）', async () => {
+    // 攻撃：月(営業)に夜slot＋火(定休)に日中13時slot。旧「日付だけ免除」では火が endDate 免除で漏れた
+    const r = await invoke(createReservation, base({
+      planId: 'normal_27', roomIds: ['room_27'], nights: 1,
+      slots: ['room_27|2026-07-13|18', 'room_27|2026-07-14|13'],
+      startDate: '2026-07-13', endDate: '2026-07-14',
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('closed_day');
+    expect(r.body.detail).toBe('2026-07-14');
+  });
+
+  it('正当な連泊で endDate（チェックアウト翌朝 slot）が定休日でも 201（本物の連泊は endDate 免除）', async () => {
+    // 月→火の1泊：月(startDate,営業)に夜 slot、火(endDate,定休)に翌朝 slot。チェックアウトは定休日でも許容
+    const r = await invoke(createReservation, base({
+      planId: 'normal_27', roomIds: ['room_27'], nights: 1,
+      slots: ['room_27|2026-07-13|18', 'room_27|2026-07-14|8'],
+      startDate: '2026-07-13', endDate: '2026-07-14',
+    }));
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('キャンプ nights=3 と申告しても slot が4泊ぶんなら 400 too_many_nights（申告値バイパス封じ）', async () => {
+    const r = await invoke(createReservation, base({
+      planId: 'camp', roomIds: ['camp_1'], nights: 3,
+      slots: [
+        'camp_1|2026-08-05|18', 'camp_1|2026-08-06|18',
+        'camp_1|2026-08-07|18', 'camp_1|2026-08-08|18',
+      ],
+      startDate: '2026-08-05', endDate: '2026-08-09',
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('too_many_nights');
+  });
+
+  it('キャンプ 3泊（正当）は 201 成立', async () => {
+    const r = await invoke(createReservation, base({
+      planId: 'camp', roomIds: ['camp_1'], nights: 3,
+      slots: [
+        'camp_1|2026-08-05|18', 'camp_1|2026-08-06|18', 'camp_1|2026-08-07|18',
+      ],
+      startDate: '2026-08-05', endDate: '2026-08-08',
+    }));
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('サウナ planId に camp roomIds を混ぜると 400 invalid_roomIds（ルート逸らし封じ）', async () => {
+    const r = await invoke(createReservation, base({
+      planId: 'plan_sauna_futami', roomIds: ['camp_1'],
+      slots: ['camp_1|2026-08-05|18'],
+      startDate: '2026-08-05', endDate: '2026-08-05',
+      guestCount: 4,
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('invalid_roomIds');
+  });
+});

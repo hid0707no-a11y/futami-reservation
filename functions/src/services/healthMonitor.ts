@@ -6,7 +6,7 @@
 
 import * as admin from 'firebase-admin';
 import { google } from 'googleapis';
-import { sendMonitorAlert } from '../lib/mail';
+import { sendMonitorAlert, transporter } from '../lib/mail';
 import { HOLIDAY_TABLE_END, HOLIDAY_WARN_FROM } from '../constants';
 
 export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promise<void> {
@@ -130,6 +130,34 @@ export async function runStaffHealthCheck(db: admin.firestore.Firestore): Promis
       checks.sheets_sync_fresh = false;
       failures.push(`スプシ同期鮮度チェックエラー: ${e.message || e}`);
     }
+  }
+
+  // --- Check 8: SMTP 経路の生存（2026-07-19）---
+  // SMTP env 欠落時は transporter=null で全メールが無ログスキップされる沈黙死モードだった。
+  // 未構成の検知と、構成済みでも認証・接続が死んでいないかの verify を毎朝行う。
+  // ここで failure になっても本アラート自体は Discord 第二経路（#32）が拾える。
+  // ⚠️ verify() は nodemailer 既定で最大120sブロックし得る。onSchedule 既定 60s タイムアウトを
+  // 超えると「アラート送信前に関数が殺され全通知が沈黙する」= 監視の自己サイレンス化になるため、
+  // 8s で打ち切る（打ち切り自体を failure として扱い、Discord 経路でアラートは飛ぶ）。
+  try {
+    if (!transporter) {
+      checks.smtp_configured = false;
+      failures.push('SMTP transporter 未構成（SMTP_USER/SMTP_PASS 欠落）：顧客確認メールが全停止しています');
+    } else {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          transporter.verify(),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('verify timeout 8s')), 8000); }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer); // タイマー残留を後始末（verify が先に解決してもリークさせない）
+      }
+      checks.smtp_configured = true;
+    }
+  } catch (e: any) {
+    checks.smtp_configured = false;
+    failures.push(`SMTP verify 失敗（認証切れ・接続不可・応答遅延の疑い）: ${e.message || e}`);
   }
 
   // --- 判定 + 通知 ---

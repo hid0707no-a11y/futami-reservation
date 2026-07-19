@@ -711,6 +711,7 @@ body {
 .avail-badge.ok { background: #e8f5e9; color: #2e7d32; }
 .avail-badge.few { background: #fff3e0; color: #e65100; }
 .avail-badge.none { background: #fce4ec; color: #c62828; }
+.avail-badge.closed { background: #efedea; color: #6b6864; }
 
 /* ========== OPTIONS (camp extras etc) ========== */
 .option-row {
@@ -1640,6 +1641,10 @@ function getAvailableRooms(plan, date) {
 function getAvailabilityLevel(plan, date) {
   if (!date) return 'ok';
 
+  // 定休日（2026-07-19）：従来は月間カレンダー経路しか定休日を見ず、
+  // 日付検索・日付直接入力から火曜に「空きあり」→予約確定まで到達できた
+  if (isClosedDay(date)) return 'closed';
+
   // ふたみの日サウナは1予約で完売（occupied_slotsで判定）
   if (plan.planType === 'sauna' && isFutamiDay(date)) {
     return isFutamiSaunaSoldOut(plan, date) ? 'none' : 'ok';
@@ -1658,7 +1663,7 @@ function getAvailabilityLevel(plan, date) {
 }
 
 function availBadge(level) {
-  const labels = { ok: '空きあり', few: '残りわずか', none: '満室' };
+  const labels = { ok: '空きあり', few: '残りわずか', none: '満室', closed: '定休日' };
   return '<span class="avail-badge ' + level + '">' + labels[level] + '</span>';
 }
 
@@ -1861,7 +1866,7 @@ function renderSearchResults() {
     }
     groups[catKey].forEach(item => {
       const room = ROOMS.find(r => r.id === item.plan.rooms[0]);
-      const isFull = item.level === 'none';
+      const isFull = item.level === 'none' || item.level === 'closed';
       const clickAttr = isFull ? '' : ' onclick="selectPlanFromSearch(\'' + item.plan.id + '\')"';
       const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
       html += '<div class="facility-card"' + fullStyle + clickAttr + '>';
@@ -2208,7 +2213,7 @@ function renderFutamiDayAppeal(dateStr, category) {
 
 function renderPlanCard(plan, dateStr) {
   const level = dateStr ? getAvailabilityLevel(plan, dateStr) : 'ok';
-  const isFull = level === 'none';
+  const isFull = level === 'none' || level === 'closed';
   const clickAttr = isFull ? '' : ' onclick="selectPlan(\'' + plan.id + '\')"';
   const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
   let html = '<div class="plan-card"' + fullStyle + clickAttr + '>';
@@ -3124,6 +3129,13 @@ function onBookingDateChange() {
   state.selectedDate = dateInput ? dateInput.value : '';
   state.selectedHours = [];
 
+  // 定休日は入力時点で弾く（2026-07-19・最終ゲートは proceedToConfirm）
+  if (state.selectedDate && isClosedDay(state.selectedDate)) {
+    alert(state.selectedDate.replace(/-/g, '/') + ' は定休日のため予約できません。別の日付をお選びください。');
+    if (dateInput) dateInput.value = '';
+    state.selectedDate = '';
+  }
+
   const plan = state.selectedPlan;
   if (!plan) return;
   const pt = plan.planType;
@@ -3389,6 +3401,17 @@ function proceedToConfirm() {
   }
   const plan = state.selectedPlan;
   const pt = plan.planType;
+
+  // 定休日ガード（2026-07-19）：月間カレンダー以外の導線（日付検索・日付直接入力）はここが最終ゲート。
+  // 対象はチェックイン日＋各宿泊日（チェックアウト日は対象外＝getMaxNights の連泊判定と同仕様）。
+  const nightsToCheck = (pt === 'stay' || pt === 'stay_simple' || pt === 'camp') ? Math.max(1, state.selectedNights || 1) : 1;
+  for (let n = 0; n < nightsToCheck; n++) {
+    const dCheck = addDays(state.selectedDate, n);
+    if (isClosedDay(dCheck)) {
+      alert(dCheck.replace(/-/g, '/') + ' は定休日のため予約できません。別の日付をお選びください。');
+      return;
+    }
+  }
 
   // バリデーション
   if (pt === 'stay') {
@@ -3666,7 +3689,8 @@ function showReview() {
     }
   }
 
-  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  // 引用符も含む5文字エスケープ（2026-07-19 自己レビュー #5：属性文脈へ流用しても安全に）
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   var note = document.getElementById('confirm-note').value.trim();
   var html = document.getElementById('booking-summary').innerHTML;
   html += '<div style="border-top:2px solid #e5e7eb;margin:12px 0;padding-top:12px;">';
@@ -3872,6 +3896,9 @@ async function _submitBookingInner() {
           invalid_roomIds: '施設の選択に不整合がありました。お手数ですが選び直してください。',
           booking_too_far: 'ご予約可能期間を超えています。日付をご確認ください。',
           invalid_pricing_total: '料金の計算でエラーが発生しました。お手数ですが選び直してください。',
+          closed_day: '選択された日は定休日のため予約できません。日付をご確認ください。',
+          invalid_date_range: '日程の指定に不整合がありました。お手数ですが選び直してください。',
+          too_many_nights: 'キャンプは3泊までご予約いただけます。泊数をご確認ください。',
         }[code];
         alert(msg || ('入力内容をご確認ください（' + (code || '不明なエラー') + '）。'));
         return;
@@ -3927,7 +3954,8 @@ async function _submitBookingInner() {
 
   document.getElementById('done-booking-id').textContent = '予約番号: ' + bookingId;
 
-  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  // 引用符も含む5文字エスケープ（2026-07-19 自己レビュー #5：属性文脈へ流用しても安全に）
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   const doneSummary = document.getElementById('done-summary');
   let html = '';
   html += '<div class="summary-row"><span class="summary-label">プラン</span><span class="summary-value">' + esc(booking.planName) + '</span></div>';

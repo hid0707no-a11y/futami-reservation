@@ -512,11 +512,7 @@ function closePopup() {
   document.getElementById('popupOverlay').classList.remove('show');
 }
 
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = String(s == null ? '' : s);
-  return d.innerHTML;
-}
+// escapeHtml は assets/js/auth-bootstrap.js の共通実装（引用符もエスケープ）を使用（2026-07-19 集約）
 
 function inferCategory(r) {
   const room = (r.roomIds && r.roomIds[0]) || '';

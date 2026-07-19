@@ -226,3 +226,8 @@ TTL Policy を**初めて**有効化すると、過去に書き込まれたド�
 | 2026-04-08 | Googleカレンダー→Firestore 移行データで6畳全4部屋占有エラー | 該当 slots を手動削除 |
 | 2026-04-27 | スプシ Z列以降のメモ温存対応で clear range A:Y 限定運用開始 | 設定変更で対応 |
 | 2026-05-13 | SHEET_HEADERS A:Y → A:Z 拡張（要望#8 displayId 列追加）| Z列退避スクリプトで事前対応 |
+
+## 13. 既知の残余リスク（2026-07-19 セキュリティバッチ後）
+
+- **キャンプ泊数の +1泊 直叩き占有（低）**：`createReservation` の泊数検証は「distinct slot 日付（endDate 除外）」＋「endDate-startDate ≤ 3泊」の二重防御で最大3泊に固く縛っているが、チェックアウト日（endDate）の夜スロットを server 側で slot 再導出して弾いてはいない。理論上 API 直叩きで 1区画あたり +1泊を占有し 1泊ぶん過少支払いにできる残余がある。根治は `expandStaySlots` を server に持たせて slots を厳密照合すること（未実施・実害は+1泊/区画に限定）。
+- 定休日ガードは `config/business_calendar`（`defaultClosedDays`/`forceOpen`/`forceClosed`）を正本とする。ふたみの日（`config/special_days`）とは別 doc なので、両者の営業/定休が矛盾しないよう運営側で整合を保つこと。
