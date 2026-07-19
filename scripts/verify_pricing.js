@@ -104,8 +104,34 @@ run('tennis_full (一面貸切)', () => {
 });
 
 // === テニス 半面練習 ===
-// 2026-05-13 削除（要望#11）：半面プランは廃止された。pricing.json 側に
-// tennis.half 定義が残っていても整合チェックは行わない。
+// 2026-05-13 に要望#11 を「削除」と誤解釈して外したが、真意は「コートを1面に絞る」
+// だったため 2026-07-20 に復活（コートは court_1 の1面のみ・単価は当時のまま）。
+run('tennis_half (半面練習)', () => {
+  const plan = extractPlan('tennis_half');
+  const spec = pricing.tennis.half;
+  return [
+    check('residentPrice', spec.resident, plan.residentPrice),
+    check('nonResidentPrice', spec.nonResident, plan.nonResidentPrice),
+    check('basePrice', spec.resident, plan.basePrice),
+    check('lightingPrice', pricing.tennis.lighting.price, plan.lightingPrice),
+    check('weekdayDiscountResident', spec.weekdayDiscount.resident, plan.weekdayDiscountResident),
+    check('weekdayDiscountNonResident', spec.weekdayDiscount.nonResident, plan.weekdayDiscountNonResident),
+  ].every(Boolean);
+});
+
+// === テニス 半面のコート数（要望#11 の真意）===
+// 半面は「1面のみ」選べること。全面と同じ5面が並ぶのが上村さんの指摘した問題だった。
+run('tennis_half のコートは1面のみ', () => {
+  const plan = extractPlan('tennis_half');
+  const m = plan.block.match(/rooms:\s*\[([^\]]*)\]/);
+  const rooms = m ? m[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean) : [];
+  const okCount = check('tennis_half.rooms.length', 1, rooms.length);
+  const okRoom = check('tennis_half.rooms[0]', 'court_1', rooms[0]);
+  // 複数選択を許すと1面制限が意味を失うので allowMultiSelect が無いことも確認
+  const noMulti = !/allowMultiSelect/.test(plan.block);
+  if (!noMulti) console.error('  ❌ tennis_half に allowMultiSelect が付いている（1面制限が崩れる）');
+  return okCount && okRoom && noMulti;
+});
 
 // === みどり 午前 ===
 run('midori_am (みどり午前)', () => {
@@ -222,6 +248,7 @@ run('平日割の実装確認', () => {
 // プラン定義に guestEstimateMax が正しく設定されているかを確認する。
 run('利用人数目安の上限設定', () => {
   const tennisFull = extractPlan('tennis_full');
+  const tennisHalf = extractPlan('tennis_half');
   const midoriAm = extractPlan('midori_am');
   const midoriPm = extractPlan('midori_pm');
   const midoriEve = extractPlan('midori_eve');
@@ -232,6 +259,7 @@ run('利用人数目安の上限設定', () => {
   };
   return [
     check('tennis_full.guestEstimateMax', 10, parseMax(tennisFull)),
+    check('tennis_half.guestEstimateMax', 10, parseMax(tennisHalf)),
     check('midori_am.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriAm)),
     check('midori_pm.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriPm)),
     check('midori_eve.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriEve)),

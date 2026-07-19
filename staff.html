@@ -850,6 +850,9 @@ const PLANS = [
   // テニス（時間を都度選ぶ）
   { id: 'tennis_full', name: 'テニスコート', rooms: ['court_1','court_2','court_3','court_4','court_5'],
     slots: 'hourly', price: '市民630円/市外760円/面/時', badge: '\uD83C\uDFBE', color: '#0ea5e9' },
+  // 半面練習（2026-07-20 復活）: コートA 1面のみ。全面と同じ tennis_slots を占有する。
+  { id: 'tennis_half', name: 'テニスコート（半面）', rooms: ['court_1'],
+    slots: 'hourly', price: '市民240円/市外280円/1時間', badge: '🎾 半面', color: '#0284c7' },
   // みどりの広場（3コマ制）
   { id: 'midori_am', name: 'みどりの広場 午前', rooms: ['midori'],
     slots: [8,9,10,11], price: '市民1,890円/市外2,200円', badge: '\uD83C\uDF05 午前', color: '#f97316' },
@@ -1496,7 +1499,7 @@ function showDetail(resId) {
         slotsText = `${first}:00 \u301C ${lastEnd === 0 ? 24 : lastEnd}:00`;
       }
     }
-    if (plan.id === 'tennis_full' && Array.isArray(res.tennisTimes) && res.tennisTimes.length > 0) {
+    if ((plan.id === 'tennis_full' || plan.id === 'tennis_half') && Array.isArray(res.tennisTimes) && res.tennisTimes.length > 0) {
       slotsText = formatTennisTimeRanges(res.tennisTimes);
     } else if (plan.slots === 'hourly' && res.slotsOverride) {
       const sorted = [...res.slotsOverride].sort((a, b) => a - b);
@@ -2161,7 +2164,7 @@ async function submitReservation() {
   })();
   for (const slotRoomId of payloadRoomIds) {
     for (const h of planSlots) {
-      if (plan.id === 'tennis_full') {
+      if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
         const hour = String(h).padStart(2, '0');
         slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '00');
         slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '30');

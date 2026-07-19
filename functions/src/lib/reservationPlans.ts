@@ -11,6 +11,8 @@ const ALL_STAY_ROOMS = [...SIX_TATAMI_ROOMS, 'room_27', 'room_exp'] as const;
 const CAMP_ROOMS = ['camp_1', 'camp_2', 'camp_3', 'camp_4', 'camp_5', 'camp_6', 'camp_7', 'camp_8'] as const;
 const LODGE_ROOMS = ['lodge_a', 'lodge_b'] as const;
 const COURT_ROOMS = ['court_1', 'court_2', 'court_3', 'court_4', 'court_5'] as const;
+// 半面練習プランが使えるコートは1面のみ（index.html の tennis_half.rooms と一致必須）。
+const HALF_COURT_ROOMS = ['court_1'] as const;
 
 type RuleKind = 'overnight' | 'fixed_day' | 'hourly_day' | 'tennis' | 'futami_sauna';
 
@@ -62,6 +64,10 @@ export const RESERVATION_PLAN_RULES: Readonly<Record<string, PlanRule>> = {
   lodge_stay: rule('overnight', LODGE_ROOMS, STAY_HOURS, 1, { maxNights: 14 }),
   lodge_day: rule('hourly_day', LODGE_ROOMS, [10, 11, 12, 13, 14, 15]),
   tennis_full: rule('tennis', COURT_ROOMS, undefined, COURT_ROOMS.length),
+  // 半面練習プラン（2026-07-20 復活・要望#11の真意は「削除」ではなく「コートを1面に絞る」）。
+  // 貸出単位は court_1（コートA）1面のみ。tennis_full と同じ tennis_slots キー空間を
+  // 共有するため、同一日時のコートAは全面/半面どちらか一方しか成立しない（二重予約防止）。
+  tennis_half: rule('tennis', HALF_COURT_ROOMS, undefined, HALF_COURT_ROOMS.length),
 
   midori_am: rule('fixed_day', ['midori'], [8, 9, 10, 11]),
   midori_pm: rule('fixed_day', ['midori'], [12, 13, 14, 15, 16]),

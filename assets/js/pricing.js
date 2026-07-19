@@ -121,7 +121,9 @@
   }
 
   /**
-   * テニス一面貸切（hourly + tennis_full）の料金計算。
+   * テニス（hourly + tennis_full / tennis_half）の料金計算。
+   * 空間貸し運用（上村確認・2026-04-12）のため、半面も一面も人数掛けはしない。
+   * 半面（tennis_half）は複数選択不可なので courtCount は常に 1 で呼ばれる。
    * 平日割は料金表の固定値（weekdayDiscountResident/NonResident）を優先。
    * フィールド未設定時は Math.ceil(price*0.5/10)*10 を fallback。
    * 複数コート選択（要望#7）は courtCount で倍率指定。

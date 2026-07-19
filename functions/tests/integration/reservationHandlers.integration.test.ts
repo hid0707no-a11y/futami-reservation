@@ -421,6 +421,56 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
     expect(r.body.error).toBe('slot_conflict');
   });
 
+  // 2026-07-20: 半面プラン復活。半面は court_1 のみ・全面と同じ tennis_slots を占有する。
+  it('tennis_half は court_1 で 201 成立し tennis_slots に書かれる', async () => {
+    const r = await invoke(createReservation, base({
+      planId: 'tennis_half', roomIds: ['court_1'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|1000', 'court_1|' + OPEN_WEDNESDAY + '|1030'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(r.statusCode).toBe(201);
+    const stored = (await db.collection('reservations').doc(r.body.internalId).get()).data() as any;
+    expect(stored.planId).toBe('tennis_half');
+    expect((await db.collection('tennis_slots').doc('court_1|' + OPEN_WEDNESDAY + '|1000').get()).exists)
+      .toBe(true);
+  });
+
+  it('半面が入っているコート・時間には全面を入れられない（二重予約防止）', async () => {
+    const half = await invoke(createReservation, base({
+      planId: 'tennis_half', roomIds: ['court_1'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|1100', 'court_1|' + OPEN_WEDNESDAY + '|1130'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(half.statusCode).toBe(201);
+
+    const full = await invoke(createReservation, base({
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|1100', 'court_1|' + OPEN_WEDNESDAY + '|1130'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(full.statusCode).toBe(409);
+    expect(full.body.error).toBe('slot_conflict');
+
+    // 逆方向：同じ枠に半面をもう1件も入らない（半面2件の同時貸しはしない）
+    const secondHalf = await invoke(createReservation, base({
+      planId: 'tennis_half', roomIds: ['court_1'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|1100', 'court_1|' + OPEN_WEDNESDAY + '|1130'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(secondHalf.statusCode).toBe(409);
+    expect(secondHalf.body.error).toBe('slot_conflict');
+  });
+
+  it('tennis_half に court_1 以外を指定すると 400 で拒否される', async () => {
+    const r = await invoke(createReservation, base({
+      planId: 'tennis_half', roomIds: ['court_3'],
+      slots: ['court_3|' + OPEN_WEDNESDAY + '|1400', 'court_3|' + OPEN_WEDNESDAY + '|1430'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('plan_room_mismatch');
+  });
+
   it('旧staff tennis入力をtennis_full/HHMMへcanonical保存する', async () => {
     const r = await invoke(createReservation, base({
       planId: 'tennis', roomIds: ['court_1'],

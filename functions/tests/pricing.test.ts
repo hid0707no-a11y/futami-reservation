@@ -205,6 +205,58 @@ describe('calculateHourlyTennisPrice', () => {
     })).toBe(320);
   });
 
+  // 2026-07-20 復活: 半面（tennis_half）。空間貸し運用のため人数掛けなし＝1枠定額。
+  describe('tennis_half（半面・1面固定）', () => {
+    const half = {
+      residentPrice: 240, nonResidentPrice: 280,
+      weekdayDiscount: true,
+      weekdayDiscountResident: 120, weekdayDiscountNonResident: 140,
+      lightingPrice: 630,
+    };
+
+    it('市民・通常2枠 → 240 × 2', () => {
+      expect(NisshoPricing.calculateHourlyTennisPrice(half, {
+        hours: ['0900', '0930'], isResident: true, useLighting: false,
+        courtCount: 1, isWeekdayDiscountHour: () => false,
+      })).toBe(480);
+    });
+
+    it('市外・通常2枠 → 280 × 2', () => {
+      expect(NisshoPricing.calculateHourlyTennisPrice(half, {
+        hours: ['0900', '0930'], isResident: false, useLighting: false,
+        courtCount: 1, isWeekdayDiscountHour: () => false,
+      })).toBe(560);
+    });
+
+    it('平日割：市民120 / 市外140（丸めなし＝料金表固定値そのまま）', () => {
+      expect(NisshoPricing.calculateHourlyTennisPrice(half, {
+        hours: ['1000'], isResident: true, useLighting: false,
+        courtCount: 1, isWeekdayDiscountHour: () => true,
+      })).toBe(120);
+      expect(NisshoPricing.calculateHourlyTennisPrice(half, {
+        hours: ['1000'], isResident: false, useLighting: false,
+        courtCount: 1, isWeekdayDiscountHour: () => true,
+      })).toBe(140);
+    });
+
+    it('夜間照明はコート単位630円で半面でも全額（平日割対象外）', () => {
+      // 240 × 2 + 630 × 2 = 480 + 1260 = 1740
+      expect(NisshoPricing.calculateHourlyTennisPrice(half, {
+        hours: ['1800', '1830'], isResident: true, useLighting: true,
+        courtCount: 1, isWeekdayDiscountHour: () => false,
+      })).toBe(1740);
+    });
+
+    it('人数掛けをしない（空間貸し運用・上村確認）', () => {
+      // 人数に相当する入力は存在せず、courtCount のみが倍率。1面固定なので常に等倍。
+      const one = NisshoPricing.calculateHourlyTennisPrice(half, {
+        hours: ['0900'], isResident: true, useLighting: false,
+        courtCount: 1, isWeekdayDiscountHour: () => false,
+      });
+      expect(one).toBe(240);
+    });
+  });
+
   it('時間 0 件なら 0 を返す', () => {
     expect(NisshoPricing.calculateHourlyTennisPrice(tennis, {
       hours: [],
