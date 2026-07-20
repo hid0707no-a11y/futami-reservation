@@ -198,13 +198,20 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   }
 
   // #17 pricing.total の最低限サニティ（正の有限数・上限内）。
-  // curl 直叩きで total:0/負/NaN/巨額の予約が confirmed 化するのを防ぐ。
-  // ※ pricing.js をサーバ同梱して planId/slots から総額を完全再計算する根治は別タスク（朝送り）。
+  // curl 直叩きで total:0/負/NaN/巨額の予約が confirmed 化するのを防ぐ第一防壁。
+  // ※ 根治（planId/slots から総額をサーバ再計算し上書き保存）は lib/pricingServer.ts で完了（2026-07-20）。
+  //   本サニティは緩めない：ここを通った total も createReservation でサーバ計算値へ上書きされる。
   const pricing = (body || {}).pricing;
   if (pricing != null) {
     const total = pricing.total;
     if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0 || total > 10_000_000) {
       return { ok: false, error: 'invalid_pricing_total' };
+    }
+    // sportGuestEstimate（行政報告用の人数目安・料金非影響の透過フィールド）は、保存型 XSS 増幅や
+    // sheets への型汚染を防ぐため、指定時は有限数のみ許可（範囲外→0 の丸めは pricingServer 側で行う）。
+    const est = pricing.sportGuestEstimate;
+    if (est != null && (typeof est !== 'number' || !Number.isFinite(est))) {
+      return { ok: false, error: 'invalid_sport_guest_estimate' };
     }
   }
 

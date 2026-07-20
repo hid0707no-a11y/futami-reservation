@@ -1,8 +1,11 @@
 // Public reservation plan security catalogue.
 //
-// The browser owns presentation and pricing, but the server must own the
-// inventory shape. A caller-provided planId/roomIds/slots tuple is accepted
-// only when it can be reduced to one canonical reservation described here.
+// The browser owns presentation, but the server must own BOTH the inventory
+// shape (here) AND pricing (lib/pricingServer.ts, added 2026-07-20 for #17).
+// A caller-provided planId/roomIds/slots tuple is accepted only when it can be
+// reduced to one canonical reservation described here; the resulting canonical
+// plan/slots then drive the server-authoritative price recomputation so a
+// client-declared pricing.total (e.g. tampered to 1 yen) is never trusted.
 
 const STAY_HOURS = [16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 const CAMP_HOURS = [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;

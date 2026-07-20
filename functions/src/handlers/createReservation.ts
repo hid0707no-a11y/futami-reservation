@@ -27,6 +27,7 @@ import {
   getBusinessCalendarFresh,
 } from '../lib/businessDays';
 import { canonicalizeReservation } from '../lib/reservationPlans';
+import { computeServerPricing } from '../lib/pricingServer';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
 
 /**
@@ -177,6 +178,27 @@ export const createReservation = onRequest(
       // createdBy はクライアント申告を信用せず、任意Bearerの実検証結果から決める。
       const createdBy = await isVerifiedStaffRequest(req) ? 'staff' : 'web';
 
+      // #17 料金はサーバが canonical plan/slots と選択事実（市民区分・照明・オプション）から
+      // 権威的に再計算し、この serverPricing だけを保存する。クライアント申告の pricing.total は
+      // 保存しない（total:1 等の改ざんは上書きされる）。丸め差等で total が一致しなくても予約は
+      // 拒否せず、pricingMismatch を予約に併記＋構造化ログするだけにする（顧客予約の取りこぼし防止）。
+      const { pricing: serverPricing, mismatch: pricingMismatch } = computeServerPricing(canonical, {
+        guests,
+        isResident: customer?.isMember === true,
+        declaredPricing: pricing,
+        guestCount,
+      });
+      if (pricingMismatch) {
+        console.error(JSON.stringify({
+          severity: 'WARNING',
+          audit: true,
+          action: 'pricing.mismatch',
+          planId, startDate, createdBy,
+          claimedTotal: pricingMismatch.claimedTotal,
+          computedTotal: pricingMismatch.computedTotal,
+        }));
+      }
+
       // 定休日はcanonical planから導出したサービス提供日だけで判定する。
       // checkout時刻の推測やクライアントslot省略に依存しない。
       const businessCal = await getBusinessCalendarFresh();
@@ -220,7 +242,8 @@ export const createReservation = onRequest(
             const now = admin.firestore.FieldValue.serverTimestamp();
             tx.set(resRef, {
               planId, roomIds, slots, startDate, endDate, nights: 0,
-              customer, guests: guests || null, pricing: pricing || null,
+              customer, guests: guests || null, pricing: serverPricing,
+              ...(pricingMismatch ? { pricingMismatch } : {}),
               payment: { method: 'onsite', status: 'unpaid' },
               status: 'confirmed', note: note || null,
               displayId,
@@ -336,7 +359,8 @@ export const createReservation = onRequest(
             tx.set(resRef, {
               planId, roomIds: ['sauna_share'], slots, startDate, endDate, nights: 0,
               customer, guests: guests || null, guestCount: seats,
-              pricing: pricing || null,
+              pricing: serverPricing,
+              ...(pricingMismatch ? { pricingMismatch } : {}),
               payment: { method: 'onsite', status: 'unpaid' },
               status: 'confirmed', note: note || null,
               displayId,
@@ -357,7 +381,7 @@ export const createReservation = onRequest(
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
-            saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
+            saunaOptionsText: formatSaunaOptions(serverPricing.saunaOptions) || undefined,
           };
           // #7 メール送信は応答前に await
           await Promise.allSettled([
@@ -427,7 +451,8 @@ export const createReservation = onRequest(
           planId, roomIds, slots, startDate, endDate, nights,
           customer, guests: guests || null,
           ...(isCamp ? { guestCount: roomIds.length, isCamp: true } : {}),
-          pricing: pricing || null,
+          pricing: serverPricing,
+          ...(pricingMismatch ? { pricingMismatch } : {}),
           payment: { method: 'onsite', status: 'unpaid' },
           status: 'confirmed', note: note || null,
           displayId,
@@ -453,7 +478,7 @@ export const createReservation = onRequest(
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '', reservationId: result.displayId,
         ...(isCamp ? { isCamp: true, guestCount: roomIds.length } : {}),
-        saunaOptionsText: formatSaunaOptions(pricing?.saunaOptions) || undefined,
+        saunaOptionsText: formatSaunaOptions(serverPricing.saunaOptions) || undefined,
       };
       // #7 メール送信は応答前に await
       await Promise.allSettled([
