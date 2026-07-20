@@ -78,9 +78,16 @@ interface HourlyFlatPricing {
   type: 'hourly_flat';
   basePrice: number;
 }
-/** テニス一面貸切（30分開始1時間枠×コート数。平日割はサーバ判定）。 */
+/**
+ * テニス（30分開始1時間枠×コート数。平日割はサーバ判定）。
+ * 一面貸切(tennis_full)と半面練習(tennis_half)の両方。空間貸し運用（2026-04-12 上村確認・
+ * docs/pricing.json resolvedConfirmations）のため **人数は料金に一切掛けない**。半面は
+ * court_1 の1面のみ貸出（reservationPlans.HALF_COURT_ROOMS）なので courtCount は常に 1。
+ */
 interface TennisPricing {
   type: 'tennis';
+  /** 貸出単位。保存 pricing.tennis.courtType としてそのまま出力（index.html と同一値）。 */
+  courtType: 'full' | 'half';
   residentPrice: number;
   nonResidentPrice: number;
   weekdayDiscountResident: number;
@@ -152,9 +159,18 @@ export const SERVER_PLAN_PRICING: Readonly<Record<string, PlanPricing>> = {
 
   // ── テニス ──
   tennis_full: {
-    type: 'tennis',
+    type: 'tennis', courtType: 'full',
     residentPrice: 630, nonResidentPrice: 760,
     weekdayDiscountResident: 320, weekdayDiscountNonResident: 380,
+    lightingPrice: 630, guestEstimateMax: 10,
+  },
+  // 半面練習（2026-07-20 復活）。単価は docs/pricing.json tennis.half ＝ index.html tennis_half。
+  // 平日割は 120/140（半額が元から10円の倍数のため丸めなし）。照明は全面と共通の 630円/時・
+  // コート単位で、17時以降は平日割対象外＝割引しない（tennis_full と同一方式）。
+  tennis_half: {
+    type: 'tennis', courtType: 'half',
+    residentPrice: 240, nonResidentPrice: 280,
+    weekdayDiscountResident: 120, weekdayDiscountNonResident: 140,
     lightingPrice: 630, guestEstimateMax: 10,
   },
 
@@ -294,7 +310,7 @@ export function tennisHourKeysFromSlots(slots: string[], roomIds: string[]): str
 // ─────────────────────────────────────────────
 
 export interface ServerPricingTennis {
-  courtType: 'full';
+  courtType: 'full' | 'half';
   isResident: boolean;
   totalHours: number;
   weekdayDiscountHours: number;
@@ -442,7 +458,8 @@ export function computeServerPricing(
     pricing = {
       ...emptyPricing(total),
       tennis: {
-        courtType: 'full',
+        // 全面/半面はサーバが planId 由来の価格表から決める（クライアント申告 courtType は不採用）。
+        courtType: table.courtType,
         isResident,
         totalHours: hourKeys.length,
         weekdayDiscountHours: discountedHourKeys.length,
