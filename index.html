@@ -1920,10 +1920,15 @@ function renderSearchResults() {
   // カテゴリ別にグルーピング
   const groups = {};
   PLANS.forEach(plan => {
-    const maxCap = Math.max(...plan.rooms.map(rid => {
-      const r = ROOMS.find(x => x.id === rid);
-      return r ? r.capacity : 0;
-    }));
+    // テニス/みどり等の空間貸しプランは人数目安（guestEstimateMax・行政報告用）が上限で、
+    // room capacity は料金にも利用判定にも使わない。guestEstimateMax があればそれを、
+    // 無ければ従来どおり部屋定員の最大値を上限とする（他プランの挙動は不変）。
+    const maxCap = (typeof plan.guestEstimateMax === 'number')
+      ? plan.guestEstimateMax
+      : Math.max(...plan.rooms.map(rid => {
+          const r = ROOMS.find(x => x.id === rid);
+          return r ? r.capacity : 0;
+        }));
     if (maxCap < state.searchGuests) return;
     if (cat !== 'all' && plan.category !== cat) return;
 
