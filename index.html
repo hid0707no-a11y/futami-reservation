@@ -1711,6 +1711,29 @@ function getAvailableRooms(plan, date) {
   return plan.rooms.filter(rid => isPlanAvailableForRoom(plan, rid, date));
 }
 
+// slots:'hourly'（テニス）は在庫を30分キーの集合（TENNIS_SLOTS）で持つため、
+// plan.slots が配列でない＝ isPlanAvailableForRoom / getAvailableRooms では常に空き扱いになる。
+// 詳細画面 renderHourlyGrid（3281-3307）と同一基準で「連続する30分×2枠が空く開始時刻が
+// 対象コートのいずれかに1つ以上あるか」を判定する。TENNIS_SLOTS は起動時ロード済みを参照し
+// 新規 fetch は行わない（DATA_LOADED は getAvailabilityLevel 側で担保）。
+function tennisHasFreeStart(plan, date) {
+  const range = plan.hourlyRange || { start: 8, end: 22 };
+  const courts = Array.isArray(plan.rooms) ? plan.rooms : [];
+  // 08:00〜21:00 開始・30分刻み・1時間枠（21:00開始=22:00終了が最終）＝公開画面と同じ
+  for (let totalMin = range.start * 60; totalMin + 60 <= range.end * 60; totalMin += 30) {
+    const sH = Math.floor(totalMin / 60);
+    const sM = totalMin % 60;
+    const startKey = `${String(sH).padStart(2, '0')}${String(sM).padStart(2, '0')}`;
+    const midSlot = addMinutes(startKey, 30);
+    for (const courtId of courts) {
+      if (isTennisSlotFree(courtId, date, startKey) && isTennisSlotFree(courtId, date, midSlot)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function getAvailabilityLevel(plan, date) {
   if (!date) return 'ok';
 
@@ -1727,6 +1750,13 @@ function getAvailabilityLevel(plan, date) {
   // ふたみの日サウナは1予約で完売（occupied_slotsで判定）
   if (plan.planType === 'sauna' && isFutamiDay(date)) {
     return isFutamiSaunaSoldOut(plan, date) ? 'none' : 'ok';
+  }
+
+  // slots:'hourly'（テニス）は30分在庫（TENNIS_SLOTS）で空きを判定する。
+  // getAvailableRooms は plan.slots が配列でないため常に全コート空き扱いとなり、
+  // 日付カードが実在庫と無関係に「空きあり」で固定される誤表示になるため専用判定に分岐。
+  if (plan.slots === 'hourly' && plan.rooms.every(r => typeof r === 'string' && r.startsWith('court_'))) {
+    return tennisHasFreeStart(plan, date) ? 'ok' : 'none';
   }
 
   const available = getAvailableRooms(plan, date);
