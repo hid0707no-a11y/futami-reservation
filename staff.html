@@ -957,6 +957,59 @@ function formatTennisTimeRanges(values) {
   return ranges.join('、');
 }
 
+// ===== テニス（tennis_full / tennis_half）30分開始の共通ヘルパー（2026-07-20 M-4）=====
+// 公開画面と同じく 08:00〜21:00 開始・30分刻み・1時間枠。フォームの選択値は 'HH:MM' で保持する。
+function isTennisPlan(plan) {
+  return !!plan && (plan.id === 'tennis_full' || plan.id === 'tennis_half');
+}
+// 開始時刻の選択肢（'HH:MM'）。21:00開始=22:00終了が最終。
+function tennisStartTimeOptions() {
+  const out = [];
+  for (let m = 8 * 60; m + 60 <= 22 * 60; m += 30) {
+    out.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'));
+  }
+  return out;
+}
+// 'HH:MM' 開始 → 1時間枠が終わる時刻ラベル（'HH:MM'）。
+function tennisSlotEndLabel(startHM) {
+  const m = String(startHM).match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return '';
+  const end = parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + 60;
+  return String(Math.floor(end / 60)).padStart(2, '0') + ':' + String(end % 60).padStart(2, '0');
+}
+// 'HH:MM' 開始 → 占有する30分キー2つ（'HHMM' 形式）。1時間枠なので開始と+30分。
+function tennisSlotKeysFromStart(startHM) {
+  const m = String(startHM).match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return [];
+  const startMin = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  const key = total => String(Math.floor(total / 60)).padStart(2, '0') + String(total % 60).padStart(2, '0');
+  return [key(startMin), key(startMin + 30)];
+}
+// 指定コート・日付で占有済みの30分キー集合（'HHMM'）。整数版 getSlotMap は :30 を潰すため、
+// テニスのフォーム判定はこの30分粒度の集合を使う。res.tennisTimes（正規化済）と raw res.slots の両方を見る。
+function getTennisOccupiedSet(roomId, ds, allRes) {
+  const set = new Set();
+  for (const res of allRes || []) {
+    if (res.roomId === roomId && res.date === ds && Array.isArray(res.tennisTimes)) {
+      for (const t of res.tennisTimes) for (const n of normalizeStoredTennisTimes(t)) set.add(n);
+    }
+    if (Array.isArray(res.slots)) {
+      for (const rawKey of res.slots) {
+        const parts = rawKey.split('|');
+        if (parts.length === 3 && parts[0] === roomId && parts[1] === ds) {
+          for (const n of normalizeStoredTennisTimes(parts[2])) set.add(n);
+        }
+      }
+    }
+  }
+  return set;
+}
+// 選択中のテニス開始時刻（'HH:MM'配列）のうち、指定コートで占有と衝突するものを返す。
+function tennisConflictStarts(startList, roomId, ds, allRes) {
+  const occ = getTennisOccupiedSet(roomId, ds, allRes);
+  return (startList || []).filter(s => tennisSlotKeysFromStart(s).some(k => occ.has(k)));
+}
+
 // API レスポンスの予約 → staff用形式に変換（複数部屋なら複数レコード）
 function convertApiReservation(r) {
   // 該当プランの定義からチェックイン時刻を取得（slots[0]＝チェックイン時刻）
@@ -1951,14 +2004,26 @@ function selectPlan(planId) {
     const roomId = document.getElementById('addRoom').value;
     const ds = document.getElementById('addDate').value;
     const allRes = loadReservations();
-    const slotMap = getSlotMap(roomId, ds, allRes);
 
     let html = '';
-    const selectableHours = Array.isArray(plan.allowedHours) ? plan.allowedHours : DISPLAY_HOURS;
-    for (const h of selectableHours) {
-      const occupied = !!slotMap[h];
-      const cls = occupied ? 'hour-chip disabled' : 'hour-chip';
-      html += `<div class="${cls}" data-hour="${h}" onclick="${occupied ? '' : `toggleHourSlot(${h})`}">${h}:00</div>`;
+    if (isTennisPlan(plan)) {
+      // テニスは30分刻み開始の1時間枠（公開画面と同一）。占有は30分キー2つの
+      // いずれかが埋まっていれば選べない（1時間枠が確保できないため）。
+      const occ = getTennisOccupiedSet(roomId, ds, allRes);
+      for (const t of tennisStartTimeOptions()) {
+        const occupied = tennisSlotKeysFromStart(t).some(k => occ.has(k));
+        const cls = occupied ? 'hour-chip disabled' : 'hour-chip';
+        html += `<div class="${cls}" data-hour="${t}" onclick="${occupied ? '' : `toggleHourSlot('${t}')`}">${t}〜${tennisSlotEndLabel(t)}</div>`;
+      }
+    } else {
+      // ロッジ日帰り等の整数時間プラン（従来どおり）
+      const slotMap = getSlotMap(roomId, ds, allRes);
+      const selectableHours = Array.isArray(plan.allowedHours) ? plan.allowedHours : DISPLAY_HOURS;
+      for (const h of selectableHours) {
+        const occupied = !!slotMap[h];
+        const cls = occupied ? 'hour-chip disabled' : 'hour-chip';
+        html += `<div class="${cls}" data-hour="${h}" onclick="${occupied ? '' : `toggleHourSlot(${h})`}">${h}:00</div>`;
+      }
     }
     document.getElementById('hourSlots').innerHTML = html;
   } else {
@@ -1997,8 +2062,14 @@ function renderRoomAssign(plan) {
       merged[h] = carryMap[h] || slotMap[h] || null;
     }
 
-    const planSlots = plan.slots === 'hourly' ? selectedHourSlots : plan.slots;
-    const conflict = planSlots.some(s => s >= 8 && s <= 21 && merged[s]);
+    let conflict;
+    if (isTennisPlan(plan)) {
+      // テニスは30分粒度で衝突判定（選択開始時刻の2枠のいずれかが埋まっていれば衝突）
+      conflict = tennisConflictStarts(selectedHourSlots, rid, ds, allRes).length > 0;
+    } else {
+      const planSlots = plan.slots === 'hourly' ? selectedHourSlots : plan.slots;
+      conflict = planSlots.some(s => s >= 8 && s <= 21 && merged[s]);
+    }
     const isSelected = rid === selectedRoomId;
 
     html += `<div class="room-option ${isSelected ? 'selected' : ''} ${conflict ? 'disabled' : ''}" onclick="${conflict ? '' : `selectRoom('${rid}')`}">
@@ -2024,22 +2095,25 @@ function selectRoom(roomId) {
 }
 
 function toggleHourSlot(hour) {
+  const plan = PLANS.find(p => p.id === selectedPlanId);
+  const tennis = isTennisPlan(plan);
   const idx = selectedHourSlots.indexOf(hour);
   if (idx >= 0) {
     selectedHourSlots.splice(idx, 1);
   } else {
     selectedHourSlots.push(hour);
   }
-  selectedHourSlots.sort((a, b) => a - b);
+  // テニスは 'HH:MM' 文字列（ゼロ埋めなので辞書順＝時刻順）。整数プランは数値順。
+  if (tennis) selectedHourSlots.sort();
+  else selectedHourSlots.sort((a, b) => a - b);
 
-  // UIの更新
+  // UIの更新（テニスは dataset の 'HH:MM' 文字列で照合、整数プランは数値で照合）
   document.querySelectorAll('.hour-chip').forEach(el => {
-    const h = parseInt(el.dataset.hour);
-    el.classList.toggle('selected', selectedHourSlots.includes(h));
+    const key = tennis ? el.dataset.hour : parseInt(el.dataset.hour);
+    el.classList.toggle('selected', selectedHourSlots.includes(key));
   });
 
   // 部屋割り当ての再チェック
-  const plan = PLANS.find(p => p.id === selectedPlanId);
   if (plan && plan.rooms.length > 1) {
     renderRoomAssign(plan);
   }
@@ -2140,15 +2214,23 @@ async function submitReservation() {
 
   // 在庫の最終チェック
   const allRes = loadReservations();
-  const checkSlots = slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
   const localCheckRoomIds = isFutamiSauna ? ['sauna'] : payloadRoomIds;
   for (const checkRoomId of localCheckRoomIds) {
-    const slotMap = getSlotMap(checkRoomId, ds, allRes);
-    const carryMap = getOvernightCarryover(checkRoomId, ds, allRes);
-    const conflicting = checkSlots.filter(s => s >= 8 && s <= 21 && (carryMap[s] || slotMap[s]));
-    if (conflicting.length > 0) {
-      showToast('\u9078\u629E\u3057\u305F\u6642\u9593\u5E2F\u306F\u65E2\u306B\u57CB\u307E\u3063\u3066\u3044\u307E\u3059');
-      return;
+    if (isTennisPlan(plan)) {
+      // \u30C6\u30CB\u30B9\u306F30\u5206\u7C92\u5EA6\u3067\u6700\u7D42\u885D\u7A81\u30C1\u30A7\u30C3\u30AF\uFF08\u9078\u629E\u958B\u59CB\u6642\u523B\u306E2\u67A0\u306E\u3044\u305A\u308C\u304B\u304C\u57CB\u307E\u3063\u3066\u3044\u308C\u3070\u62D2\u5426\uFF09
+      if (tennisConflictStarts(selectedHourSlots, checkRoomId, ds, allRes).length > 0) {
+        showToast('\u9078\u629E\u3057\u305F\u6642\u9593\u5E2F\u306F\u65E2\u306B\u57CB\u307E\u3063\u3066\u3044\u307E\u3059');
+        return;
+      }
+    } else {
+      const checkSlots = slotsOverride || (Array.isArray(plan.slots) ? plan.slots : []);
+      const slotMap = getSlotMap(checkRoomId, ds, allRes);
+      const carryMap = getOvernightCarryover(checkRoomId, ds, allRes);
+      const conflicting = checkSlots.filter(s => s >= 8 && s <= 21 && (carryMap[s] || slotMap[s]));
+      if (conflicting.length > 0) {
+        showToast('\u9078\u629E\u3057\u305F\u6642\u9593\u5E2F\u306F\u65E2\u306B\u57CB\u307E\u3063\u3066\u3044\u307E\u3059');
+        return;
+      }
     }
   }
 
@@ -2165,9 +2247,11 @@ async function submitReservation() {
   for (const slotRoomId of payloadRoomIds) {
     for (const h of planSlots) {
       if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
-        const hour = String(h).padStart(2, '0');
-        slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '00');
-        slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '30');
+        // h は 'HH:MM' 開始。1時間枠が占有する30分キー2つ（開始・+30分）を展開。
+        // 公開画面と同一の 'court|date|HHMM' 形式（サーバのテニス在庫と一致）。
+        for (const k of tennisSlotKeysFromStart(h)) {
+          slotKeys.push(slotRoomId + '|' + ds + '|' + k);
+        }
       } else if (isStay && h < planSlots[0]) {
         slotKeys.push(slotRoomId + '|' + nextDay + '|' + h);
       } else {
