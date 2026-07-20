@@ -36,6 +36,24 @@ function htmlPlanNumber(planId: string, field: string): number {
   return Number(m[1]);
 }
 
+/**
+ * index.html の PLANS から planId の定義ブロックを「次プランの `{ id: '` まで」で厳密に切り出す。
+ * htmlPlanNumber() の固定600文字窓では tennis_half（コメント込み899文字）の後半フィールド
+ * （lightingPrice / guestEstimateMax）に届かず取りこぼすため、境界ベースの版を併設する。
+ * 固定窓と違い隣接プランの同名フィールドを誤読することも無い。
+ */
+function htmlPlanBlock(planId: string): string {
+  const idx = indexHtml.indexOf(`id: '${planId}'`);
+  if (idx < 0) throw new Error(`plan not found in index.html: ${planId}`);
+  const next = indexHtml.indexOf('{ id: \'', idx);
+  return indexHtml.slice(idx, next < 0 ? indexHtml.length : next);
+}
+function htmlPlanNumberStrict(planId: string, field: string): number {
+  const m = htmlPlanBlock(planId).match(new RegExp(`\\b${field}:\\s*(\\d+)`));
+  if (!m) throw new Error(`field ${field} not found for ${planId}`);
+  return Number(m[1]);
+}
+
 // ─────────────────────────────────────────────
 // a. ドリフト検出
 // ─────────────────────────────────────────────
@@ -47,6 +65,28 @@ describe('価格表ドリフト検出（SERVER_PLAN_PRICING ↔ docs/pricing.jso
     expect(t.weekdayDiscountResident).toBe(pricingJson.tennis.full.weekdayDiscount.resident);
     expect(t.weekdayDiscountNonResident).toBe(pricingJson.tennis.full.weekdayDiscount.nonResident);
     expect(t.lightingPrice).toBe(pricingJson.tennis.lighting.price);
+  });
+
+  // 2026-07-20 半面復活。単価は docs/pricing.json tennis.half が正本（index.html とも突合）。
+  it('テニス半面・平日割・照明', () => {
+    const t = SERVER_PLAN_PRICING.tennis_half as any;
+    expect(t.residentPrice).toBe(pricingJson.tennis.half.resident);
+    expect(t.nonResidentPrice).toBe(pricingJson.tennis.half.nonResident);
+    expect(t.weekdayDiscountResident).toBe(pricingJson.tennis.half.weekdayDiscount.resident);
+    expect(t.weekdayDiscountNonResident).toBe(pricingJson.tennis.half.weekdayDiscount.nonResident);
+    // 照明は全面と共通の器具レンタル単価（半面専用の照明単価は存在しない）。
+    expect(t.lightingPrice).toBe(pricingJson.tennis.lighting.price);
+  });
+
+  it('テニス半面の単価が料金表の実数と一致（回帰固定・240/280/120/140/630）', () => {
+    // pricing.json 側が書き換わったら気付けるよう、料金表原本の数値そのものでも固定する。
+    expect(pricingJson.tennis.half.resident).toBe(240);
+    expect(pricingJson.tennis.half.nonResident).toBe(280);
+    expect(pricingJson.tennis.half.weekdayDiscount.resident).toBe(120);
+    expect(pricingJson.tennis.half.weekdayDiscount.nonResident).toBe(140);
+    expect(pricingJson.tennis.lighting.price).toBe(630);
+    // 17時以降は平日割対象外＝照明に割引は掛からない（2026-04-12 上村確認）。
+    expect(pricingJson.tennis.lighting.weekdayDiscountApplies).toBe(false);
   });
 
   it('みどりの広場 全4枠（市民/市外/学生市民/学生市外）＋夜間照明', () => {
@@ -90,6 +130,28 @@ describe('価格表ドリフト検出（SERVER_PLAN_PRICING ↔ index.html PLANS
       expect(s.extraChild).toBe(htmlPlanNumber(planId, 'extraChild'));
       expect(s.extraInfant).toBe(htmlPlanNumber(planId, 'extraInfant'));
     }
+  });
+
+  it('テニス（全面/半面）の全価格フィールドが index.html PLANS と一致', () => {
+    // サーバ表とフロント PLANS の乖離＝ユーザに見せた金額と保存金額のズレ。全フィールドを突合する。
+    for (const planId of ['tennis_full', 'tennis_half']) {
+      const t = SERVER_PLAN_PRICING[planId] as any;
+      expect(t.residentPrice).toBe(htmlPlanNumberStrict(planId, 'residentPrice'));
+      expect(t.nonResidentPrice).toBe(htmlPlanNumberStrict(planId, 'nonResidentPrice'));
+      expect(t.weekdayDiscountResident).toBe(htmlPlanNumberStrict(planId, 'weekdayDiscountResident'));
+      expect(t.weekdayDiscountNonResident).toBe(htmlPlanNumberStrict(planId, 'weekdayDiscountNonResident'));
+      expect(t.lightingPrice).toBe(htmlPlanNumberStrict(planId, 'lightingPrice'));
+      expect(t.guestEstimateMax).toBe(htmlPlanNumberStrict(planId, 'guestEstimateMax'));
+      // 平日割はフロントで有効＝サーバも常に平日割判定を通す前提（computeServerPricing 側は常時 true）。
+      expect(htmlPlanBlock(planId)).toMatch(/weekdayDiscount:\s*true/);
+    }
+  });
+
+  it('courtType がフロントの申告値と同じ語彙（half/full）', () => {
+    // index.html: courtType: plan.id === 'tennis_half' ? 'half' : 'full'
+    expect((SERVER_PLAN_PRICING.tennis_full as any).courtType).toBe('full');
+    expect((SERVER_PLAN_PRICING.tennis_half as any).courtType).toBe('half');
+    expect(indexHtml).toContain("courtType: plan.id === 'tennis_half' ? 'half' : 'full'");
   });
 
   it('固定料金・キャンプ・ロッジ', () => {
@@ -194,6 +256,77 @@ describe('パリティ：pricingServer コア ≡ assets/js/pricing.js', () => {
     const plan = { residentPrice: 630, nonResidentPrice: 760, weekdayDiscount: true };
     const opts = { hours: ['0900', '1000'], isResident: true, useLighting: false, courtCount: 2, isWeekdayDiscountHour: () => true };
     expect(calculateHourlyTennisPrice(plan, opts)).toBe(NisshoPricing.calculateHourlyTennisPrice(plan, opts));
+  });
+
+  // ── 半面（tennis_half・2026-07-20 復活）全組合せ ──
+  // 市民/市外 × 平日割あり/なし × 照明あり/なし × 1〜4枠 = 32通り。
+  // 3者一致を要求する：
+  //   ① サーバ表 SERVER_PLAN_PRICING.tennis_half で計算した値
+  //   ② index.html PLANS から復元した表をフロント実装 pricing.js で計算した値
+  //   ③ docs/pricing.json から手で再導出したハードコード実数
+  // ①②だけだと両方同時に間違っていても素通りするため、③で実数を固定する。
+  describe('テニス半面：サーバ / フロント / 料金表実数 の3者一致', () => {
+    const halfFromServer = { ...(SERVER_PLAN_PRICING.tennis_half as any), weekdayDiscount: true };
+    const halfFromHtml = {
+      residentPrice: htmlPlanNumberStrict('tennis_half', 'residentPrice'),
+      nonResidentPrice: htmlPlanNumberStrict('tennis_half', 'nonResidentPrice'),
+      weekdayDiscount: true,
+      weekdayDiscountResident: htmlPlanNumberStrict('tennis_half', 'weekdayDiscountResident'),
+      weekdayDiscountNonResident: htmlPlanNumberStrict('tennis_half', 'weekdayDiscountNonResident'),
+      lightingPrice: htmlPlanNumberStrict('tennis_half', 'lightingPrice'),
+    };
+    // すべて 8:30-17:00 に完全に収まる1時間枠（平日なら全枠が割引対象になる並び）。
+    const HOURS = ['0900', '1000', '1100', '1200'];
+
+    // n=1..4 の期待額。単価 × 枠数（＋照明 630 × 枠数）。人数もコート数も掛けない。
+    const EXPECTED: Record<string, number[]> = {
+      // 平日割なし（土日祝・夜間など）：市民240 / 市外280
+      '平日割なし|市民|照明なし': [240, 480, 720, 960],
+      '平日割なし|市外|照明なし': [280, 560, 840, 1120],
+      '平日割なし|市民|照明あり': [870, 1740, 2610, 3480],   // (240+630)×n
+      '平日割なし|市外|照明あり': [910, 1820, 2730, 3640],   // (280+630)×n
+      // 平日割あり（平日 8:30-17:00 に枠が完全に収まる）：市民120 / 市外140
+      '平日割あり|市民|照明なし': [120, 240, 360, 480],
+      '平日割あり|市外|照明なし': [140, 280, 420, 560],
+      '平日割あり|市民|照明あり': [750, 1500, 2250, 3000],   // (120+630)×n・照明は割引対象外
+      '平日割あり|市外|照明あり': [770, 1540, 2310, 3080],   // (140+630)×n・照明は割引対象外
+    };
+
+    for (const discounted of [false, true]) {
+      for (const isResident of [true, false]) {
+        for (const useLighting of [false, true]) {
+          const key = [
+            discounted ? '平日割あり' : '平日割なし',
+            isResident ? '市民' : '市外',
+            useLighting ? '照明あり' : '照明なし',
+          ].join('|');
+          it(`${key}：1〜4枠 = [${EXPECTED[key].join(', ')}]`, () => {
+            const server: number[] = [];
+            const front: number[] = [];
+            for (let n = 1; n <= 4; n++) {
+              const opts = {
+                hours: HOURS.slice(0, n),
+                isResident,
+                useLighting,
+                courtCount: 1, // 半面は court_1 の1面のみ＝常に1
+                isWeekdayDiscountHour: () => discounted,
+              };
+              server.push(calculateHourlyTennisPrice(halfFromServer, opts));
+              front.push(NisshoPricing.calculateHourlyTennisPrice(halfFromHtml, opts));
+            }
+            expect(server).toEqual(EXPECTED[key]); // ①≡③
+            expect(front).toEqual(EXPECTED[key]);  // ②≡③（結果として①≡②）
+          });
+        }
+      }
+    }
+
+    it('半面と全面は別単価（表の取り違えを検出）', () => {
+      const opts = { hours: ['0900'], isResident: true, useLighting: false, courtCount: 1, isWeekdayDiscountHour: () => false };
+      const full = { ...(SERVER_PLAN_PRICING.tennis_full as any), weekdayDiscount: true };
+      expect(calculateHourlyTennisPrice(halfFromServer, opts)).toBe(240);
+      expect(calculateHourlyTennisPrice(full, opts)).toBe(630);
+    });
   });
 
   it('キャンプ：区画×泊 全一致', () => {
@@ -359,6 +492,166 @@ describe('computeServerPricing：テニス（平日割サーバ判定）', () =>
     expect(computeServerPricing(tennisC(), { declaredPricing: { sportGuestEstimate: 99 } }).pricing.sportGuestEstimate).toBe(0); // tennis max 10 超過
     expect(computeServerPricing(tennisC(), { declaredPricing: { sportGuestEstimate: -1 } }).pricing.sportGuestEstimate).toBe(0);
     expect(computeServerPricing(tennisC(), {}).pricing.sportGuestEstimate).toBeNull();
+  });
+});
+
+// 半面（tennis_half）を computeServerPricing の実経路で通す（canonical slots → 1時間枠復元 →
+// 実日付での平日割判定 → 料金）。core パリティは上の3者一致テストで担保済みなので、
+// ここでは「実日付・実 canonical でも同じ額になる」ことと出力形状・改ざん耐性を見る。
+describe('computeServerPricing：テニス半面（tennis_half・2026-07-20 復活）', () => {
+  const WEEKDAY = '2026-05-13'; // 水・非祝日 → 8:30-17:00 に収まる枠は平日割
+  const WEEKEND = '2026-05-16'; // 土 → 平日割なし
+  const HOURS = ['0900', '1000', '1100', '1200'];
+
+  /** n枠ぶんの canonical。半面は court_1 の1面のみ・1時間枠＝30分キー2つ。 */
+  const halfC = (date: string, n: number) => canonical({
+    planId: 'tennis_half', kind: 'tennis', roomIds: ['court_1'],
+    slots: HOURS.slice(0, n).flatMap(h => [`court_1|${date}|${h}`, `court_1|${date}|${h.slice(0, 2)}30`]),
+    startDate: date, endDate: date, serviceDates: [date],
+  });
+
+  /** フロント側 SSOT（index.html PLANS の実値を pricing.js に食わせる）。 */
+  const frontHalfPlan = {
+    residentPrice: htmlPlanNumberStrict('tennis_half', 'residentPrice'),
+    nonResidentPrice: htmlPlanNumberStrict('tennis_half', 'nonResidentPrice'),
+    weekdayDiscount: true,
+    weekdayDiscountResident: htmlPlanNumberStrict('tennis_half', 'weekdayDiscountResident'),
+    weekdayDiscountNonResident: htmlPlanNumberStrict('tennis_half', 'weekdayDiscountNonResident'),
+    lightingPrice: htmlPlanNumberStrict('tennis_half', 'lightingPrice'),
+  };
+
+  const CASES: Array<{ date: string; isResident: boolean; useLighting: boolean; expected: number[] }> = [
+    { date: WEEKEND, isResident: true,  useLighting: false, expected: [240, 480, 720, 960] },
+    { date: WEEKEND, isResident: false, useLighting: false, expected: [280, 560, 840, 1120] },
+    { date: WEEKEND, isResident: true,  useLighting: true,  expected: [870, 1740, 2610, 3480] },
+    { date: WEEKEND, isResident: false, useLighting: true,  expected: [910, 1820, 2730, 3640] },
+    { date: WEEKDAY, isResident: true,  useLighting: false, expected: [120, 240, 360, 480] },
+    { date: WEEKDAY, isResident: false, useLighting: false, expected: [140, 280, 420, 560] },
+    { date: WEEKDAY, isResident: true,  useLighting: true,  expected: [750, 1500, 2250, 3000] },
+    { date: WEEKDAY, isResident: false, useLighting: true,  expected: [770, 1540, 2310, 3080] },
+  ];
+
+  for (const c of CASES) {
+    const label = `${c.date === WEEKDAY ? '平日(水)' : '週末(土)'}/${c.isResident ? '市民' : '市外'}/${c.useLighting ? '照明あり' : '照明なし'}`;
+    it(`${label}：1〜4枠 = [${c.expected.join(', ')}]（サーバ実経路＝フロント＝料金表）`, () => {
+      const server: number[] = [];
+      const front: number[] = [];
+      for (let n = 1; n <= 4; n++) {
+        server.push(computeServerPricing(halfC(c.date, n), {
+          isResident: c.isResident,
+          declaredPricing: { tennis: { useLighting: c.useLighting } },
+        }).pricing.total);
+        front.push(NisshoPricing.calculateHourlyTennisPrice(frontHalfPlan, {
+          hours: HOURS.slice(0, n),
+          isResident: c.isResident,
+          useLighting: c.useLighting,
+          courtCount: 1,
+          isWeekdayDiscountHour: (h: string) => isTennisWeekdayDiscountSlot(c.date, h),
+        }));
+      }
+      expect(server).toEqual(c.expected);
+      expect(front).toEqual(c.expected);
+    });
+  }
+
+  it('出力形状：courtType=half・枠数・割引枠数・照明料（1面分）', () => {
+    const { pricing } = computeServerPricing(halfC(WEEKDAY, 3), {
+      isResident: true, declaredPricing: { tennis: { useLighting: true } },
+    });
+    expect(pricing.tennis).toEqual({
+      courtType: 'half', isResident: true, totalHours: 3, weekdayDiscountHours: 3,
+      useLighting: true, lightingFee: 630 * 3,
+    });
+    expect(pricing.total).toBe(120 * 3 + 630 * 3); // 2250
+  });
+
+  it('週末は割引枠数0・照明OFFなら lightingFee 0', () => {
+    const { pricing } = computeServerPricing(halfC(WEEKEND, 2), { isResident: false });
+    expect(pricing.tennis).toEqual({
+      courtType: 'half', isResident: false, totalHours: 2, weekdayDiscountHours: 0,
+      useLighting: false, lightingFee: 0,
+    });
+    expect(pricing.total).toBe(280 * 2);
+  });
+
+  it('平日でも祝日は割引しない（2026-07-20 海の日・月曜）', () => {
+    const { pricing } = computeServerPricing(halfC('2026-07-20', 1), { isResident: true });
+    expect(pricing.total).toBe(240); // 120 ではない
+    expect(pricing.tennis!.weekdayDiscountHours).toBe(0);
+  });
+
+  it('平日割の時間境界（8:30 前・17:00 超過は対象外）', () => {
+    const at = (start: string, pair: string) => canonical({
+      planId: 'tennis_half', kind: 'tennis', roomIds: ['court_1'],
+      slots: [`court_1|${WEEKDAY}|${start}`, `court_1|${WEEKDAY}|${pair}`],
+      startDate: WEEKDAY, endDate: WEEKDAY, serviceDates: [WEEKDAY],
+    });
+    expect(computeServerPricing(at('0800', '0830'), { isResident: true }).pricing.total).toBe(240); // 8:30 前開始
+    expect(computeServerPricing(at('1630', '1700'), { isResident: true }).pricing.total).toBe(240); // 17:00 超過
+    expect(computeServerPricing(at('1600', '1630'), { isResident: true }).pricing.total).toBe(120); // 16:00-17:00 は対象
+  });
+
+  it('人数は料金に一切影響しない（空間貸し運用・2026-04-12 上村確認）', () => {
+    const base = computeServerPricing(halfC(WEEKEND, 2), { isResident: true }).pricing.total;
+    expect(base).toBe(480);
+    // guests / guestCount / sportGuestEstimate をどう振っても定額のまま。
+    for (const inputs of [
+      { isResident: true, guests: { adult: 8, elementary: 4, child: 2 } },
+      { isResident: true, guestCount: 8 },
+      { isResident: true, declaredPricing: { sportGuestEstimate: 10 } },
+    ]) {
+      expect(computeServerPricing(halfC(WEEKEND, 2), inputs).pricing.total).toBe(base);
+    }
+  });
+
+  it('半面は常に1面（複数コート倍率が構造的に発生しない）', () => {
+    // 在庫ルール側で court_1 の1面に限定されているため courtCount は常に 1。
+    expect(RESERVATION_PLAN_RULES.tennis_half.rooms).toEqual(['court_1']);
+    expect(RESERVATION_PLAN_RULES.tennis_half.maxRooms).toBe(1);
+    expect(computeServerPricing(halfC(WEEKEND, 1), { isResident: true }).pricing.total).toBe(240);
+  });
+
+  it('改ざん total:1 はサーバ計算値へ収束し mismatch を記録', () => {
+    const r = computeServerPricing(halfC(WEEKEND, 2), {
+      isResident: true, declaredPricing: { total: 1, tennis: { useLighting: false } },
+    });
+    expect(r.pricing.total).toBe(480);
+    expect(r.mismatch).toEqual({ claimedTotal: 1, computedTotal: 480 });
+  });
+
+  it('全面料金を申告しても半面料金に是正される（プラン取り違えの詐称）', () => {
+    // tennis_half 予約に tennis_full 相当（630）を申告 → サーバは planId 由来の 240 を採用。
+    const r = computeServerPricing(halfC(WEEKEND, 1), {
+      isResident: true, declaredPricing: { total: 630, tennis: { courtType: 'full', useLighting: false } },
+    });
+    expect(r.pricing.total).toBe(240);
+    expect(r.pricing.tennis!.courtType).toBe('half'); // 申告 courtType は不採用
+    expect(r.mismatch).toEqual({ claimedTotal: 630, computedTotal: 240 });
+  });
+
+  it('平日割枠数の詐称はサーバが日付から上書き（週末に割引申告）', () => {
+    const r = computeServerPricing(halfC(WEEKEND, 1), {
+      isResident: true,
+      declaredPricing: { total: 120, tennis: { weekdayDiscountHours: 1, useLighting: false } },
+    });
+    expect(r.pricing.total).toBe(240);
+    expect(r.pricing.tennis!.weekdayDiscountHours).toBe(0);
+  });
+
+  it('照明ONの詐称は「事実申告」として採用し、金額はサーバが計算する', () => {
+    // useLighting は窓口で対面確認される性質の選択事実。金額側は必ずサーバ計算。
+    const r = computeServerPricing(halfC(WEEKEND, 1), {
+      isResident: true, declaredPricing: { total: 1, tennis: { useLighting: true, lightingFee: 1 } },
+    });
+    expect(r.pricing.total).toBe(240 + 630);
+    expect(r.pricing.tennis!.lightingFee).toBe(630);
+  });
+
+  it('sportGuestEstimate は範囲内透過・範囲外は0（半面も上限10）', () => {
+    const c = halfC(WEEKEND, 1);
+    expect(computeServerPricing(c, { declaredPricing: { sportGuestEstimate: 4 } }).pricing.sportGuestEstimate).toBe(4);
+    expect(computeServerPricing(c, { declaredPricing: { sportGuestEstimate: 99 } }).pricing.sportGuestEstimate).toBe(0);
+    expect(computeServerPricing(c, {}).pricing.sportGuestEstimate).toBeNull();
   });
 });
 

@@ -189,4 +189,73 @@ describe('#17 サーバ権威料金（createReservation 実コード・emulator�
     expect(data.pricing.tennis.weekdayDiscountHours).not.toBe(99);
     expect(data.pricingMismatch.claimedTotal).toBe(1);
   });
+
+  // ── 半面（tennis_half・2026-07-20 復活）──
+  // OPEN_WEDNESDAY は実行日から動的に決まり祝日の可能性があるため、期待額は
+  // 「サーバ自身が保存した weekdayDiscountHours」から導く（半面の単価 120/240 は厳密に固定）。
+  it('テニス半面：改ざん total:1 → 半面単価のサーバ計算値を保存し courtType=half が残る', async () => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'tennis_half', roomIds: ['court_1'],
+        slots: ['court_1|' + OPEN_WEDNESDAY + '|0900', 'court_1|' + OPEN_WEDNESDAY + '|0930'],
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田', phone: '090-0000-0000', isMember: true },
+        pricing: { total: 1, tennis: { courtType: 'half', useLighting: false } },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+    const data = await storedPricing(r.body.internalId);
+    expect(data.planId).toBe('tennis_half');
+    const wdh = data.pricing.tennis.weekdayDiscountHours;
+    expect([0, 1]).toContain(wdh);
+    // 平日割なら 120、非割引なら 240。全面(320/630)にはならない＝表の取り違えも検出する。
+    expect(data.pricing.total).toBe(wdh === 1 ? 120 : 240);
+    expect(data.pricing.tennis.courtType).toBe('half');
+    expect(data.pricing.tennis.totalHours).toBe(1);
+    expect(data.pricingMismatch).toEqual({ claimedTotal: 1, computedTotal: data.pricing.total });
+  });
+
+  it('テニス半面：照明ON・2枠 → (単価+630)×2 をサーバが計算（照明は割引対象外）', async () => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'tennis_half', roomIds: ['court_1'],
+        slots: [
+          'court_1|' + OPEN_WEDNESDAY + '|0900', 'court_1|' + OPEN_WEDNESDAY + '|0930',
+          'court_1|' + OPEN_WEDNESDAY + '|1000', 'court_1|' + OPEN_WEDNESDAY + '|1030',
+        ],
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田', phone: '090-0000-0000', isMember: false },
+        pricing: { total: 1, tennis: { courtType: 'half', useLighting: true } },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+    const data = await storedPricing(r.body.internalId);
+    const wdh = data.pricing.tennis.weekdayDiscountHours;
+    expect([0, 2]).toContain(wdh);
+    const unit = wdh === 2 ? 140 : 280; // 市外：平日割140 / 通常280
+    expect(data.pricing.total).toBe((unit + 630) * 2);
+    expect(data.pricing.tennis.lightingFee).toBe(630 * 2); // 1面分（半面は常に1面）
+    expect(data.pricing.tennis.useLighting).toBe(true);
+  });
+
+  it('テニス半面：pricing 省略（staff相当）でもサーバが半面単価を計算して保存', async () => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'tennis_half', roomIds: ['court_1'],
+        slots: ['court_1|' + OPEN_WEDNESDAY + '|1800', 'court_1|' + OPEN_WEDNESDAY + '|1830'],
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田', phone: '090-0000-0000' },
+        pricing: null,
+      },
+    });
+    expect(r.statusCode).toBe(201);
+    const data = await storedPricing(r.body.internalId);
+    // 18:00 枠は 8:30-17:00 外＝平日割対象外。isMember 未指定＝市外 280 円。
+    expect(data.pricing.total).toBe(280);
+    expect(data.pricing.tennis).toMatchObject({ courtType: 'half', weekdayDiscountHours: 0, useLighting: false });
+    expect(data.pricingMismatch).toBeUndefined();
+  });
 });
