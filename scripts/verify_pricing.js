@@ -133,6 +133,31 @@ run('tennis_half のコートは1面のみ', () => {
   return okCount && okRoom && noMulti;
 });
 
+// === テニス 半面の表記が定額（人数掛けなし）で統一されているか ===
+// 2026-04-12 上村回答（空間貸し・人数掛けなし／pricing.json resolvedConfirmations）に基づき、
+// 表示・単価表記に「1人」を残さない。perPerson は参照ロジックの無い死にフィールドなので存在してはいけない
+// （表記だけ「1人1時間」に戻すリグレッションを検知する）。
+run('tennis_half の表記が定額統一（1人 / perPerson なし）', () => {
+  const plan = extractPlan('tennis_half');
+  const noPerPerson = !/perPerson/.test(plan.block);
+  if (!noPerPerson) console.error('  ❌ tennis_half に perPerson が残っている（定額運用と矛盾する死にフィールド）');
+  else console.log('  ✅ perPerson フィールドなし');
+
+  const noPersonInBlock = !plan.block.includes('1人');
+  if (!noPersonInBlock) console.error('  ❌ tennis_half の priceDisplay/note/priceUnit に「1人」が残っている');
+  else console.log('  ✅ priceDisplay/note/priceUnit に「1人」なし');
+
+  const noPersonUnit = !/priceUnit:\s*'[^']*人[^']*'/.test(plan.block);
+  if (!noPersonUnit) console.error('  ❌ tennis_half の priceUnit に「人」単位が残っている');
+  else console.log('  ✅ priceUnit は人単位でない');
+
+  const jsonUnitClean = !String(pricing.tennis.half.unit || '').includes('1人');
+  if (!jsonUnitClean) console.error('  ❌ pricing.json tennis.half.unit に「1人」が残っている');
+  else console.log('  ✅ pricing.json tennis.half.unit に「1人」なし（現在: ' + pricing.tennis.half.unit + '）');
+
+  return noPerPerson && noPersonInBlock && noPersonUnit && jsonUnitClean;
+});
+
 // === みどり 午前 ===
 run('midori_am (みどり午前)', () => {
   const plan = extractPlan('midori_am');

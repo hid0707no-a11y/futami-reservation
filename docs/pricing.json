@@ -20,7 +20,7 @@
     },
     "half": {
       "label": "テニスコート 半面（練習用）",
-      "unit": "1人1時間",
+      "unit": "半面1枠・1時間",
       "resident": 240,
       "nonResident": 280,
       "weekdayDiscount": {

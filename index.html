@@ -1300,19 +1300,17 @@ const PLANS = [
     hourlyRange: { start: 8, end: 22 },
     basePrice: 240,
     residentPrice: 240, nonResidentPrice: 280,
-    // ⚠️ 表記は削除前(2026-05-13以前)の verbatim 復元。料金表 docs/pricing.json も unit="1人1時間"。
-    // ただし計算は「空間貸し運用のため人数掛けしない」(上村確認・2026-04-12) ＝ 1時間あたり定額。
-    // 表記と計算が食い違っているが、当時の挙動を忠実に復元する方針のため据え置き（要運営確認）。
-    priceUnit: '人/時',
-    priceDisplay: '市民240円/市外280円（1人/1時間）',
-    perPerson: true,
+    // 2026-04-12 上村回答（docs/pricing.json resolvedConfirmations 参照・空間貸し／人数掛けなし）に基づき
+    // 定額表記へ統一済み。料金計算は元から「単価 × 時間数」で人数を掛けていない（表記のみ是正）。
+    priceUnit: '半面/時',
+    priceDisplay: '市民240円/市外280円（半面1枠・1時間あたり）',
     weekdayDiscount: true,
     weekdayDiscountResident: 120,     // 料金表固定値
     weekdayDiscountNonResident: 140,  // 料金表固定値
     lightingPrice: 630, lightingLabel: '夜間照明（1時間 630円・コート単位）',
     guestEstimateMax: 10, // 利用人数目安の上限（行政報告用・料金には影響しない）
     badge: '半面練習', badgeColor: '#0284c7',
-    note: '練習用（1人1時間単価）／コートAの半面をご利用いただけます／平日 8:30〜17:00 は市民 120 円 / 市外 140 円（土日・祝日・大会日は対象外／2026-2027年の祝日は自動判定）／夜間照明は任意（1時間 630円・コート単位）' },
+    note: '練習用（半面1枠・1時間あたり定額）／コートAの半面をご利用いただけます／平日 8:30〜17:00 は市民 120 円 / 市外 140 円（土日・祝日・大会日は対象外／2026-2027年の祝日は自動判定）／夜間照明は任意（1時間 630円・コート単位）' },
 
   // ===== みどりの広場 =====
   { id: 'midori_am', name: 'みどりの広場 午前', planType: 'day_slot', category: 'sport',
