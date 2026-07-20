@@ -407,6 +407,11 @@ describe('computeServerPricing：サウナ（オプション）', () => {
     const r = computeServerPricing(c, { guestCount: 4, declaredPricing: { saunaOptions: { towels: 3 } } });
     expect(r.pricing.total).toBe(2300 * 4 + 550 * 3);
   });
+  it('ふたみの日サウナ：guestCount 省略時は handler と同じく guests.adult にフォールバック', () => {
+    const c = canonical({ planId: 'plan_sauna_futami', kind: 'futami_sauna', roomIds: ['sauna_share'], slots: ['sauna_share|2026-05-13|10', 'sauna_share|2026-05-13|11'] });
+    const r = computeServerPricing(c, { guests: { adult: 3 } });
+    expect(r.pricing.total).toBe(2300 * 3);
+  });
   it('サウナオプション数量の詐称は上限クランプ', () => {
     const c = canonical({ planId: 'sauna_1', kind: 'fixed_day', roomIds: ['sauna'], slots: ['sauna|2026-05-13|10', 'sauna|2026-05-13|11'] });
     const r = computeServerPricing(c, { declaredPricing: { saunaOptions: { towels: 999, tarpTent: 999, ice20kg: 999 } } });

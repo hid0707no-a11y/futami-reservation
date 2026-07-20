@@ -473,8 +473,10 @@ export function computeServerPricing(
     const optionFee = saunaOptionsFee(opts);
     pricing = { ...emptyPricing(table.basePrice + optionFee, optionFee), saunaOptions: opts };
   } else if (table.type === 'futami_sauna') {
-    // ふたみの日：1人単価×人数（人数は handler が 2〜8 で検証済み・保険で clamp）＋オプション。
-    const seats = Math.max(2, Math.min(8, toSafeInt(inputs.guestCount) ?? 2));
+    // ふたみの日：1人単価×人数＋オプション。人数解決は handler(createReservation)の
+    // `guestCount ?? guests?.adult ?? 2` と一致させる（handler が 2〜8 で検証・保険で clamp）。
+    const rawSeats = inputs.guestCount ?? inputs.guests?.adult ?? 2;
+    const seats = Math.max(2, Math.min(8, toSafeInt(rawSeats) ?? 2));
     const opts = readSaunaOptions(declared);
     const optionFee = saunaOptionsFee(opts);
     pricing = { ...emptyPricing(table.pricePerPerson * seats + optionFee, optionFee), saunaOptions: opts };
