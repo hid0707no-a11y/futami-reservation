@@ -182,12 +182,21 @@ export const createReservation = onRequest(
       // 権威的に再計算し、この serverPricing だけを保存する。クライアント申告の pricing.total は
       // 保存しない（total:1 等の改ざんは上書きされる）。丸め差等で total が一致しなくても予約は
       // 拒否せず、pricingMismatch を予約に併記＋構造化ログするだけにする（顧客予約の取りこぼし防止）。
-      const { pricing: serverPricing, mismatch: pricingMismatch } = computeServerPricing(canonical, {
+      //
+      // ただし職員手動予約（staff.html）だけは計算しない。職員画面に市民/市外の入力UIが無く
+      // customer.isMember を false 固定で送るため、サーバが計算すると伊予市民のお客様の予約でも
+      // 必ず市外料金（例 テニス半面 240→280）が保存され、日次同期でスプレッドシートの
+      // 「合計金額」列に載ってしまう。0円（＝明らかに未記入）なら人が気づけるが、尤もらしい
+      // 誤った金額は検知されないまま行政報告用の台帳に残る。分からない区分は埋めない方針で、
+      // 従来どおり pricing: null を保存する（職員画面への市民/市外入力追加が恒久対応・別途）。
+      const pricingResult = createdBy === 'staff' ? null : computeServerPricing(canonical, {
         guests,
         isResident: customer?.isMember === true,
         declaredPricing: pricing,
         guestCount,
       });
+      const serverPricing = pricingResult?.pricing ?? null;
+      const pricingMismatch = pricingResult?.mismatch ?? null;
       if (pricingMismatch) {
         console.error(JSON.stringify({
           severity: 'WARNING',
@@ -381,7 +390,8 @@ export const createReservation = onRequest(
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
-            saunaOptionsText: formatSaunaOptions(serverPricing.saunaOptions) || undefined,
+            // 職員経路は serverPricing=null（区分不明のため計算しない）→ オプション表記は省略。
+            saunaOptionsText: formatSaunaOptions(serverPricing?.saunaOptions) || undefined,
           };
           // #7 メール送信は応答前に await
           await Promise.allSettled([
@@ -478,7 +488,8 @@ export const createReservation = onRequest(
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '', reservationId: result.displayId,
         ...(isCamp ? { isCamp: true, guestCount: roomIds.length } : {}),
-        saunaOptionsText: formatSaunaOptions(serverPricing.saunaOptions) || undefined,
+        // 職員経路は serverPricing=null（区分不明のため計算しない）→ オプション表記は省略。
+        saunaOptionsText: formatSaunaOptions(serverPricing?.saunaOptions) || undefined,
       };
       // #7 メール送信は応答前に await
       await Promise.allSettled([
