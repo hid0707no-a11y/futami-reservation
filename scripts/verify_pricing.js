@@ -104,8 +104,24 @@ run('tennis_full (一面貸切)', () => {
 });
 
 // === テニス 半面練習 ===
-// 2026-05-13 削除（要望#11）：半面プランは廃止された。pricing.json 側に
-// tennis.half 定義が残っていても整合チェックは行わない。
+// 2026-05-13 削除（要望#11）→ 2026-07-22 復活。半面は壁打ちコート(court_wall)専用・
+// 1枠(1時間)定額（2026-07-21 上村さん回答で確定）。
+run('tennis_half (半面・壁打ち練習用)', () => {
+  const plan = extractPlan('tennis_half');
+  const spec = pricing.tennis.half;
+  return [
+    check('residentPrice', spec.resident, plan.residentPrice),
+    check('nonResidentPrice', spec.nonResident, plan.nonResidentPrice),
+    check('basePrice', spec.resident, plan.basePrice),
+    check('lightingPrice', pricing.tennis.lighting.price, plan.lightingPrice),
+    check('weekdayDiscountResident', spec.weekdayDiscount.resident, plan.weekdayDiscountResident),
+    check('weekdayDiscountNonResident', spec.weekdayDiscount.nonResident, plan.weekdayDiscountNonResident),
+    // 定額の生命線: 人数を掛ける旧表記・旧実装が再発していないか（perPerson フィールド禁止）
+    check('perPerson禁止', false, /perPerson/.test(plan.block)),
+    // 在庫はコートA〜Eではなく壁打ちコート専用
+    check('rooms=court_wall', true, /rooms:\s*\['court_wall'\]/.test(plan.block)),
+  ].every(Boolean);
+});
 
 // === みどり 午前 ===
 run('midori_am (みどり午前)', () => {
@@ -232,6 +248,7 @@ run('利用人数目安の上限設定', () => {
   };
   return [
     check('tennis_full.guestEstimateMax', 10, parseMax(tennisFull)),
+    check('tennis_half.guestEstimateMax', 10, parseMax(extractPlan('tennis_half'))),
     check('midori_am.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriAm)),
     check('midori_pm.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriPm)),
     check('midori_eve.guestEstimateMax', pricing.midori.guestEstimateMax.value, parseMax(midoriEve)),

@@ -157,6 +157,14 @@ export const SERVER_PLAN_PRICING: Readonly<Record<string, PlanPricing>> = {
     weekdayDiscountResident: 320, weekdayDiscountNonResident: 380,
     lightingPrice: 630, guestEstimateMax: 10,
   },
+  // 半面（壁打ち練習用・court_wall 専用）。2026-07-21 運営確認により
+  // 「半面1枠(1時間)の定額」で確定（公示料金表の「1人/1時間」は運営側で見直し予定）。
+  tennis_half: {
+    type: 'tennis',
+    residentPrice: 240, nonResidentPrice: 280,
+    weekdayDiscountResident: 120, weekdayDiscountNonResident: 140,
+    lightingPrice: 630, guestEstimateMax: 10,
+  },
 
   // ── みどりの広場 ──
   midori_am: { type: 'midori', resident: 1890, nonResident: 2200, studentResident: 1050, studentNonResident: 1260, lightingPrice: 0, lightingMaxHours: 0, guestEstimateMax: 150 },
@@ -294,7 +302,7 @@ export function tennisHourKeysFromSlots(slots: string[], roomIds: string[]): str
 // ─────────────────────────────────────────────
 
 export interface ServerPricingTennis {
-  courtType: 'full';
+  courtType: 'full' | 'half';
   isResident: boolean;
   totalHours: number;
   weekdayDiscountHours: number;
@@ -442,7 +450,7 @@ export function computeServerPricing(
     pricing = {
       ...emptyPricing(total),
       tennis: {
-        courtType: 'full',
+        courtType: canonical.planId === 'tennis_half' ? 'half' : 'full',
         isResident,
         totalHours: hourKeys.length,
         weekdayDiscountHours: discountedHourKeys.length,

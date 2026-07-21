@@ -517,3 +517,93 @@ describe('営業日・特別日config境界', () => {
     expect((await db.doc('config/special_days').get()).exists).toBe(false);
   });
 });
+
+
+// 2026-07-22 テニス半面（壁打ちコート court_wall）復活の real-path 統合テスト
+// 仕様根拠: 2026-07-21 上村さん回答（半面=独立施設・同時間1組まで・1枠240円定額）
+describe('tennis_half 復活（court_wall・real-path）', () => {
+  const halfBase = (over: any = {}) => ({
+    method: 'POST', query: {}, headers: {},
+    body: {
+      planId: 'tennis_half', roomIds: ['court_wall'],
+      slots: ['court_wall|' + OPEN_WEDNESDAY + '|1800', 'court_wall|' + OPEN_WEDNESDAY + '|1830'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+      customer: { name: '半面 太郎', phone: '090-1111-2222', isMember: true },
+      ...over,
+    },
+  });
+  const fullBase = (over: any = {}) => ({
+    method: 'POST', query: {}, headers: {},
+    body: {
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|1800', 'court_1|' + OPEN_WEDNESDAY + '|1830'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+      customer: { name: '全面 花子', phone: '090-3333-4444', isMember: true },
+      ...over,
+    },
+  });
+
+  it('半面予約が201で成立し、court_wall の tennis_slots とサーバ定額240円が保存される', async () => {
+    const r = await invoke(createReservation, halfBase());
+    expect(r.statusCode).toBe(201);
+    expect(r.body.status).toBe('confirmed');
+    expect(r.body.isTennis).toBe(true);
+    expect((await db.collection('tennis_slots').doc('court_wall|' + OPEN_WEDNESDAY + '|1800').get()).exists).toBe(true);
+    expect((await db.collection('tennis_slots').doc('court_wall|' + OPEN_WEDNESDAY + '|1830').get()).exists).toBe(true);
+    const snap = await db.collection('reservations').get();
+    expect(snap.size).toBe(1);
+    const stored = snap.docs[0].data();
+    expect(stored.planId).toBe('tennis_half');
+    expect(stored.roomIds).toEqual(['court_wall']);
+    // 18時枠＝平日割(8:30-17:00)対象外 → 市民1枠定額240円（人数に依存しない）
+    expect(stored.pricing.total).toBe(240);
+    expect(stored.pricing.tennis.courtType).toBe('half');
+  });
+
+  it('半面と全面(コートA)は同時間帯に併存できる（半面はコートAを塞がない）', async () => {
+    const half = await invoke(createReservation, halfBase());
+    expect(half.statusCode).toBe(201);
+    const full = await invoke(createReservation, fullBase());
+    expect(full.statusCode).toBe(201);
+    const snap = await db.collection('reservations').get();
+    expect(snap.size).toBe(2);
+  });
+
+  it('同時間の半面2件目は409 slot_conflict（半面コートは1つしかない）', async () => {
+    const first = await invoke(createReservation, halfBase());
+    expect(first.statusCode).toBe(201);
+    const second = await invoke(createReservation, halfBase({
+      customer: { name: '半面 次郎', phone: '090-5555-6666', isMember: false },
+    }));
+    expect(second.statusCode).toBe(409);
+    expect(second.body.error).toBe('slot_conflict');
+    const snap = await db.collection('reservations').get();
+    expect(snap.size).toBe(1);
+  });
+
+  it('半面をコートA〜Eへ直送すると400 plan_room_mismatch（誤案内・在庫毀損の防止）', async () => {
+    for (const court of ['court_1', 'court_3', 'court_5']) {
+      const r = await invoke(createReservation, halfBase({
+        roomIds: [court],
+        slots: [court + '|' + OPEN_WEDNESDAY + '|1800', court + '|' + OPEN_WEDNESDAY + '|1830'],
+      }));
+      expect(r.statusCode).toBe(400);
+      expect(r.body.error).toBe('plan_room_mismatch');
+    }
+  });
+
+  it('半面キャンセルで court_wall の tennis_slots が解放され、再予約できる', async () => {
+    const created = await invoke(createReservation, halfBase());
+    expect(created.statusCode).toBe(201);
+    const internalId = created.body.internalId;
+    const cancelled = await invoke(cancelReservation, {
+      method: 'POST', query: {}, headers: {}, body: { id: internalId },
+    });
+    expect(cancelled.statusCode).toBe(200);
+    expect((await db.collection('tennis_slots').doc('court_wall|' + OPEN_WEDNESDAY + '|1800').get()).exists).toBe(false);
+    const again = await invoke(createReservation, halfBase({
+      customer: { name: '半面 三郎', phone: '090-7777-8888', isMember: true },
+    }));
+    expect(again.statusCode).toBe(201);
+  });
+});
