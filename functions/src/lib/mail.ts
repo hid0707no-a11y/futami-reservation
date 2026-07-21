@@ -93,7 +93,9 @@ function logSmtpNotConfigured(kind: string, reservationId: string): void {
 }
 
 export interface MailData {
+  /** 顧客に見せるプラン名（日本語）。lib/labels.ts の planLabel() を通した値を渡すこと。 */
   planName: string;
+  /** 顧客に見せる施設名（日本語）。lib/labels.ts の formatRoomLabels() を通した値を渡すこと。 */
   roomName: string;
   startDate: string;
   endDate: string;
@@ -108,6 +110,32 @@ export interface MailData {
   isFutamiDay?: boolean;
   isTennis?: boolean;
   saunaOptionsText?: string;
+  /**
+   * 時刻が商品の一部になるプラン（テニス）の利用時間帯。例 '10:00〜11:00'。
+   * 2026-07-21 追加。undefined/'' のプラン（宿泊・キャンプ等）では時刻行を出力しない。
+   */
+  timeText?: string;
+  /**
+   * 職員通知メール専用の生ID（顧客向けメールには出さない）。
+   * スプレッドシート台帳の「プランID」「部屋ID」列が生IDのままなので、
+   * 職員が通知メールから台帳を引けるように併記する。
+   */
+  planId?: string;
+  roomIds?: string[];
+}
+
+/** 職員通知メール用の生ID行（顧客メールには使わない）。ID が無ければ空文字。 */
+function staffIdLine(data: MailData): string {
+  const rooms = Array.isArray(data.roomIds) ? data.roomIds.filter(r => typeof r === 'string' && r) : [];
+  const parts: string[] = [];
+  if (data.planId) parts.push(data.planId);
+  if (rooms.length > 0) parts.push(rooms.join(','));
+  return parts.length > 0 ? `\nID：${parts.join(' / ')}` : '';
+}
+
+/** 時刻行（テニス等・時刻を持つプランのみ）。持たないプランでは余計な行を出さない。 */
+function timeLine(data: MailData): string {
+  return data.timeText ? `\n時間：${data.timeText}` : '';
 }
 
 /** 予約確認メール（顧客向け）。送信失敗時は呼出側で .catch して logMailFailure へ。 */
@@ -128,7 +156,7 @@ export async function sendConfirmationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${timeLine(data)}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 ━━━━━━━━━━━━━━━━━━
 
 ※このメールは自動送信です。
@@ -167,8 +195,8 @@ export async function sendStaffNotification(data: MailData, type: 'new' | 'cance
 メール：${data.customerEmail || 'なし'}
 ご住所：${data.customerAddress || 'なし'}
 プラン：${data.planName}
-施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
+施設：${data.roomName}${staffIdLine(data)}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${timeLine(data)}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 `;
     await transporter.sendMail({
       from: `"ふたみ予約システム" <${SMTP_USER}>`,
@@ -200,7 +228,7 @@ export async function sendCancellationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${timeLine(data)}
 ━━━━━━━━━━━━━━━━━━
 
 またのご利用をお待ちしております。

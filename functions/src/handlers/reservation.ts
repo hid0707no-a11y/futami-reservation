@@ -10,7 +10,8 @@ import { setCors, checkOrigin } from '../lib/cors';
 import { checkRateLimit } from '../lib/rateLimit';
 import { requireStaffAuth } from '../lib/auth';
 import { audit as auditLog, logMailFailure } from '../lib/logger';
-import { formatCustomerAddress, generateDisplayId } from '../lib/format';
+import { formatCustomerAddress, formatTennisTimeRanges, generateDisplayId } from '../lib/format';
+import { formatRoomLabels, planLabel } from '../lib/labels';
 import { MailData, sendCancellationEmail, sendStaffNotification } from '../lib/mail';
 import { validateUpdateFields } from '../lib/validation';
 import { RESERVATION_STATUS } from '../constants';
@@ -354,7 +355,15 @@ export const cancelReservation = onRequest(
       const cancelDisplayId = cancelledData?.displayId || generateDisplayId(id);
       if (cancelledData?.customer) {
         const mailData: MailData = {
-          planName: cancelledData.planId || '', roomName: (cancelledData.roomIds || []).join(', '),
+          // 2026-07-21：キャンセル控えにも生ID（tennis_half / court_wall）を出さない。
+          // 時刻行はテニス予約のみ（宿泊・キャンプ等は従来どおり日付だけ）。
+          planName: planLabel(cancelledData.planId || ''),
+          roomName: formatRoomLabels(cancelledData.roomIds || []),
+          planId: cancelledData.planId || undefined,
+          roomIds: Array.isArray(cancelledData.roomIds) ? cancelledData.roomIds : undefined,
+          timeText: cancelledData.isTennis
+            ? (formatTennisTimeRanges(cancelledData.slots) || undefined)
+            : undefined,
           startDate: cancelledData.startDate || '', endDate: cancelledData.endDate || '',
           customerName: cancelledData.customer.name || '', customerPhone: cancelledData.customer.phone || '',
           customerEmail: cancelledData.customer.email || '',

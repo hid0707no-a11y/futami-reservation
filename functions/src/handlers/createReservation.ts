@@ -15,7 +15,8 @@ import { setCors, checkOrigin } from '../lib/cors';
 import { isVerifiedStaffRequest } from '../lib/auth';
 import { checkRateLimit } from '../lib/rateLimit';
 import { audit as auditLog, logMailFailure, logIdempotencyFailure } from '../lib/logger';
-import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../lib/format';
+import { formatCustomerAddress, formatSaunaOptions, formatTennisTimeRanges, generateDisplayId } from '../lib/format';
+import { formatRoomLabels, planLabel } from '../lib/labels';
 import { detectDisplayIdCollision } from '../lib/displayId';
 import { MailData, sendConfirmationEmail, sendStaffNotification, sendMonitorAlert } from '../lib/mail';
 import { validateReservationBody } from '../lib/validation';
@@ -269,7 +270,10 @@ export const createReservation = onRequest(
             return { id: resRef.id, displayId };
           });
           const mailData: MailData = {
-            planName: planId, roomName: roomIds.join(', '), startDate, endDate,
+            // 2026-07-21：顧客の控えに生ID（tennis_half/court_wall）を出さない＋時刻を必ず載せる。
+            planName: planLabel(planId), roomName: formatRoomLabels(roomIds), startDate, endDate,
+            timeText: formatTennisTimeRanges(slots) || undefined,
+            planId, roomIds, // 職員通知メールの台帳照合用（顧客メールには出力されない）
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: tennisResult.displayId, isTennis: true,
@@ -386,7 +390,10 @@ export const createReservation = onRequest(
             return { id: resRef.id, displayId };
           });
           const mailData: MailData = {
-            planName: planId, roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
+            // plan_sauna_futami / sauna_share は index.html に日本語定義が無い（送信時生成の合成ID）。
+            // 創作せず planLabel() のフォールバック（IDそのまま）に任せる★要確認。施設名は従来どおり明示。
+            planName: planLabel(planId), roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
+            planId, roomIds: ['sauna_share'], // 職員通知メールの台帳照合用
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
@@ -479,11 +486,11 @@ export const createReservation = onRequest(
         return { id: resRef.id, displayId };
       });
 
-      const roomNameForMail = isCamp
-        ? roomIds.map((r: string) => '区画' + ['①','②','③','④','⑤','⑥','⑦','⑧'][parseInt(r.split('_')[1], 10) - 1]).join('・')
-        : roomIds.join(', ');
+      // 2026-07-21：キャンプ専用の手組みラベル（'区画①'）も lib/labels.ts に一本化
+      //（'キャンプ区画①' 表記＝index.html / staff.html の ROOMS 表示と一致）。
       const mailData: MailData = {
-        planName: planId, roomName: roomNameForMail, startDate, endDate,
+        planName: planLabel(planId), roomName: formatRoomLabels(roomIds), startDate, endDate,
+        planId, roomIds, // 職員通知メールの台帳照合用（顧客メールには出力されない）
         customerName: customer.name, customerPhone: customer.phone,
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '', reservationId: result.displayId,
