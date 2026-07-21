@@ -259,3 +259,119 @@ describe('#17 サーバ権威料金（createReservation 実コード・emulator�
     expect(data.pricingMismatch).toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────
+// 職員手動予約（createdBy=staff）はサーバ料金を計算・保存しない
+//
+// staff.html には市民/市外の入力UIが無く customer.isMember を false 固定で送るため、
+// サーバが権威計算すると伊予市民のお客様の予約でも必ず市外料金が保存され、日次同期で
+// スプレッドシートの「合計金額」列に載る。0円（＝明らかに未記入）なら人が気づけるが、
+// 尤もらしい誤った金額は検知されないまま行政報告用の台帳に残る＝より悪い。
+//
+// ★このブロックの本命は「serverPricing を null にしたことで新たな 500 を作っていない」こと。
+//   handler はメール本文組立で serverPricing.saunaOptions をプロパティ直参照しており、
+//   null 安全化（?.）を怠るとテニス以外の職員予約が全経路 500 になる（現行より重い障害）。
+// ─────────────────────────────────────────────
+describe('#17-2 職員手動予約はサーバ料金を計算しない（市外料金の尤もらしい誤りを止める）', () => {
+  const authMock = jest.requireMock('../../src/lib/auth') as { isVerifiedStaffRequest: jest.Mock };
+  const mailMock = jest.requireMock('../../src/lib/mail') as {
+    sendConfirmationEmail: jest.Mock;
+    sendStaffNotification: jest.Mock;
+  };
+  const asStaff = () => authMock.isVerifiedStaffRequest.mockImplementation(async () => true);
+  const asWeb = () => authMock.isVerifiedStaffRequest.mockImplementation(async () => false);
+
+  beforeEach(() => {
+    mailMock.sendConfirmationEmail.mockClear();
+    mailMock.sendStaffNotification.mockClear();
+    asStaff();
+  });
+  // web 前提の既存 describe へ staff=true を漏らさない
+  afterEach(asWeb);
+
+  // staff.html が実際に送る形：pricing は null・isMember は入力UIが無いため false 固定。
+  const staffBody = (over: any = {}) => ({
+    method: 'POST', query: {}, headers: { authorization: 'Bearer staff' },
+    body: {
+      customer: { name: '山田', phone: '090-0000-0000', isMember: false },
+      pricing: null, createdBy: 'staff',
+      ...over,
+    },
+  });
+  const dayAmFields = {
+    planId: 'day_27_am', roomIds: ['room_27'],
+    slots: fixedSlots('room_27', OPEN_WEDNESDAY, [8, 9, 10, 11]),
+    startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+  };
+
+  it('一般プラン：pricing は null 保存・pricingMismatch も付かない', async () => {
+    const r = await invoke(createReservation, staffBody(dayAmFields));
+    expect(r.statusCode).toBe(201);
+    const data = await storedPricing(r.body.internalId);
+    expect(data.createdBy).toBe('staff');
+    expect(data.pricing).toBeNull();
+    expect(data.pricingMismatch).toBeUndefined();
+  });
+
+  it('★通常サウナ：serverPricing=null でもメール組立が落ちず 201（500 回帰テスト）', async () => {
+    const r = await invoke(createReservation, staffBody({
+      planId: 'sauna_1', roomIds: ['sauna'],
+      slots: fixedSlots('sauna', OPEN_WEDNESDAY, [10, 11]),
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(r.statusCode).toBe(201);
+    expect((await storedPricing(r.body.internalId)).pricing).toBeNull();
+    // メール経路まで実際に到達したことを固定（TypeError なら 500 で呼ばれない）
+    expect(mailMock.sendConfirmationEmail).toHaveBeenCalledTimes(1);
+    expect(mailMock.sendConfirmationEmail.mock.calls[0][0].saunaOptionsText).toBeUndefined();
+  });
+
+  it('★ふたみの日サウナ：serverPricing=null でもメール組立が落ちず 201（500 回帰テスト）', async () => {
+    await db.doc('config/special_days').set({ sauna_capacity_days: [OPEN_WEDNESDAY] });
+    const r = await invoke(createReservation, staffBody({
+      planId: 'plan_sauna_futami', roomIds: ['sauna_share'],
+      slots: fixedSlots('sauna_share', OPEN_WEDNESDAY, [10, 11]),
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+      guestCount: 4,
+    }));
+    expect(r.statusCode).toBe(201);
+    const data = await storedPricing(r.body.internalId);
+    expect(data.isFutamiDay).toBe(true);
+    expect(data.pricing).toBeNull();
+    expect(mailMock.sendConfirmationEmail).toHaveBeenCalledTimes(1);
+    expect(mailMock.sendConfirmationEmail.mock.calls[0][0].saunaOptionsText).toBeUndefined();
+  });
+
+  it('テニス：市民/市外が分からない職員経路では市外料金を埋めない（報告された実害）', async () => {
+    const r = await invoke(createReservation, staffBody({
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|0900', 'court_1|' + OPEN_WEDNESDAY + '|0930'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(r.statusCode).toBe(201);
+    const data = await storedPricing(r.body.internalId);
+    expect(data.isTennis).toBe(true);
+    expect(data.pricing).toBeNull();
+    expect(data.pricingMismatch).toBeUndefined();
+  });
+
+  it('職員経路なら customer.isMember=true を送っても計算しない（区分の値でなく経路で決まる）', async () => {
+    const r = await invoke(createReservation, staffBody({
+      ...dayAmFields,
+      customer: { name: '山田', phone: '090-0000-0000', isMember: true },
+    }));
+    expect(r.statusCode).toBe(201);
+    expect((await storedPricing(r.body.internalId)).pricing).toBeNull();
+  });
+
+  it('対比：同じ payload でも公開（非職員）経路はサーバ計算値を保存し total:1 改ざんを上書きする', async () => {
+    asWeb();
+    const r = await invoke(createReservation, staffBody({ ...dayAmFields, pricing: { total: 1 } }));
+    expect(r.statusCode).toBe(201);
+    const data = await storedPricing(r.body.internalId);
+    // body.createdBy='staff' の自己申告は無視され、認証結果で web になる
+    expect(data.createdBy).toBe('web');
+    expect(data.pricing.total).toBe(1790);
+    expect(data.pricingMismatch).toEqual({ claimedTotal: 1, computedTotal: 1790 });
+  });
+});
