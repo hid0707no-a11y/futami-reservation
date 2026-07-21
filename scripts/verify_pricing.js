@@ -105,7 +105,9 @@ run('tennis_full (一面貸切)', () => {
 
 // === テニス 半面練習 ===
 // 2026-05-13 に要望#11 を「削除」と誤解釈して外したが、真意は「コートを1面に絞る」
-// だったため 2026-07-20 に復活（コートは court_1 の1面のみ・単価は当時のまま）。
+// だったため 2026-07-20 に復活（単価は当時のまま）。
+// 2026-07-21 在庫是正：貸出単位は court_wall（壁打ち練習用の半面コート）1つ。
+// A〜Eの5面とは別に存在する独立施設で、「コートAの半分」ではない。
 run('tennis_half (半面練習)', () => {
   const plan = extractPlan('tennis_half');
   const spec = pricing.tennis.half;
@@ -120,13 +122,15 @@ run('tennis_half (半面練習)', () => {
 });
 
 // === テニス 半面のコート数（要望#11 の真意）===
-// 半面は「1面のみ」選べること。全面と同じ5面が並ぶのが上村さんの指摘した問題だった。
-run('tennis_half のコートは1面のみ', () => {
+// 半面は「1つのみ」選べること。全面と同じ5面が並ぶのが上村さんの指摘した問題だった。
+// 2026-07-21：その1つは court_wall（壁打ち練習用の半面コート）＝A〜Eとは別の独立施設。
+// court_1 に戻ると「半面1件でコートAが埋まる」不当な在庫消費が復活するので固定する。
+run('tennis_half のコートは半面コート(court_wall)1つのみ', () => {
   const plan = extractPlan('tennis_half');
   const m = plan.block.match(/rooms:\s*\[([^\]]*)\]/);
   const rooms = m ? m[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean) : [];
   const okCount = check('tennis_half.rooms.length', 1, rooms.length);
-  const okRoom = check('tennis_half.rooms[0]', 'court_1', rooms[0]);
+  const okRoom = check('tennis_half.rooms[0]', 'court_wall', rooms[0]);
   // 複数選択を許すと1面制限が意味を失うので allowMultiSelect が無いことも確認
   const noMulti = !/allowMultiSelect/.test(plan.block);
   if (!noMulti) console.error('  ❌ tennis_half に allowMultiSelect が付いている（1面制限が崩れる）');

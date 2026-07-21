@@ -503,10 +503,13 @@ describe('computeServerPricing：テニス半面（tennis_half・2026-07-20 復�
   const WEEKEND = '2026-05-16'; // 土 → 平日割なし
   const HOURS = ['0900', '1000', '1100', '1200'];
 
-  /** n枠ぶんの canonical。半面は court_1 の1面のみ・1時間枠＝30分キー2つ。 */
+  /**
+   * n枠ぶんの canonical。半面は court_wall（壁打ち練習用の半面コート）1つのみ・
+   * 1時間枠＝30分キー2つ。2026-07-21 に court_1 から是正（半面はコートAの半分ではない）。
+   */
   const halfC = (date: string, n: number) => canonical({
-    planId: 'tennis_half', kind: 'tennis', roomIds: ['court_1'],
-    slots: HOURS.slice(0, n).flatMap(h => [`court_1|${date}|${h}`, `court_1|${date}|${h.slice(0, 2)}30`]),
+    planId: 'tennis_half', kind: 'tennis', roomIds: ['court_wall'],
+    slots: HOURS.slice(0, n).flatMap(h => [`court_wall|${date}|${h}`, `court_wall|${date}|${h.slice(0, 2)}30`]),
     startDate: date, endDate: date, serviceDates: [date],
   });
 
@@ -582,8 +585,8 @@ describe('computeServerPricing：テニス半面（tennis_half・2026-07-20 復�
 
   it('平日割の時間境界（8:30 前・17:00 超過は対象外）', () => {
     const at = (start: string, pair: string) => canonical({
-      planId: 'tennis_half', kind: 'tennis', roomIds: ['court_1'],
-      slots: [`court_1|${WEEKDAY}|${start}`, `court_1|${WEEKDAY}|${pair}`],
+      planId: 'tennis_half', kind: 'tennis', roomIds: ['court_wall'],
+      slots: [`court_wall|${WEEKDAY}|${start}`, `court_wall|${WEEKDAY}|${pair}`],
       startDate: WEEKDAY, endDate: WEEKDAY, serviceDates: [WEEKDAY],
     });
     expect(computeServerPricing(at('0800', '0830'), { isResident: true }).pricing.total).toBe(240); // 8:30 前開始
@@ -605,9 +608,11 @@ describe('computeServerPricing：テニス半面（tennis_half・2026-07-20 復�
   });
 
   it('半面は常に1面（複数コート倍率が構造的に発生しない）', () => {
-    // 在庫ルール側で court_1 の1面に限定されているため courtCount は常に 1。
-    expect(RESERVATION_PLAN_RULES.tennis_half.rooms).toEqual(['court_1']);
+    // 在庫ルール側で court_wall（壁打ち練習用の半面コート）1つに限定されているため
+    // courtCount は常に 1。全面コート(court_1〜5)は半面プランでは選べない。
+    expect(RESERVATION_PLAN_RULES.tennis_half.rooms).toEqual(['court_wall']);
     expect(RESERVATION_PLAN_RULES.tennis_half.maxRooms).toBe(1);
+    expect(RESERVATION_PLAN_RULES.tennis_full.rooms).not.toContain('court_wall');
     expect(computeServerPricing(halfC(WEEKEND, 1), { isResident: true }).pricing.total).toBe(240);
   });
 

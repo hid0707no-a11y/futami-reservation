@@ -190,15 +190,17 @@ describe('#17 サーバ権威料金（createReservation 実コード・emulator�
     expect(data.pricingMismatch.claimedTotal).toBe(1);
   });
 
-  // ── 半面（tennis_half・2026-07-20 復活）──
+  // ── 半面（tennis_half・2026-07-20 復活 / 2026-07-21 在庫是正）──
+  // 半面の実体は court_wall（壁打ち練習用の半面コート＝A〜Eの5面とは別の独立施設）。
+  // 料金（240/280/120/140/630）は今回いっさい変えていない＝room だけ是正した回帰確認。
   // OPEN_WEDNESDAY は実行日から動的に決まり祝日の可能性があるため、期待額は
   // 「サーバ自身が保存した weekdayDiscountHours」から導く（半面の単価 120/240 は厳密に固定）。
   it('テニス半面：改ざん total:1 → 半面単価のサーバ計算値を保存し courtType=half が残る', async () => {
     const r = await invoke(createReservation, {
       method: 'POST', query: {}, headers: {},
       body: {
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|' + OPEN_WEDNESDAY + '|0900', 'court_1|' + OPEN_WEDNESDAY + '|0930'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|' + OPEN_WEDNESDAY + '|0900', 'court_wall|' + OPEN_WEDNESDAY + '|0930'],
         startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
         customer: { name: '山田', phone: '090-0000-0000', isMember: true },
         pricing: { total: 1, tennis: { courtType: 'half', useLighting: false } },
@@ -220,10 +222,10 @@ describe('#17 サーバ権威料金（createReservation 実コード・emulator�
     const r = await invoke(createReservation, {
       method: 'POST', query: {}, headers: {},
       body: {
-        planId: 'tennis_half', roomIds: ['court_1'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
         slots: [
-          'court_1|' + OPEN_WEDNESDAY + '|0900', 'court_1|' + OPEN_WEDNESDAY + '|0930',
-          'court_1|' + OPEN_WEDNESDAY + '|1000', 'court_1|' + OPEN_WEDNESDAY + '|1030',
+          'court_wall|' + OPEN_WEDNESDAY + '|0900', 'court_wall|' + OPEN_WEDNESDAY + '|0930',
+          'court_wall|' + OPEN_WEDNESDAY + '|1000', 'court_wall|' + OPEN_WEDNESDAY + '|1030',
         ],
         startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
         customer: { name: '山田', phone: '090-0000-0000', isMember: false },
@@ -244,8 +246,8 @@ describe('#17 サーバ権威料金（createReservation 実コード・emulator�
     const r = await invoke(createReservation, {
       method: 'POST', query: {}, headers: {},
       body: {
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|' + OPEN_WEDNESDAY + '|1800', 'court_1|' + OPEN_WEDNESDAY + '|1830'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|' + OPEN_WEDNESDAY + '|1800', 'court_wall|' + OPEN_WEDNESDAY + '|1830'],
         startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
         customer: { name: '山田', phone: '090-0000-0000' },
         pricing: null,

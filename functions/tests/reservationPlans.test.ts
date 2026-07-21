@@ -205,27 +205,29 @@ describe('canonicalizeReservation', () => {
   });
 
   // 2026-07-20: 半面プラン復活（要望#11の真意は「削除」ではなく「コートを1面に絞る」）
-  describe('tennis_half（半面・1面構成）', () => {
-    it('court_1 の正しい30分ペアを受理する', () => {
+  // 2026-07-21: 在庫是正。半面の実体は court_wall（壁打ち練習用の半面コート）＝A〜Eの5面とは
+  //   別に1つだけ存在する独立施設。旧実装の court_1 は「コートAの半分」という誤解に基づく。
+  describe('tennis_half（壁打ち練習用の半面コート・1施設構成）', () => {
+    it('court_wall の正しい30分ペアを受理する', () => {
       const result = canonicalizeReservation({
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|2026-08-05|0900', 'court_1|2026-08-05|0930'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|2026-08-05|0900', 'court_wall|2026-08-05|0930'],
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.planId).toBe('tennis_half');
         expect(result.value.kind).toBe('tennis');
-        expect(result.value.roomIds).toEqual(['court_1']);
+        expect(result.value.roomIds).toEqual(['court_wall']);
         expect(result.value.slots).toEqual([
-          'court_1|2026-08-05|0900',
-          'court_1|2026-08-05|0930',
+          'court_wall|2026-08-05|0900',
+          'court_wall|2026-08-05|0930',
         ]);
       }
     });
 
-    it('court_1 以外のコートは拒否する（1面構成の要）', () => {
-      for (const room of ['court_2', 'court_3', 'court_4', 'court_5']) {
+    it('court_1〜court_5（全面コート）は拒否する（半面は別施設）', () => {
+      for (const room of ['court_1', 'court_2', 'court_3', 'court_4', 'court_5']) {
         expect(canonicalizeReservation({
           planId: 'tennis_half', roomIds: [room],
           slots: [`${room}|2026-08-05|0900`, `${room}|2026-08-05|0930`],
@@ -236,11 +238,19 @@ describe('canonicalizeReservation', () => {
 
     it('複数コートの同時指定を拒否する（maxRooms=1）', () => {
       expect(canonicalizeReservation({
-        planId: 'tennis_half', roomIds: ['court_1', 'court_2'],
+        planId: 'tennis_half', roomIds: ['court_wall', 'court_1'],
         slots: [
+          'court_wall|2026-08-05|0900', 'court_wall|2026-08-05|0930',
           'court_1|2026-08-05|0900', 'court_1|2026-08-05|0930',
-          'court_2|2026-08-05|0900', 'court_2|2026-08-05|0930',
         ],
+        startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
+      })).toEqual({ ok: false, error: 'plan_room_mismatch' });
+    });
+
+    it('全面プラン(tennis_full)に court_wall は入れられない（逆方向の混入防止）', () => {
+      expect(canonicalizeReservation({
+        planId: 'tennis_full', roomIds: ['court_wall'],
+        slots: ['court_wall|2026-08-05|0900', 'court_wall|2026-08-05|0930'],
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       })).toEqual({ ok: false, error: 'plan_room_mismatch' });
     });
@@ -248,28 +258,28 @@ describe('canonicalizeReservation', () => {
     it('未ペア slot・範囲外時刻・日付ずれを拒否する', () => {
       // 30分1枠だけ（1時間ペアになっていない）
       expect(canonicalizeReservation({
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|2026-08-05|0900'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|2026-08-05|0900'],
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
       // 営業時間外（22:00 開始）
       expect(canonicalizeReservation({
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|2026-08-05|2200', 'court_1|2026-08-05|2230'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|2026-08-05|2200', 'court_wall|2026-08-05|2230'],
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
       // slot の日付が startDate と違う
       expect(canonicalizeReservation({
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|2026-08-06|0900', 'court_1|2026-08-06|0930'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|2026-08-06|0900', 'court_wall|2026-08-06|0930'],
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
     });
 
-    it('半面と全面は同じ slot キー空間を使う（同一コート同時間の二重予約が起きない）', () => {
+    it('半面と全面は別の slot キー空間になる（半面がコートAを塞がない）', () => {
       const half = canonicalizeReservation({
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|2026-08-05|0900', 'court_1|2026-08-05|0930'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|2026-08-05|0900', 'court_wall|2026-08-05|0930'],
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       });
       const full = canonicalizeReservation({
@@ -278,13 +288,18 @@ describe('canonicalizeReservation', () => {
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       });
       expect(half.ok && full.ok).toBe(true);
-      if (half.ok && full.ok) expect(half.value.slots).toEqual(full.value.slots);
+      if (half.ok && full.ok) {
+        // キーが1つも重ならない＝同一時間帯に併存できる（在庫の不当消費が起きない）
+        const overlap = half.value.slots.filter(s => full.value.slots.includes(s));
+        expect(overlap).toEqual([]);
+        expect(half.value.slots.every(s => s.startsWith('court_wall|'))).toBe(true);
+      }
     });
 
     it('旧整数時フォーマットは tennis_half では受理しない（planId=tennis のみの互換）', () => {
       expect(canonicalizeReservation({
-        planId: 'tennis_half', roomIds: ['court_1'],
-        slots: ['court_1|2026-08-05|9'],
+        planId: 'tennis_half', roomIds: ['court_wall'],
+        slots: ['court_wall|2026-08-05|9'],
         startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
       })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
     });
