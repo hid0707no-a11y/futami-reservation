@@ -82,7 +82,8 @@ interface HourlyFlatPricing {
  * テニス（30分開始1時間枠×コート数。平日割はサーバ判定）。
  * 一面貸切(tennis_full)と半面練習(tennis_half)の両方。空間貸し運用（2026-04-12 上村確認・
  * docs/pricing.json resolvedConfirmations）のため **人数は料金に一切掛けない**。半面は
- * court_1 の1面のみ貸出（reservationPlans.HALF_COURT_ROOMS）なので courtCount は常に 1。
+ * court_wall（壁打ち練習用の半面コート）1つのみ貸出（reservationPlans.HALF_COURT_ROOMS）
+ * なので courtCount は常に 1。
  */
 interface TennisPricing {
   type: 'tennis';

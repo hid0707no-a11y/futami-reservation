@@ -775,6 +775,10 @@ const ROOMS = [
   { id: 'court_3', name: 'コートC', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'court_4', name: 'コートD', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'court_5', name: 'コートE', building: 'テニス', icon: '\uD83C\uDFBE' },
+  // 壁打ち練習用の半面コート（2026-07-21 追加）。A〜Eの5面とは別に1つだけ存在する独立施設で、
+  // 「コートAの半分」ではない（公式サイト施設案内・公式料金表の「半面（練習用）」別行・
+  // 運営 上村さん 2026-07-21 回答「半面コートは一面しかない」に基づく）。
+  { id: 'court_wall', name: '半面コート（壁打ち練習用）', building: 'テニス', icon: '🎾' },
   { id: 'midori', name: 'みどりの広場', building: 'グラウンド', icon: '\u26BE' },
   { id: 'sauna', name: 'サンセットサウナ', building: 'サウナ', icon: '\uD83E\uDDD6' },
 ];
@@ -850,8 +854,9 @@ const PLANS = [
   // テニス（時間を都度選ぶ）
   { id: 'tennis_full', name: 'テニスコート', rooms: ['court_1','court_2','court_3','court_4','court_5'],
     slots: 'hourly', price: '市民630円/市外760円/面/時', badge: '\uD83C\uDFBE', color: '#0ea5e9' },
-  // 半面練習（2026-07-20 復活）: コートA 1面のみ。全面と同じ tennis_slots を占有する。
-  { id: 'tennis_half', name: 'テニスコート（半面）', rooms: ['court_1'],
+  // 半面練習（2026-07-20 復活 / 2026-07-21 在庫是正）: 壁打ち練習用の半面コート（court_wall）
+  // 1つのみ。A〜Eの5面とは別在庫なので、半面予約がコートAを塞ぐことはない。
+  { id: 'tennis_half', name: '半面コート（壁打ち練習用）', rooms: ['court_wall'],
     slots: 'hourly', price: '市民240円/市外280円/1時間', badge: '🎾 半面', color: '#0284c7' },
   // みどりの広場（3コマ制）
   { id: 'midori_am', name: 'みどりの広場 午前', rooms: ['midori'],

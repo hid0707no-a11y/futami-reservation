@@ -39,6 +39,15 @@ export const ROOM_IDS = {
   ROOMS: ['room_27', 'room_6_1', 'room_6_2', 'room_6_3', 'room_6_4',
           'room_exp', 'room_train', 'room_kitchen'],
   TENNIS_COURTS: ['court_1', 'court_2', 'court_3', 'court_4', 'court_5'],
+  // 2026-07-21: 壁打ち練習用の「半面コート」を独立在庫として追加。
+  // 根拠＝公式サイト施設案内「通常のテニスコートが5面、壁打ち練習用の半面コート1つが
+  // ございます」／公式料金表【R8】＜テニスコート＞に「半面（練習用）」行が別立て／
+  // 公式サイトにもコートA〜Eとは別の「壁打ちコート」ページが存在する。
+  // つまり半面は「コートAの半分」ではなく A〜E の5面とは別に1つだけ存在する施設。
+  // ID は既存の docs/calendar_mapping.md（壁打ちコート → court_wall）に合わせる。
+  // ★ court_ 接頭辞は意図的（validation.ts / createReservation.ts の isTennisPayload が
+  //    startsWith('court_') でテニス判定し tennis_slots 側の排他制御に載せるため）。
+  TENNIS_WALL: ['court_wall'],
   CAMPS: ['camp_1', 'camp_2', 'camp_3', 'camp_4', 'camp_5', 'camp_6', 'camp_7', 'camp_8'],
   LODGES: ['lodge_a', 'lodge_b'],
   OTHERS: ['midori', 'sauna', 'sauna_share'],
@@ -47,6 +56,7 @@ export const ROOM_IDS = {
 export const VALID_ROOM_IDS = new Set<string>([
   ...ROOM_IDS.ROOMS,
   ...ROOM_IDS.TENNIS_COURTS,
+  ...ROOM_IDS.TENNIS_WALL,
   ...ROOM_IDS.CAMPS,
   ...ROOM_IDS.LODGES,
   ...ROOM_IDS.OTHERS,
