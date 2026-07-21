@@ -1082,6 +1082,9 @@ const ROOMS = [
   { id: 'court_3', name: 'コートC', fullName: 'テニスコートC', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
   { id: 'court_4', name: 'コートD', fullName: 'テニスコートD', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
   { id: 'court_5', name: 'コートE', fullName: 'テニスコートE', building: 'テニス', icon: '\u{1F3BE}', capacity: 4 },
+  // 壁打ち練習用の半面コート（1つのみ）。コートA〜Eとは別の独立施設（公式サイト施設案内・料金表【R8】別行）。
+  // capacity は物理定員が運営未確認のため null（テニス系は定員フィルタ対象外なので検索には影響しない）。
+  { id: 'court_wall', name: '半面コート', fullName: '半面コート（壁打ち練習用）', building: 'テニス', icon: '\u{1F3BE}', capacity: null },
   { id: 'midori', name: 'みどりの広場', fullName: 'みどりの広場', building: 'グラウンド', icon: '\u26BE', capacity: 150 },
   { id: 'sauna', name: 'サンセットサウナ', fullName: '貸切サウナ（120分/8名まで）', building: 'サウナ', icon: '\u{1F9D6}', capacity: 8 },
 ];
@@ -1288,6 +1291,25 @@ const PLANS = [
     badge: '一面貸切', badgeColor: '#0ea5e9',
     note: '平日 8:30〜17:00 は市民 320 円 / 市外 380 円（土日・祝日・大会日は対象外／2026-2027年の祝日は自動判定）／夜間照明は任意（1時間 630円）' },
 
+  // 半面（壁打ち練習用）: コートA〜Eとは別の独立施設。市民 240円 / 市外 280円。
+  // 課金単位は「半面1枠(1時間)の定額」＝2026-07-21 運営確認（公示料金表の「1人/1時間」は運営側で見直し予定）。
+  // 平日割 120/140 は料金表固定値。
+  { id: 'tennis_half', name: '半面コート（壁打ち練習用）', planType: 'hourly', category: 'sport',
+    rooms: ['court_wall'],
+    slots: 'hourly',
+    hourlyRange: { start: 8, end: 22 },
+    basePrice: 240,
+    residentPrice: 240, nonResidentPrice: 280,
+    priceUnit: '半面/時',
+    priceDisplay: '市民240円/市外280円（半面/1時間）',
+    weekdayDiscount: true,
+    weekdayDiscountResident: 120,     // 料金表固定値
+    weekdayDiscountNonResident: 140,  // 料金表固定値
+    lightingPrice: 630, lightingLabel: '夜間照明（1時間 630円）',
+    guestEstimateMax: 10, // 利用人数目安の上限（行政報告用・料金には影響しない）
+    badge: '半面練習', badgeColor: '#0284c7',
+    note: '壁打ち練習用の半面コートです（テニスコートA〜Eとは別の専用コート・1枠1時間の定額）／平日 8:30〜17:00 は市民 120 円 / 市外 140 円（土日・祝日・大会日は対象外／2026-2027年の祝日は自動判定）／夜間照明は任意（1時間 630円）' },
+
   // ===== みどりの広場 =====
   { id: 'midori_am', name: 'みどりの広場 午前', planType: 'day_slot', category: 'sport',
     rooms: ['midori'],
@@ -1380,7 +1402,7 @@ const FACILITY_GROUPS = [
   { id: 'fg_lodge', name: 'ロッジ', icon: '\u{1F3D5}\uFE0F', category: 'outdoor',
     plans: ['lodge_stay','lodge_day'] },
   { id: 'fg_tennis', name: 'テニスコート', icon: '\u{1F3BE}', category: 'sport',
-    plans: ['tennis_full'] },
+    plans: ['tennis_full', 'tennis_half'] },
   { id: 'fg_midori', name: 'みどりの広場', icon: '\u26BE', category: 'sport',
     plans: ['midori_am','midori_pm','midori_day','midori_eve'] },
   { id: 'fg_sauna', name: 'ふたみサンセットサウナ', icon: '\u{1F9D6}', category: 'sauna',
@@ -1825,7 +1847,7 @@ function isTennisWeekdayDiscountSlot(dateStr, startKey) {
 }
 
 function getPlanDisplayPrice(plan) {
-  if (plan.id === 'tennis_full') {
+  if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
     return state.isResident ? plan.residentPrice : plan.nonResidentPrice;
   }
   if (plan.id.startsWith('midori')) {
@@ -1900,7 +1922,10 @@ function renderSearchResults() {
       const r = ROOMS.find(x => x.id === rid);
       return r ? r.capacity : 0;
     }));
-    if (maxCap < state.searchGuests) return;
+    // テニス系は空間貸し（人数の概念なし・2026-04-12 運営確認）のため人数フィルタ対象外。
+    // court_wall は capacity:null（物理定員未確認）で maxCap=0 になるため、この除外がないと
+    // 半面プランが人数1名でも検索結果から消えてしまう。
+    if (!plan.id.startsWith('tennis') && maxCap < state.searchGuests) return;
     if (cat !== 'all' && plan.category !== cat) return;
 
     const level = getAvailabilityLevel(plan, state.searchDate);
@@ -3405,8 +3430,9 @@ function calculateTotal() {
   }
 
   if (pt === 'hourly') {
-    if (plan.id === 'tennis_full') {
+    if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
       // 2026-05-13: NisshoPricing.calculateHourlyTennisPrice に委譲（Jest テスト対象）
+      // tennis_half は court_wall 1面固定（allowMultiSelect なし）なので courtCount=1 で同式が成立
       const courtCount = (plan.allowMultiSelect && Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0)
         ? state.selectedRoomIds.length : 1;
       const selectedDate = state.selectedDate;
@@ -3918,10 +3944,10 @@ async function _submitBookingInner() {
       const futamiSeats = isFutamiSauna ? (state.guests || 1) : null;
       // テニス向け付帯情報（平日割/照明）
       let tennisPricingInfo = null;
-      if (plan.id === 'tennis_full') {
+      if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
         const weekdaySlots = (state.selectedHours || []).filter(h => isTennisWeekdayDiscountSlot(state.selectedDate, h));
         tennisPricingInfo = {
-          courtType: 'full',
+          courtType: plan.id === 'tennis_half' ? 'half' : 'full',
           isResident: !!state.isResident,
           totalHours: (state.selectedHours || []).length,
           weekdayDiscountHours: weekdaySlots.length,

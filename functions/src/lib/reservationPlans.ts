@@ -14,6 +14,9 @@ const ALL_STAY_ROOMS = [...SIX_TATAMI_ROOMS, 'room_27', 'room_exp'] as const;
 const CAMP_ROOMS = ['camp_1', 'camp_2', 'camp_3', 'camp_4', 'camp_5', 'camp_6', 'camp_7', 'camp_8'] as const;
 const LODGE_ROOMS = ['lodge_a', 'lodge_b'] as const;
 const COURT_ROOMS = ['court_1', 'court_2', 'court_3', 'court_4', 'court_5'] as const;
+// 壁打ち練習用の半面コート（1つのみ）。コートA〜Eとは別の独立施設なので専用在庫。
+// 同時間帯に全面(court_1〜5)と併存可・半面2件目は同一slotキー競合で409になる。
+const WALL_COURT_ROOMS = ['court_wall'] as const;
 
 type RuleKind = 'overnight' | 'fixed_day' | 'hourly_day' | 'tennis' | 'futami_sauna';
 
@@ -65,6 +68,7 @@ export const RESERVATION_PLAN_RULES: Readonly<Record<string, PlanRule>> = {
   lodge_stay: rule('overnight', LODGE_ROOMS, STAY_HOURS, 1, { maxNights: 14 }),
   lodge_day: rule('hourly_day', LODGE_ROOMS, [10, 11, 12, 13, 14, 15]),
   tennis_full: rule('tennis', COURT_ROOMS, undefined, COURT_ROOMS.length),
+  tennis_half: rule('tennis', WALL_COURT_ROOMS, undefined, 1),
 
   midori_am: rule('fixed_day', ['midori'], [8, 9, 10, 11]),
   midori_pm: rule('fixed_day', ['midori'], [12, 13, 14, 15, 16]),

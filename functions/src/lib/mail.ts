@@ -108,6 +108,8 @@ export interface MailData {
   isFutamiDay?: boolean;
   isTennis?: boolean;
   saunaOptionsText?: string;
+  /** 時間帯の人向け表記（テニス等の時間制プラン）。例: 「08:00〜10:00、13:00〜14:00」 */
+  timeText?: string;
 }
 
 /** 予約確認メール（顧客向け）。送信失敗時は呼出側で .catch して logMailFailure へ。 */
@@ -128,7 +130,7 @@ export async function sendConfirmationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 ━━━━━━━━━━━━━━━━━━
 
 ※このメールは自動送信です。
@@ -168,7 +170,7 @@ export async function sendStaffNotification(data: MailData, type: 'new' | 'cance
 ご住所：${data.customerAddress || 'なし'}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 `;
     await transporter.sendMail({
       from: `"ふたみ予約システム" <${SMTP_USER}>`,
@@ -200,7 +202,7 @@ export async function sendCancellationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}
 ━━━━━━━━━━━━━━━━━━
 
 またのご利用をお待ちしております。

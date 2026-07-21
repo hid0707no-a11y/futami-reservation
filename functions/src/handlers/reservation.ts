@@ -12,6 +12,7 @@ import { requireStaffAuth } from '../lib/auth';
 import { audit as auditLog, logMailFailure } from '../lib/logger';
 import { formatCustomerAddress, generateDisplayId } from '../lib/format';
 import { MailData, sendCancellationEmail, sendStaffNotification } from '../lib/mail';
+import { planLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
 import { validateUpdateFields } from '../lib/validation';
 import { RESERVATION_STATUS } from '../constants';
 
@@ -354,7 +355,8 @@ export const cancelReservation = onRequest(
       const cancelDisplayId = cancelledData?.displayId || generateDisplayId(id);
       if (cancelledData?.customer) {
         const mailData: MailData = {
-          planName: cancelledData.planId || '', roomName: (cancelledData.roomIds || []).join(', '),
+          planName: planLabel(cancelledData.planId || ''), roomName: roomLabels(cancelledData.roomIds || []),
+          timeText: cancelledData.isTennis ? (formatTennisTimeRanges(cancelledData.slots) || undefined) : undefined,
           startDate: cancelledData.startDate || '', endDate: cancelledData.endDate || '',
           customerName: cancelledData.customer.name || '', customerPhone: cancelledData.customer.phone || '',
           customerEmail: cancelledData.customer.email || '',

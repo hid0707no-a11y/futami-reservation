@@ -27,6 +27,7 @@ import {
   getBusinessCalendarFresh,
 } from '../lib/businessDays';
 import { canonicalizeReservation } from '../lib/reservationPlans';
+import { planLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
 import { computeServerPricing } from '../lib/pricingServer';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
 
@@ -269,10 +270,11 @@ export const createReservation = onRequest(
             return { id: resRef.id, displayId };
           });
           const mailData: MailData = {
-            planName: planId, roomName: roomIds.join(', '), startDate, endDate,
+            planName: planLabel(planId), roomName: roomLabels(roomIds), startDate, endDate,
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: tennisResult.displayId, isTennis: true,
+            timeText: formatTennisTimeRanges(slots) || undefined,
           };
           // #7 メール送信は応答前に await（Gen2 は応答後 CPU スロットリングで未完になり得る）
           await Promise.allSettled([
@@ -386,7 +388,7 @@ export const createReservation = onRequest(
             return { id: resRef.id, displayId };
           });
           const mailData: MailData = {
-            planName: planId, roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
+            planName: planLabel(planId), roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
@@ -481,9 +483,9 @@ export const createReservation = onRequest(
 
       const roomNameForMail = isCamp
         ? roomIds.map((r: string) => '区画' + ['①','②','③','④','⑤','⑥','⑦','⑧'][parseInt(r.split('_')[1], 10) - 1]).join('・')
-        : roomIds.join(', ');
+        : roomLabels(roomIds);
       const mailData: MailData = {
-        planName: planId, roomName: roomNameForMail, startDate, endDate,
+        planName: planLabel(planId), roomName: roomNameForMail, startDate, endDate,
         customerName: customer.name, customerPhone: customer.phone,
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '', reservationId: result.displayId,

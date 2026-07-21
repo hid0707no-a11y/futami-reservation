@@ -775,6 +775,7 @@ const ROOMS = [
   { id: 'court_3', name: 'コートC', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'court_4', name: 'コートD', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'court_5', name: 'コートE', building: 'テニス', icon: '\uD83C\uDFBE' },
+  { id: 'court_wall', name: '半面コート（壁打ち）', building: 'テニス', icon: '\uD83C\uDFBE' },
   { id: 'midori', name: 'みどりの広場', building: 'グラウンド', icon: '\u26BE' },
   { id: 'sauna', name: 'サンセットサウナ', building: 'サウナ', icon: '\uD83E\uDDD6' },
 ];
@@ -850,6 +851,9 @@ const PLANS = [
   // テニス（時間を都度選ぶ）
   { id: 'tennis_full', name: 'テニスコート', rooms: ['court_1','court_2','court_3','court_4','court_5'],
     slots: 'hourly', price: '市民630円/市外760円/面/時', badge: '\uD83C\uDFBE', color: '#0ea5e9' },
+  // 半面（壁打ち練習用・court_wall 専用）。1枠(1時間)定額＝2026-07-21運営確認
+  { id: 'tennis_half', name: '半面コート（壁打ち練習用）', rooms: ['court_wall'],
+    slots: 'hourly', price: '市民240円/市外280円/枠(1時間)', badge: '\uD83C\uDFBE', color: '#0284c7' },
   // みどりの広場（3コマ制）
   { id: 'midori_am', name: 'みどりの広場 午前', rooms: ['midori'],
     slots: [8,9,10,11], price: '市民1,890円/市外2,200円', badge: '\uD83C\uDF05 午前', color: '#f97316' },
@@ -1496,7 +1500,7 @@ function showDetail(resId) {
         slotsText = `${first}:00 \u301C ${lastEnd === 0 ? 24 : lastEnd}:00`;
       }
     }
-    if (plan.id === 'tennis_full' && Array.isArray(res.tennisTimes) && res.tennisTimes.length > 0) {
+    if ((plan.id === 'tennis_full' || plan.id === 'tennis_half') && Array.isArray(res.tennisTimes) && res.tennisTimes.length > 0) {
       slotsText = formatTennisTimeRanges(res.tennisTimes);
     } else if (plan.slots === 'hourly' && res.slotsOverride) {
       const sorted = [...res.slotsOverride].sort((a, b) => a - b);
@@ -2161,7 +2165,7 @@ async function submitReservation() {
   })();
   for (const slotRoomId of payloadRoomIds) {
     for (const h of planSlots) {
-      if (plan.id === 'tennis_full') {
+      if (plan.id === 'tennis_full' || plan.id === 'tennis_half') {
         const hour = String(h).padStart(2, '0');
         slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '00');
         slotKeys.push(slotRoomId + '|' + ds + '|' + hour + '30');

@@ -39,6 +39,9 @@ export const ROOM_IDS = {
   ROOMS: ['room_27', 'room_6_1', 'room_6_2', 'room_6_3', 'room_6_4',
           'room_exp', 'room_train', 'room_kitchen'],
   TENNIS_COURTS: ['court_1', 'court_2', 'court_3', 'court_4', 'court_5'],
+  // 壁打ち練習用の半面コート。コートA〜Eとは別の独立施設（公式サイト施設案内・料金表【R8】別行）。
+  // tennis_half 専用在庫。court_ 接頭辞なので tennis_slots 排他系に自動で乗る。
+  TENNIS_WALL: ['court_wall'],
   CAMPS: ['camp_1', 'camp_2', 'camp_3', 'camp_4', 'camp_5', 'camp_6', 'camp_7', 'camp_8'],
   LODGES: ['lodge_a', 'lodge_b'],
   OTHERS: ['midori', 'sauna', 'sauna_share'],
@@ -47,6 +50,7 @@ export const ROOM_IDS = {
 export const VALID_ROOM_IDS = new Set<string>([
   ...ROOM_IDS.ROOMS,
   ...ROOM_IDS.TENNIS_COURTS,
+  ...ROOM_IDS.TENNIS_WALL,
   ...ROOM_IDS.CAMPS,
   ...ROOM_IDS.LODGES,
   ...ROOM_IDS.OTHERS,
