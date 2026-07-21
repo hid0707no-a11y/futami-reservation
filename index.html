@@ -1085,9 +1085,16 @@ const ROOMS = [
   // 壁打ち練習用の半面コート（2026-07-21 追加）。コートA〜Eの5面とは別に1つだけ存在する
   // 独立施設で、「コートAの半分」ではない（公式サイト施設案内・公式料金表の「半面（練習用）」
   // 別行・運営 上村さん 2026-07-21 回答「半面コートは一面しかない」に基づく）。
-  // capacity: 物理的な同時利用上限は運営に未確認のため創作せず、tennis_half の
-  //   guestEstimateMax（=10・行政報告用の人数目安）と同値を置く。★要確認（物理定員ではない）。
-  { id: 'court_wall', name: '半面コート（壁打ち練習用）', fullName: 'テニス 半面コート【壁打ち練習用】', building: 'テニス', icon: '\u{1F3BE}', capacity: 10 },
+  // capacity: null ＝ 物理的な同時利用上限が運営に未確認（★要確認）。
+  //   2026-07-21 是正：以前ここには 10 が入っていたが、それは tennis_half の
+  //   guestEstimateMax（行政報告用の人数目安）を流用しただけの「尤もらしい数値」で、
+  //   壁打ちコートの物理定員ではなかった。運営未確認の数値をデータに残さないため null にする。
+  //   参照側の確認（2026-07-21 grep 実施）：テニス系プランは plan.guestEstimateMax(=10) を
+  //   使うため room.capacity を読まない（人数上限・定員表示・料金いずれも不参照）。
+  //   ・上限判定は guestEstimateMax 優先（下の maxCap 算出）
+  //   ・定員表示は requiresAllRooms（stay_all）と複数部屋ピッカーの非テニス分岐のみ
+  //   ・人数ステッパーは stay_6 / サウナ（planType==='sauna'）のみ
+  { id: 'court_wall', name: '半面コート（壁打ち練習用）', fullName: 'テニス 半面コート【壁打ち練習用】', building: 'テニス', icon: '\u{1F3BE}', capacity: null },
   { id: 'midori', name: 'みどりの広場', fullName: 'みどりの広場', building: 'グラウンド', icon: '\u26BE', capacity: 150 },
   { id: 'sauna', name: 'サンセットサウナ', fullName: '貸切サウナ（120分/8名まで）', building: 'サウナ', icon: '\u{1F9D6}', capacity: 8 },
 ];
@@ -1963,11 +1970,13 @@ function renderSearchResults() {
     // テニス/みどり等の空間貸しプランは人数目安（guestEstimateMax・行政報告用）が上限で、
     // room capacity は料金にも利用判定にも使わない。guestEstimateMax があればそれを、
     // 無ければ従来どおり部屋定員の最大値を上限とする（他プランの挙動は不変）。
+    // capacity が未確認（null）の部屋は 0 扱い。テニス系は guestEstimateMax で先に確定するため
+    // ここには来ないが、null が数値演算に混ざって NaN 比較になるのを防ぐ（2026-07-21）。
     const maxCap = (typeof plan.guestEstimateMax === 'number')
       ? plan.guestEstimateMax
       : Math.max(...plan.rooms.map(rid => {
           const r = ROOMS.find(x => x.id === rid);
-          return r ? r.capacity : 0;
+          return (r && typeof r.capacity === 'number') ? r.capacity : 0;
         }));
     if (maxCap < state.searchGuests) return;
     if (cat !== 'all' && plan.category !== cat) return;
