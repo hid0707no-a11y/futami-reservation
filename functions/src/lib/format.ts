@@ -24,6 +24,68 @@ export function formatCustomerAddress(c: CustomerLike | null | undefined): strin
   return `${zipPart}${a1}${a2 ? ' ' + a2 : ''}`.trim();
 }
 
+/**
+ * テニス予約の slot キー配列 → '10:00〜11:00' のような人が読める時間帯表記。
+ *
+ * 2026-07-21 新設。テニスは startDate === endDate のため、メールが「日程：2026-08-05」で
+ * 終わり時刻がどこにも出ていなかった。半面プランは30分刻みの1時間枠＝時刻そのものが商品で、
+ * 日付だけの控えでは当日の食い違いが起きる。
+ *
+ * 入力は `roomId|YYYY-MM-DD|時刻` 形式（createReservation.ts / reservationPlans.ts と同じ）。
+ * 時刻部分の形式は3種を受ける（legacyTennisKeysForCanonicalSlots のコメントと同じ前提）：
+ *   - `HHMM`（現行 canonical・30分枠）      例 1000 → 10:00〜10:30
+ *   - `H:MM` / `HH:MM`（旧colon形式・30分枠） 例 10:30 → 10:30〜11:00
+ *   - `H` / `HH`（旧staff整数時・1時間占有）  例 8 → 08:00〜09:00
+ * 解釈できない要素は無視し、1つも解釈できなければ '' を返す（時刻行を出さない）。
+ *
+ * 複数コート予約でも時間帯は全コート共通（normalizeTennisSlots が一致を強制）のため、
+ * 時刻を集合に畳んでから連続する枠を1つの範囲にまとめる。
+ * 例: ['court_wall|2026-08-05|1000','court_wall|2026-08-05|1030'] → '10:00〜11:00'
+ */
+export function formatTennisTimeRanges(slots: unknown): string {
+  if (!Array.isArray(slots)) return '';
+
+  // 開始分 → 終了分（同じ開始が複数コート分来るので Map で畳む）
+  const spans = new Map<number, number>();
+  for (const slot of slots) {
+    if (typeof slot !== 'string') continue;
+    const parts = slot.split('|');
+    if (parts.length !== 3) continue;
+    const time = parts[2];
+    let start: number | null = null;
+    let durationMin = 30;
+    if (/^\d{4}$/.test(time)) {
+      start = Number(time.slice(0, 2)) * 60 + Number(time.slice(2, 4));
+    } else if (/^\d{1,2}:\d{2}$/.test(time)) {
+      const [h, m] = time.split(':');
+      start = Number(h) * 60 + Number(m);
+    } else if (/^\d{1,2}$/.test(time)) {
+      start = Number(time) * 60;
+      durationMin = 60; // 旧staff整数時は1時間占有
+    }
+    if (start === null || start < 0 || start >= 24 * 60) continue;
+    const end = start + durationMin;
+    const known = spans.get(start);
+    if (known === undefined || end > known) spans.set(start, end);
+  }
+  if (spans.size === 0) return '';
+
+  const sorted = Array.from(spans.entries()).sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const [start, end] of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && start <= last[1]) {
+      if (end > last[1]) last[1] = end;
+    } else {
+      merged.push([start, end]);
+    }
+  }
+
+  const hhmm = (total: number): string =>
+    String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+  return merged.map(([start, end]) => `${hhmm(start)}〜${hhmm(end)}`).join('、');
+}
+
 export interface SaunaOptionsLike {
   towels?: number;
   tarpTent?: number;

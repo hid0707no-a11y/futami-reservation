@@ -1,7 +1,12 @@
 // 純粋関数フォーマッタのユニットテスト
 // 2026-05-05 新設（/gfu Phase A-2）
 
-import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../src/lib/format';
+import {
+  formatCustomerAddress,
+  formatSaunaOptions,
+  formatTennisTimeRanges,
+  generateDisplayId,
+} from '../src/lib/format';
 
 describe('formatCustomerAddress', () => {
   it('全フィールド揃っている場合は 〒+住所1+住所2 を整形する', () => {
@@ -67,6 +72,65 @@ describe('formatSaunaOptions', () => {
 
   it('値が 0 のオプションは無視する', () => {
     expect(formatSaunaOptions({ towels: 0, tarpTent: 0, ice20kg: 1 })).toBe('氷20kg');
+  });
+});
+
+describe('formatTennisTimeRanges', () => {
+  it('半面1時間（30分枠×2）を 10:00〜11:00 にまとめる', () => {
+    expect(formatTennisTimeRanges([
+      'court_wall|2026-08-05|1000',
+      'court_wall|2026-08-05|1030',
+    ])).toBe('10:00〜11:00');
+  });
+
+  it('30分1枠でも開始〜終了を出す', () => {
+    expect(formatTennisTimeRanges(['court_wall|2026-08-05|1330'])).toBe('13:30〜14:00');
+  });
+
+  it('複数コートで同一時間帯なら1つの範囲に畳む', () => {
+    expect(formatTennisTimeRanges([
+      'court_1|2026-08-05|0900', 'court_1|2026-08-05|0930',
+      'court_2|2026-08-05|0900', 'court_2|2026-08-05|0930',
+    ])).toBe('09:00〜10:00');
+  });
+
+  it('離れた時間帯は 、 区切りで別範囲にする', () => {
+    expect(formatTennisTimeRanges([
+      'court_wall|2026-08-05|1000', 'court_wall|2026-08-05|1030',
+      'court_wall|2026-08-05|1500', 'court_wall|2026-08-05|1530',
+    ])).toBe('10:00〜11:00、15:00〜16:00');
+  });
+
+  it('順不同でも昇順に並べ直す', () => {
+    expect(formatTennisTimeRanges([
+      'court_wall|2026-08-05|1530',
+      'court_wall|2026-08-05|1000',
+      'court_wall|2026-08-05|1500',
+      'court_wall|2026-08-05|1030',
+    ])).toBe('10:00〜11:00、15:00〜16:00');
+  });
+
+  it('旧staff整数時（1時間占有）も読める', () => {
+    expect(formatTennisTimeRanges(['court_1|2026-08-05|8'])).toBe('08:00〜09:00');
+    expect(formatTennisTimeRanges(['court_1|2026-08-05|08'])).toBe('08:00〜09:00');
+  });
+
+  it('旧colon形式（30分枠）も読める', () => {
+    expect(formatTennisTimeRanges([
+      'court_1|2026-08-05|10:00', 'court_1|2026-08-05|10:30',
+    ])).toBe('10:00〜11:00');
+  });
+
+  it('解釈できない slot は無視し、全滅なら空文字（時刻行を出さない）', () => {
+    expect(formatTennisTimeRanges([])).toBe('');
+    expect(formatTennisTimeRanges(null)).toBe('');
+    expect(formatTennisTimeRanges(undefined)).toBe('');
+    expect(formatTennisTimeRanges('court_1|2026-08-05|1000')).toBe('');
+    expect(formatTennisTimeRanges(['壊れたキー', 'court_1|2026-08-05|abcd'])).toBe('');
+    expect(formatTennisTimeRanges(['court_1|2026-08-05|9999'])).toBe('');
+    expect(formatTennisTimeRanges([
+      'court_1|2026-08-05|くずれ', 'court_1|2026-08-05|1000',
+    ])).toBe('10:00〜10:30');
   });
 });
 
