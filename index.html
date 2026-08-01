@@ -830,6 +830,9 @@ body {
 .cal-status-ok { color: #16c79a; }
 .cal-status-few { color: #f5c518; }
 .cal-status-some { color: #f97316; }
+/* 残りわずか（残り1枠・2026-08-01 要望②）。×と同色でよい＝▲と×は字形が別で、
+   この画面は「記号だけで意味が伝わる」設計（色は補助）を維持している。 */
+.cal-status-last { color: #e94560; }
 .cal-status-full { color: #e94560; }
 .cal-status-closed { color: #d1d5db; }
 
@@ -1038,6 +1041,8 @@ body {
 
 <!-- 価格計算 純粋関数ライブラリ（2026-05-13 抽出・Jest テスト対象） -->
 <script src="assets/js/pricing.js"></script>
+<!-- 空き状況レベル判定 純粋関数ライブラリ（2026-08-01 抽出・Jest テスト対象） -->
+<script src="assets/js/availability.js"></script>
 <script>
 // ===== pricing.js からの再 export（SSOT一本化・2026-05-13）=====
 // 旧 index.html 内 inline 定義から assets/js/pricing.js へ抽出済み。
@@ -2076,7 +2081,10 @@ function calNavMonth(delta) {
 }
 
 // Determine day-level availability for a facility group on a given date
-// Returns: 'closed', 'full', 'some', 'few', 'ok'
+// Returns: 'closed', 'unknown', 'full', 'last', 'some', 'few', 'ok'
+//
+// 2026-08-01 要望②：閾値は assets/js/availability.js（Jest テスト対象）へ切出し。
+// 旧「空き ≧ 全体の50%なら◎」だとサウナ4枠は2枠空きでも◎になり○が出なかった。
 function getDayAvailability(fg, dateStr) {
   if (isClosedDay(dateStr)) return 'closed';
   if (!DATA_LOADED || !BUSINESS_CALENDAR_LOADED
@@ -2091,11 +2099,7 @@ function getDayAvailability(fg, dateStr) {
     if (level === 'ok' || level === 'few') okCount++;
   });
 
-  const total = plans.length;
-  if (okCount === 0) return 'full';
-  if (okCount >= total * 0.5) return 'ok';
-  if (okCount >= 2) return 'few';
-  return 'some'; // 1 plan available
+  return NisshoAvailability.dayAvailabilityLevel(okCount, plans.length);
 }
 
 function renderMonthlyCalendar() {
@@ -2178,6 +2182,8 @@ function renderMonthlyCalendar() {
       html += '<span class="cal-status cal-status-few">\u25CB</span>';
     } else if (avail === 'some') {
       html += '<span class="cal-status cal-status-some">\u25B3</span>';
+    } else if (avail === 'last') {
+      html += '<span class="cal-status cal-status-last">\u25B2</span>';
     } else if (avail === 'full') {
       html += '<span class="cal-status cal-status-full">\u00D7</span>';
     }
@@ -2190,8 +2196,9 @@ function renderMonthlyCalendar() {
   // Legend
   html += '<div class="cal-legend">';
   html += '<span><span class="cal-status cal-status-ok">\u25CE</span>空きあり</span>';
-  html += '<span><span class="cal-status cal-status-few">\u25CB</span>残りわずか</span>';
-  html += '<span><span class="cal-status cal-status-some">\u25B3</span>一部のみ</span>';
+  html += '<span><span class="cal-status cal-status-few">\u25CB</span>やや空きあり</span>';
+  html += '<span><span class="cal-status cal-status-some">\u25B3</span>半分ほど埋まり</span>';
+  html += '<span><span class="cal-status cal-status-last">\u25B2</span>残りわずか</span>';
   html += '<span><span class="cal-status cal-status-full">\u00D7</span>満室</span>';
   html += '<span><span class="cal-status cal-status-closed">休</span>定休日</span>';
   html += '<span><span class="cal-status cal-status-closed">…</span>確認中</span>';
