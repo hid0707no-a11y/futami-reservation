@@ -10,6 +10,8 @@ function loadMail(options: {
   smtp?: boolean;
   discord?: boolean;
   transport?: MockTransport;
+  staffEmail?: string;
+  saunaEmails?: string;
 }) {
   jest.resetModules();
   process.env = { ...ORIGINAL_ENV };
@@ -22,6 +24,10 @@ function loadMail(options: {
   }
   if (options.discord) process.env.DISCORD_WEBHOOK_URL = 'https://discord.example.invalid/webhook';
   else delete process.env.DISCORD_WEBHOOK_URL;
+  if (options.staffEmail === undefined) delete process.env.STAFF_EMAIL;
+  else process.env.STAFF_EMAIL = options.staffEmail;
+  if (options.saunaEmails === undefined) delete process.env.SAUNA_NOTIFY_EMAILS;
+  else process.env.SAUNA_NOTIFY_EMAILS = options.saunaEmails;
 
   const transport = options.transport || {
     verify: jest.fn(async () => true),
@@ -129,5 +135,69 @@ describe('mail monitor delivery', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     await expect(mail.sendMonitorAlert('subject', 'body'))
       .rejects.toThrow('monitor_alert_all_channels_failed');
+  });
+});
+
+// 2026-08-01 運営要望①：サウナ予約だけ担当者3名にも通知する。
+describe('sendStaffNotification の宛先', () => {
+  const SAUNA_EMAILS = 'nishida@example.com,yamamoto@example.com,aja@example.com';
+
+  function baseMail(over: Record<string, any> = {}) {
+    return {
+      planName: 'A 10:00-12:00', roomName: 'サンセットサウナ',
+      startDate: '2026-08-10', endDate: '2026-08-10',
+      customerName: '山田', customerPhone: '090-0000-0000', customerEmail: 'y@example.com',
+      note: '', reservationId: 'F-ABC123',
+      ...over,
+    } as any;
+  }
+
+  it('通常サウナは STAFF_EMAIL + 担当者3名へ送る', async () => {
+    const { mail, transport } = loadMail({
+      smtp: true, staffEmail: 'staff@example.com', saunaEmails: SAUNA_EMAILS,
+    });
+    await mail.sendStaffNotification(baseMail({ planId: 'sauna_1', roomIds: ['sauna'] }), 'new');
+    expect(transport.sendMail).toHaveBeenCalledTimes(1);
+    expect(transport.sendMail.mock.calls[0][0].to)
+      .toBe('staff@example.com, nishida@example.com, yamamoto@example.com, aja@example.com');
+  });
+
+  it('ふたみの日サウナも担当者3名へ送る', async () => {
+    const { mail, transport } = loadMail({
+      smtp: true, staffEmail: 'staff@example.com', saunaEmails: SAUNA_EMAILS,
+    });
+    await mail.sendStaffNotification(
+      baseMail({ planId: 'plan_sauna_futami', roomIds: ['sauna_share'] }), 'new');
+    expect(transport.sendMail.mock.calls[0][0].to).toContain('aja@example.com');
+  });
+
+  it('キャンセル通知も同じ宛先へ送る', async () => {
+    const { mail, transport } = loadMail({
+      smtp: true, staffEmail: 'staff@example.com', saunaEmails: SAUNA_EMAILS,
+    });
+    await mail.sendStaffNotification(baseMail({ planId: 'sauna_4', roomIds: ['sauna'] }), 'cancel');
+    const sent = transport.sendMail.mock.calls[0][0];
+    expect(sent.subject).toContain('【キャンセル】');
+    expect(sent.to).toContain('nishida@example.com');
+  });
+
+  it('サウナ以外（キャンプ・テニス）は STAFF_EMAIL のみ＝担当者に流さない', async () => {
+    const { mail, transport } = loadMail({
+      smtp: true, staffEmail: 'staff@example.com', saunaEmails: SAUNA_EMAILS,
+    });
+    await mail.sendStaffNotification(
+      baseMail({ planId: 'camp_stay', roomIds: ['camp_1'], roomName: '区画①' }), 'new');
+    await mail.sendStaffNotification(
+      baseMail({ planId: 'tennis_full', roomIds: ['court_1'], roomName: 'コートA' }), 'new');
+    expect(transport.sendMail.mock.calls[0][0].to).toBe('staff@example.com');
+    expect(transport.sendMail.mock.calls[1][0].to).toBe('staff@example.com');
+  });
+
+  it('planId/roomIds を持たない旧形式の MailData でも送信自体は壊れない', async () => {
+    const { mail, transport } = loadMail({
+      smtp: true, staffEmail: 'staff@example.com', saunaEmails: SAUNA_EMAILS,
+    });
+    await mail.sendStaffNotification(baseMail(), 'new');
+    expect(transport.sendMail.mock.calls[0][0].to).toBe('staff@example.com');
   });
 });

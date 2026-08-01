@@ -271,6 +271,7 @@ export const createReservation = onRequest(
           });
           const mailData: MailData = {
             planName: planLabel(planId), roomName: roomLabels(roomIds), startDate, endDate,
+            planId, roomIds,
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: tennisResult.displayId, isTennis: true,
@@ -389,6 +390,7 @@ export const createReservation = onRequest(
           });
           const mailData: MailData = {
             planName: planLabel(planId), roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
+            planId, roomIds: ['sauna_share'],
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
@@ -486,6 +488,7 @@ export const createReservation = onRequest(
         : roomLabels(roomIds);
       const mailData: MailData = {
         planName: planLabel(planId), roomName: roomNameForMail, startDate, endDate,
+        planId, roomIds,
         customerName: customer.name, customerPhone: customer.phone,
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '', reservationId: result.displayId,

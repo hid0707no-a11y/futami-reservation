@@ -356,6 +356,7 @@ export const cancelReservation = onRequest(
       if (cancelledData?.customer) {
         const mailData: MailData = {
           planName: planLabel(cancelledData.planId || ''), roomName: roomLabels(cancelledData.roomIds || []),
+          planId: cancelledData.planId || '', roomIds: cancelledData.roomIds || [],
           timeText: cancelledData.isTennis ? (formatTennisTimeRanges(cancelledData.slots) || undefined) : undefined,
           startDate: cancelledData.startDate || '', endDate: cancelledData.endDate || '',
           customerName: cancelledData.customer.name || '', customerPhone: cancelledData.customer.phone || '',

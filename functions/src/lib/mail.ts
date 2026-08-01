@@ -5,10 +5,13 @@
 // 旧 index.ts:64-194 + 1297-1318 を移植。
 
 import * as nodemailer from 'nodemailer';
+import { STAFF_EMAIL, resolveStaffRecipients } from './notifyRecipients';
 
 const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
-export const STAFF_EMAIL = process.env.STAFF_EMAIL || 'info@fureai-iyosasaeru.com';
+// 2026-08-01: 定義は notifyRecipients.ts へ移動（宛先解決の SSOT を1ファイルに寄せる）。
+// 既存 import 元との互換のためここから re-export し続ける。
+export { STAFF_EMAIL };
 
 export const MONITOR_NOTIFY_EMAILS = [STAFF_EMAIL, 'hid0707no@gmail.com'];
 
@@ -95,6 +98,10 @@ function logSmtpNotConfigured(kind: string, reservationId: string): void {
 export interface MailData {
   planName: string;
   roomName: string;
+  /** 宛先解決用の生の予約種別（表示には使わない）。resolveStaffRecipients が参照する。 */
+  planId?: string;
+  /** 同上。roomIds に 'sauna' / 'sauna_share' が入るとサウナ通知先が追加される。 */
+  roomIds?: string[];
   startDate: string;
   endDate: string;
   customerName: string;
@@ -159,6 +166,8 @@ export async function sendStaffNotification(data: MailData, type: 'new' | 'cance
     return;
   }
   try {
+    // 2026-08-01: サウナ予約だけ運営の担当者を宛先に追加する（要望①）。
+    const recipients = resolveStaffRecipients(data);
     const prefix = type === 'new' ? '【新規予約】' : '【キャンセル】';
     const subject = `${prefix} ${data.customerName}様 ${data.startDate} ${data.roomName}`;
     const body = `${prefix}
@@ -174,11 +183,11 @@ export async function sendStaffNotification(data: MailData, type: 'new' | 'cance
 `;
     await transporter.sendMail({
       from: `"ふたみ予約システム" <${SMTP_USER}>`,
-      to: STAFF_EMAIL,
+      to: recipients.join(', '),
       subject,
       text: body,
     });
-    console.log('Staff notification sent for', data.reservationId);
+    console.log('Staff notification sent for', data.reservationId, `(${recipients.length} recipients)`);
   } catch (e) {
     console.error('Failed to send staff notification:', e);
     throw e;
