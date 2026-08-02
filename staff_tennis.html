@@ -11,6 +11,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <!-- 認証共通化 2026-05-05 Phase B-2：staff/staff2/staff_tennis.html で重複していたコードを集約 -->
 <script src="assets/js/auth-bootstrap.js" data-load-fn="loadData"></script>
+<!-- 施設×日付（＋時）の休止判定 isFacilitySlotClosed を index.html / staff.html と共有（2026-08-02）。
+     ?v= はブラウザキャッシュ対策。読めなかった場合に備えて呼び出し側で typeof 判定する。 -->
+<script src="assets/js/availability.js?v=20260802"></script>
 <style>
 :root {
   --navy: #1e3a8a;
@@ -119,6 +122,23 @@ body {
   color: #991b1b;
   font-size: 10px;
   font-weight: 600;
+}
+/* 休止設定（facilityClosed）中のセル（2026-08-02）。
+   予約済み（.booked＝濃い色のベタ塗り＋白文字）や定休日（.closed-cell＝赤系）と
+   見分けが付くよう、灰色の斜線で示す。押しても何も起きない。 */
+.tennis-table .facility-closed-cell {
+  background: repeating-linear-gradient(45deg, #e5e7eb, #e5e7eb 4px, #f8fafc 4px, #f8fafc 8px);
+  color: #6b7280;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: default;
+  pointer-events: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.tennis-table .facility-closed-cell.all-day {
+  font-size: 10px;
+  letter-spacing: 3px;
 }
 .tennis-table .booked {
   font-size: 9px;
@@ -243,7 +263,7 @@ body {
 // API_BASE は assets/js/auth-bootstrap.js で window.API_BASE として定義済（2026-05-05 Phase B-2）
 // APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 
-var BUSINESS_CAL = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+var BUSINESS_CAL = { defaultClosedDays: [2], forceOpen: [], forceClosed: [], facilityClosed: [] };
 function isRealIsoDateString(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const d = new Date(value + 'T00:00:00Z');
@@ -263,7 +283,20 @@ async function loadBusinessCal() {
     defaultClosedDays: data.defaultClosedDays.slice(),
     forceOpen: data.forceOpen.slice(),
     forceClosed: data.forceClosed.slice(),
+    // 施設ごとの停止（2026-08-02）。APIが未配備／欠落でもページを落とさず「停止なし」に倒す
+    // （要素の形式チェックは availability.js 側が持つ＝壊れた要素は無視される）
+    facilityClosed: Array.isArray(data.facilityClosed)
+      ? data.facilityClosed.filter(v => typeof v === 'string') : [],
   };
+}
+
+// コート×日付（×時刻）が休止中か。
+// time は "0830" 形式（未指定なら終日停止だけを見る）。availability.js 側が先頭2桁を時として突き合わせる。
+// ★availability.js が読めていない環境では false（＝従来表示）に倒し、画面を壊さない。
+function isCourtClosedAt(courtId, ds, time) {
+  var lib = window.NisshoAvailability;
+  if (!lib || typeof lib.isFacilitySlotClosed !== 'function') return false;
+  return lib.isFacilitySlotClosed(BUSINESS_CAL.facilityClosed, courtId, ds, time);
 }
 function isClosedDay(ds) {
   if (BUSINESS_CAL.forceClosed && BUSINESS_CAL.forceClosed.includes(ds)) return true;
@@ -418,9 +451,17 @@ function render() {
       }
       html += `<td class="court-label">${court.label}</td>`;
 
+      // 休止設定（facilityClosed）。終日停止で、その日そのコートに予約が1件も無い場合だけ
+      // 1本の帯にまとめる。予約が残っている日は下のセル単位の分岐に落として予約を隠さない。
+      const courtClosedAllDay = isCourtClosedAt(court.id, ds);
+      const courtHasReservation = courtClosedAllDay
+        && TIME_SLOTS.some(t => lookup[`${ds}|${court.id}|${t}`]);
+
       // 各時間セル（30分単位）
       if (isClosed) {
         html += `<td class="closed-cell" colspan="${TIME_SLOTS.length}" style="text-align:center">定 休 日</td>`;
+      } else if (courtClosedAllDay && !courtHasReservation) {
+        html += `<td class="facility-closed-cell all-day" colspan="${TIME_SLOTS.length}" style="text-align:center" title="休止設定中（『休館・休止設定』で解除できます）">休 止</td>`;
       } else {
         for (let ti = 0; ti < TIME_SLOTS.length; ti++) {
           const t = TIME_SLOTS[ti];
@@ -442,6 +483,10 @@ function render() {
               const short = name.length > 4 ? name.slice(0, 3) + '…' : name;
               html += `<td class="booked" style="background:${color};${borderStyle}" onclick="showDetail('${res.id}')">${escapeHtml(short)}</td>`;
             }
+          } else if (isCourtClosedAt(court.id, ds, t)) {
+            // 休止設定中の枠（2026-08-02）。空きセルと区別できるよう斜線で潰す。
+            // 「休」は時ちょうどのセルにだけ出す（30分側にも出すと表が読めなくなる）。
+            html += `<td class="facility-closed-cell" style="${borderStyle}" title="休止設定中（『休館・休止設定』で解除できます）">${isHourStart(t) ? '休' : ''}</td>`;
           } else {
             html += `<td style="${borderStyle}"></td>`;
           }

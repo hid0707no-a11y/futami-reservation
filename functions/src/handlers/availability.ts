@@ -11,13 +11,23 @@ import { checkRateLimit } from '../lib/rateLimit';
 import { requireStaffAuth } from '../lib/auth';
 import { audit as auditLog } from '../lib/logger';
 import { SHARED_SLOT_CAPACITY, getFutamiDays, _clearFutamiDaysCache } from '../lib/futamiDays';
-import { businessCalendarFromData } from '../lib/businessDays';
+import {
+  businessCalendarFromData,
+  isRealIsoDate,
+  isValidFacilityClosedList,
+} from '../lib/businessDays';
+import { addedEntries } from '../lib/facilityImpact';
+import { findAffectedReservations } from '../services/calendarImpact';
 
-function isRealIsoDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const d = new Date(value + 'T00:00:00Z');
-  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
-}
+// ─────────────────────────────────────────────
+// 休館・停止設定の dry-run（2026-08-02 追加）
+// ─────────────────────────────────────────────
+//
+// 2026-09-24 に臨時休業日を追加した際、その日に既に入っていた有料予約が取り残された
+// （画面からは消えたのに予約自体は生きていた）。保存前に「この設定にすると矛盾する
+// 既存予約」を返し、スタッフ画面で確認させるための読取専用モード。
+// 判定の中身は lib/facilityImpact.ts（純粋関数）と services/calendarImpact.ts（Firestore 読取）。
+// このハンドラが持つのは入力検証とレスポンス整形だけ。
 
 /** GET /availability?from=&to= — 占有スロット・shared_slots・tennis_slots を返す（公開） */
 export const availability = onRequest(
@@ -139,7 +149,7 @@ export const businessCalendar = onRequest(
       if (req.method === 'POST' || req.method === 'PATCH') {
         if (!(await requireStaffAuth(req, res))) return;
         if (!checkOrigin(req, res)) return;
-        const { defaultClosedDays, forceOpen, forceClosed } = req.body || {};
+        const { defaultClosedDays, forceOpen, forceClosed, facilityClosed, dryRun } = req.body || {};
         const validateDates = (arr: any[]) => Array.isArray(arr) && arr.length <= 365 && arr.every(isRealIsoDate);
         if (Array.isArray(defaultClosedDays)
             && !defaultClosedDays.every((d: any) => Number.isInteger(d) && d >= 0 && d <= 6)) {
@@ -151,10 +161,37 @@ export const businessCalendar = onRequest(
         if (Array.isArray(forceClosed) && !validateDates(forceClosed)) {
           res.status(400).json({ error: 'invalid_forceClosed' }); return;
         }
+        // facilityClosed だけは「配列でない値が来たら 400」。undefined（未送信）のみ無変更扱い。
+        const hasFacilityClosed = facilityClosed !== undefined && facilityClosed !== null;
+        if (hasFacilityClosed && !isValidFacilityClosedList(facilityClosed)) {
+          res.status(400).json({ error: 'invalid_facilityClosed' }); return;
+        }
+
+        // dryRun：一切書き込まず、この設定にすると矛盾する既存予約だけを返す。
+        //
+        // ★forceClosed も facilityClosed も「現行 config との差分＝今回追加されるぶん」だけを見る。
+        // staff2 は保存のたびに CAL_SETTINGS 全体を送ってくるため、送信配列を丸ごと判定すると
+        // 過去に承知のうえで残した停止が1件でもある限り以後すべての操作で同じ警告が出続け、
+        // 職員が確認ダイアログを読まなくなる（警告の形骸化）。
+        if (dryRun === true) {
+          const currentDoc = await db.doc('config/business_calendar').get();
+          const currentCal = businessCalendarFromData(currentDoc.exists ? currentDoc.data() : {});
+          const addedForceClosed = addedEntries(
+            Array.isArray(forceClosed) ? forceClosed : null, currentCal.forceClosed);
+          const addedFacilityClosed = addedEntries(
+            hasFacilityClosed ? (facilityClosed as string[]) : null, currentCal.facilityClosed);
+          const { affected, count, truncated } = await findAffectedReservations(
+            db, addedForceClosed, addedFacilityClosed);
+          // truncated は立った時だけ返す（既存クライアントのレスポンス形を変えない）
+          res.status(200).json({ dryRun: true, affected, count, ...(truncated ? { truncated } : {}) });
+          return;
+        }
+
         const updates: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
         if (Array.isArray(defaultClosedDays)) updates.defaultClosedDays = defaultClosedDays;
         if (Array.isArray(forceOpen)) updates.forceOpen = forceOpen;
         if (Array.isArray(forceClosed)) updates.forceClosed = forceClosed;
+        if (hasFacilityClosed) updates.facilityClosed = facilityClosed;
         // #13 config 書込みもトランザクションで包む（★3 文言準拠）
         await db.runTransaction(async tx => {
           tx.set(db.doc('config/business_calendar'), updates, { merge: true });
@@ -165,6 +202,8 @@ export const businessCalendar = onRequest(
         return;
       }
       // GET（公開・60秒キャッシュ）
+      // レスポンスには facilityClosed（施設単位の停止）も含まれる。
+      // businessCalendarFromData が正規化して必ず配列で返すので、未設定でも [] になる。
       const now = Date.now();
       if (_calendarCache && _calendarCache.expiresAt > now) {
         res.status(200).json(_calendarCache.data);

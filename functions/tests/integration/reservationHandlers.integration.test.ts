@@ -484,6 +484,8 @@ describe('営業日・特別日config境界', () => {
       defaultClosedDays: [2, 1.5],
       forceOpen: ['2026-02-30', OPEN_WEDNESDAY],
       forceClosed: ['broken', OPEN_THURSDAY],
+      // 2026-08-02 追加：施設単位の停止。契約外の要素は GET でも落とす
+      facilityClosed: ['sauna|2026-02-30', `sauna|${OPEN_WEDNESDAY}`, 'nonexistent|2026-09-20'],
     });
     const r = await invoke(businessCalendar, { method: 'GET', query: {}, headers: {}, body: {} });
     expect(r.statusCode).toBe(200);
@@ -491,6 +493,7 @@ describe('営業日・特別日config境界', () => {
       defaultClosedDays: [2],
       forceOpen: [OPEN_WEDNESDAY],
       forceClosed: [OPEN_THURSDAY],
+      facilityClosed: [`sauna|${OPEN_WEDNESDAY}`],
     });
   });
 

@@ -15,6 +15,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <!-- 認証共通化 2026-05-05 Phase B-2：staff/staff2/staff_tennis.html で重複していたコードを集約 -->
 <script src="assets/js/auth-bootstrap.js" data-load-fn="loadGcalData"></script>
+<!-- 施設×日付（＋時）の休止判定 isFacilitySlotClosed を index.html と共有（2026-08-02）。
+     ?v= はブラウザキャッシュ対策。読めなかった場合に備えて呼び出し側で typeof 判定する。 -->
+<script src="assets/js/availability.js?v=20260802"></script>
 <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoi44G144Gf44G/5LqI57SE566h55CGIiwic2hvcnRfbmFtZSI6IuS6iOe0hOeuoeeQhiIsInN0YXJ0X3VybCI6Ii4vc3RhZmYuaHRtbCIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiMwZjM0NjAiLCJ0aGVtZV9jb2xvciI6IiMwZjM0NjAifQ==">
 <style>
 /* ===== リセット・ベース ===== */
@@ -216,6 +219,15 @@ body {
 .cell:active { opacity: 0.7; }
 .cell.available { background: var(--green); color: #fff; }
 .cell.closed { background: var(--gray); color: #9ca3af; }
+/* 休止設定（facilityClosed）中の枠。予約済み＝ベタ塗り／空き＝緑 と混同しないよう斜線で示す（2026-08-02） */
+.cell.facility-closed {
+  background: repeating-linear-gradient(45deg, #e5e7eb, #e5e7eb 5px, #f8fafc 5px, #f8fafc 10px);
+  color: #6b7280;
+  cursor: default;
+  font-size: 0.6rem;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
 .cell .cell-name {
   display: block;
   overflow: hidden;
@@ -576,6 +588,10 @@ td.block-start-td + td.block-mid { border-left: none; }
   opacity: 0;
   transition: all 0.3s;
   pointer-events: none;
+  /* 休止設定の案内文など長いメッセージが画面外へはみ出さないよう折り返す（2026-08-02） */
+  max-width: min(92vw, 560px);
+  line-height: 1.5;
+  text-align: center;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
@@ -910,6 +926,9 @@ let GCAL_BOOKINGS = [];
 let LAST_SYNC_AT = null;
 let FUTAMI_DAYS = new Set();
 let FUTAMI_DAYS_LOADED = false;
+// 施設単位の休止設定（config/business_calendar の facilityClosed）。
+// 未取得・未設定なら空配列＝導入前とまったく同じ表示になる（2026-08-02）。
+let FACILITY_CLOSED = [];
 
 function safeStoredInteger(value, min, max, fallback) {
   const n = Number(value);
@@ -1063,6 +1082,31 @@ function convertApiReservation(r) {
   return records;
 }
 
+// 営業カレンダーから施設休止設定だけを取り込む（2026-08-02）。
+// ★この関数は絶対に throw しない：休止設定が取れなくても予約一覧の表示は続ける
+//   （休止マークが出ないだけで、従来と同じ画面になる）。
+async function loadFacilityClosed() {
+  try {
+    const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
+    if (!res.ok) return;
+    const data = await res.json();
+    // 要素の形式チェックは availability.js 側が持つ（壊れた要素は無視される）
+    FACILITY_CLOSED = (data && Array.isArray(data.facilityClosed))
+      ? data.facilityClosed.filter(v => typeof v === 'string')
+      : [];
+  } catch (e) {
+    console.warn('[api] businessCalendar load failed:', e);
+  }
+}
+
+// 施設×日付（×時）が休止中か。
+// availability.js が読めていない環境では false（＝従来表示）に倒す。
+function isFacilityClosedAt(roomId, ds, hour) {
+  const lib = window.NisshoAvailability;
+  if (!lib || typeof lib.isFacilitySlotClosed !== 'function') return false;
+  return lib.isFacilitySlotClosed(FACILITY_CLOSED, roomId, ds, hour);
+}
+
 async function loadGcalData() {
   // 再同期が失敗した場合、古い特別日Setで通常/特別サウナを逆送信しない。
   FUTAMI_DAYS_LOADED = false;
@@ -1071,6 +1115,7 @@ async function loadGcalData() {
     const [res, futamiRes] = await Promise.all([
       fetch(API_BASE + '/listReservations?t=' + Date.now(), { headers: authH }),
       fetch(API_BASE + '/futamiDays?t=' + Date.now()),
+      loadFacilityClosed(), // ← 失敗しても reject しない（予約一覧の取得を巻き込まない）
     ]);
     if (!res.ok) throw new Error('reservation API fetch failed: ' + res.status);
     if (!futamiRes.ok) throw new Error('futamiDays API fetch failed: ' + futamiRes.status);
@@ -1380,9 +1425,15 @@ function render() {
       const info = merged[h];
 
       if (!info) {
-        // 空きスロット
-        totalAvailable++;
-        bodyHtml += `<td><div class="cell available" style="font-size:0.6rem;opacity:0.7"></div></td>`;
+        if (isFacilityClosedAt(room.id, ds, h)) {
+          // 休止設定中の枠（2026-08-02）。空きとしては数えず、斜線で潰して見分けられるようにする。
+          // ★予約が入っている枠は上の分岐が先に当たる＝休止設定を後から入れても予約は隠れない。
+          bodyHtml += `<td><div class="cell facility-closed" title="休止設定中（『休館・休止設定』で解除できます）">休止</div></td>`;
+        } else {
+          // 空きスロット
+          totalAvailable++;
+          bodyHtml += `<td><div class="cell available" style="font-size:0.6rem;opacity:0.7"></div></td>`;
+        }
         i++;
       } else {
         // 予約あり - 同じresIdの連続スロットを探す
@@ -2212,7 +2263,9 @@ async function submitReservation() {
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       console.error('API error', errData);
-      showToast('API\u30A8\u30E9\u30FC: ' + (errData.error || res.status));
+      // facility_closed / closed_day は職員向けの日本語に置き換える。長文なので表示も長めにする。
+      const errCode = errData && errData.error;
+      showToast(apiErrorMessage(errCode, res.status), hasApiErrorMessage(errCode) ? 6000 : undefined);
       return;
     }
     const result = await res.json();
@@ -2230,11 +2283,30 @@ async function submitReservation() {
 }
 
 // ===== トースト =====
-function showToast(msg) {
+// ms 未指定なら従来どおり2.5秒（既存の呼び出しは挙動そのまま）。
+// 読むのに時間がかかる案内文だけ長めに出せるよう任意引数を足した（2026-08-02）。
+function showToast(msg, ms) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
+  setTimeout(() => el.classList.remove('show'), ms || 2500);
+}
+
+// ===== APIエラーコード → 職員向け日本語 =====
+// createReservation は休止設定に当たると HTTP 400 + { error: 'facility_closed' } を返す。
+// そのままだと画面に「APIエラー: facility_closed」と出て意味が取れないため対応表を持つ（2026-08-02）。
+// ★ここに無いコードは従来どおりコードをそのまま出す（新しいエラーを握り潰さないため）。
+const API_ERROR_MESSAGES = {
+  facility_closed: 'この施設・時間は休止設定で止まっています。先に『休館・休止設定』で解除してください',
+  closed_day: 'この日は休館日に設定されています',
+};
+// 'constructor' 等の継承プロパティを拾わないよう自前キーだけを見る
+function hasApiErrorMessage(code) {
+  return typeof code === 'string' && Object.prototype.hasOwnProperty.call(API_ERROR_MESSAGES, code);
+}
+function apiErrorMessage(code, status) {
+  if (hasApiErrorMessage(code)) return API_ERROR_MESSAGES[code];
+  return 'APIエラー: ' + (code || status);
 }
 
 // ===== Service Worker スタブ =====

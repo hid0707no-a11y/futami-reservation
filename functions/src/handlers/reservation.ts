@@ -14,6 +14,11 @@ import { formatCustomerAddress, generateDisplayId } from '../lib/format';
 import { MailData, sendCancellationEmail, sendStaffNotification } from '../lib/mail';
 import { planLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
 import { validateUpdateFields } from '../lib/validation';
+import {
+  businessCalendarFromData,
+  findClosedFacilitySlot,
+  serviceDatesFromRange,
+} from '../lib/businessDays';
 import { RESERVATION_STATUS } from '../constants';
 
 /** GET /listReservations?date=&status=&from=&to= — スタッフ用予約一覧 */
@@ -170,7 +175,12 @@ export const changeCampSites = onRequest(
     try {
       const result = await db.runTransaction(async tx => {
         const resRef = db.collection('reservations').doc(id);
-        const resDoc = await tx.get(resRef);
+        // 施設停止（facilityClosed）の判定に使うカレンダーも同じトランザクションで読む。
+        // Firestore は「書込みの前に全ての読取」を要求するので、ここでまとめて取得しておく。
+        const [resDoc, calendarDoc] = await Promise.all([
+          tx.get(resRef),
+          tx.get(db.doc('config/business_calendar')),
+        ]);
         if (!resDoc.exists) throw { code: 'not_found' };
         const data = resDoc.data() as any;
         if (data.status !== 'confirmed') throw { code: 'invalid_status', detail: data.status };
@@ -197,6 +207,16 @@ export const changeCampSites = onRequest(
             newSlots.push(`${cid}|${date}|${hour}`);
           }
         }
+
+        // 停止中のキャンプ区画へ付け替えられないようにする（createReservation と同じ判定）。
+        // 判定対象は「新しい」slots だけ＝元の区画が停止されても付け替え自体は妨げない
+        // （むしろ停止区画から動かす操作なので通す必要がある）。
+        // serviceDates は保存済みの startDate/endDate から復元する。canonical と同じ規約で
+        // チェックアウト日を含まないため、「停止日にチェックアウトするだけ」の予約は弾かれない。
+        const txCal = businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {});
+        const txClosedFacility = findClosedFacilitySlot(
+          newSlots, txCal, serviceDatesFromRange(data.startDate, data.endDate));
+        if (txClosedFacility) throw { code: 'facility_closed', detail: txClosedFacility };
 
         const oldSlotSet = new Set(oldSlots);
         const slotsToWrite = newSlots.filter(k => !oldSlotSet.has(k));
@@ -255,6 +275,8 @@ export const changeCampSites = onRequest(
       if (e?.code === 'invalid_status') { res.status(400).json({ error: 'invalid_status', detail: e.detail }); return; }
       if (e?.code === 'not_camp_reservation') { res.status(400).json({ error: 'not_camp_reservation' }); return; }
       if (e?.code === 'no_slots') { res.status(400).json({ error: 'no_slots' }); return; }
+      // createReservation と同じ error コード・同じ 400 で返す（画面側の分岐を増やさない）
+      if (e?.code === 'facility_closed') { res.status(400).json({ error: 'facility_closed', detail: e.detail }); return; }
       if (e?.code === 'slot_conflict') { res.status(409).json({ error: 'slot_conflict', conflicts: e.conflicts }); return; }
       console.error(e);
       res.status(500).json({ error: 'internal_error' });

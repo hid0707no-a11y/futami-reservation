@@ -1040,9 +1040,16 @@ body {
 </div>
 
 <!-- 価格計算 純粋関数ライブラリ（2026-05-13 抽出・Jest テスト対象） -->
-<script src="assets/js/pricing.js"></script>
+<!--
+  ★?v= はキャッシュ破棄用。ライブラリに関数を足したら必ず日付を上げる（YYYYMMDD）。
+    HTML と JS はブラウザ側で別々にキャッシュされるため、これが無いと配信直後に
+    「新しい index.html ＋ 古い availability.js」を掴む再訪ユーザーが出る。
+    その状態では新しい関数が undefined になり、呼んだ瞬間 TypeError で
+    カレンダーごと描画不能になる（＝公開予約ページが丸ごと落ちる）。
+-->
+<script src="assets/js/pricing.js?v=20260802"></script>
 <!-- 空き状況レベル判定 純粋関数ライブラリ（2026-08-01 抽出・Jest テスト対象） -->
-<script src="assets/js/availability.js"></script>
+<script src="assets/js/availability.js?v=20260802"></script>
 <script>
 // ===== pricing.js からの再 export（SSOT一本化・2026-05-13）=====
 // 旧 index.html 内 inline 定義から assets/js/pricing.js へ抽出済み。
@@ -1683,12 +1690,43 @@ function isFutamiSaunaSoldOut(plan, dateStr) {
   return false;
 }
 
+/* ================================================================
+   施設ごとの停止（facilityClosed）— availability.js への防御的ラッパ
+   ================================================================
+   判定の中身は assets/js/availability.js（Jest テスト対象）が持つ。ここは
+   「ライブラリが古い／読めていない場合でもページを落とさない」ためだけの薄い層。
+
+   ★なぜ必要か：HTML と JS は別々にキャッシュされる。script の ?v= を上げ忘れる、
+     あるいは JS の取得だけ失敗すると「新しい index.html ＋ 古い availability.js」に
+     なり、新しい関数が undefined のまま呼ばれて isSlotFree が TypeError で落ちる。
+     isSlotFree はカレンダー描画の心臓部なので、公開予約ページが丸ごと真っ白になる。
+
+   ★関数が無いときは false（＝停止していない）に倒す。停止が効かないのは在庫の穴だが、
+     ページ全体が落ちるより害が小さい。停止枠への予約はサーバ側 createReservation が
+     必ず 400 facility_closed で弾くため、二重防御が成立している。
+   ================================================================ */
+function facilitySlotClosed(roomId, date, hour) {
+  if (typeof NisshoAvailability === 'undefined' || !NisshoAvailability) return false;
+  if (typeof NisshoAvailability.isFacilitySlotClosed !== 'function') return false;
+  return NisshoAvailability.isFacilitySlotClosed(BUSINESS_CALENDAR.facilityClosed, roomId, date, hour);
+}
+
+// プランを構成する時間のいずれかが停止していれば true（ふたみの日サウナ等）
+function planFacilityClosed(roomId, date, hours) {
+  if (typeof NisshoAvailability === 'undefined' || !NisshoAvailability) return false;
+  if (typeof NisshoAvailability.isPlanFacilityClosed !== 'function') return false;
+  return NisshoAvailability.isPlanFacilityClosed(BUSINESS_CALENDAR.facilityClosed, roomId, date, hours);
+}
+
 // 特定の部屋+日付+時間スロットが空いているか
 function isSlotFree(roomId, date, hour) {
   // 過去のスロットは予約不可
   const today = getTodayStr();
   if (date < today) return false;
   if (date === today && hour <= new Date().getHours()) return false;
+
+  // 施設ごとの停止（例：サウナだけその日を予約不可）。判定は availability.js の純粋関数。
+  if (facilitySlotClosed(roomId, date, hour)) return false;
 
   // カレンダー実データの占有スロットをチェック
   return !OCCUPIED_SLOTS.has(roomId + '|' + date + '|' + hour);
@@ -1728,7 +1766,12 @@ function getAvailabilityLevel(plan, date) {
   if (plan.planType === 'sauna' && !FUTAMI_DAYS_LOADED) return 'unknown';
 
   // ふたみの日サウナは1予約で完売（occupied_slotsで判定）
+  // ★この経路だけは isSlotFree を通らない（部屋が sauna_share に切り替わり、在庫判定も別）ため、
+  //   施設ごとの停止はここで見る。sauna 指定も sauna_share に効く（availability.js の連動ルール）。
+  //   「構成時間のいずれかが停止ならプランごと不可」の規則は availability.js の
+  //   isPlanFacilityClosed が正本（2026-08-02 に inline の .some(...) から移設）。
   if (plan.planType === 'sauna' && isFutamiDay(date)) {
+    if (planFacilityClosed('sauna_share', date, plan.slots)) return 'none';
     return isFutamiSaunaSoldOut(plan, date) ? 'none' : 'ok';
   }
 
@@ -3109,7 +3152,13 @@ function stepNights(delta) {
 // expandStaySlots は <head> 直後の集約ブロックで再 export 済（2026-05-13）
 
 // 営業カレンダー（API連動）
-var BUSINESS_CALENDAR = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+// facilityClosed = 施設ごとの停止（2026-08-02）。"roomId|YYYY-MM-DD" / "roomId|YYYY-MM-DD|hour"
+var BUSINESS_CALENDAR = { defaultClosedDays: [2], forceOpen: [], forceClosed: [], facilityClosed: [] };
+
+// 施設停止をお客様に伝える文言。日付選択時の予告と、サーバ400（facility_closed）で同一。
+// ★理由は断定しない：停止の事由は点検・貸切・行政利用などその都度違い、
+//   運営が facilityClosed に理由を持たせていない（画面から事由は分からない）。
+const FACILITY_CLOSED_MESSAGE = '申し訳ありません。その日時は現在受付を停止しています（点検等）。別の日時をお選びください。';
 
 async function loadBusinessCalendar() {
   BUSINESS_CALENDAR_LOADED = false;
@@ -3126,6 +3175,10 @@ async function loadBusinessCalendar() {
     defaultClosedDays: data.defaultClosedDays.slice(),
     forceOpen: data.forceOpen.slice(),
     forceClosed: data.forceClosed.slice(),
+    // 施設ごとの停止。APIが未配備／欠落でもページ全体を落とさず「停止なし」に倒す
+    // （要素の形式チェックは availability.js 側が持つ＝壊れた要素は無視される）
+    facilityClosed: Array.isArray(data.facilityClosed)
+      ? data.facilityClosed.filter(v => typeof v === 'string') : [],
   };
   BUSINESS_CALENDAR_LOADED = true;
 }
@@ -3245,6 +3298,28 @@ function onBookingDateChange() {
     state.selectedDate = '';
   }
 
+  // 施設ごとの停止も入力時点で弾く（2026-08-02・最終ゲートはサーバ400 facility_closed）
+  // ★プラン一覧の日付は任意入力なので、停止中の枠のプランカードも押せてしまう。
+  //   これが無いと、お客様は入力を全部終えた送信の瞬間まで停止に気づけない。
+  if (state.selectedDate && state.selectedPlan) {
+    const fcPlan = state.selectedPlan;
+    // 実際に予約される部屋だけを見る（空いている部屋は showRoomBooking が自動選択済み）
+    const fcRooms = fcPlan.planType === 'camp'
+      ? (Array.isArray(state.selectedCampSites) ? state.selectedCampSites : [])
+      : (Array.isArray(state.selectedRoomIds) && state.selectedRoomIds.length > 0
+          ? state.selectedRoomIds
+          : (state.selectedRoomId ? [state.selectedRoomId] : []));
+    // hourly（テニス・ロッジ日帰り）は時間をお客様が選ぶ方式で、停止枠は時間グリッド側
+    // （isSlotFree / isTennisSlotFree）が既に押せなくしている。ここで plan.slots を
+    // 渡すと1枠の停止で日付ごと弾く誤爆になるため、終日停止だけを見る。
+    const fcHours = (fcPlan.planType === 'hourly' || !Array.isArray(fcPlan.slots)) ? [] : fcPlan.slots;
+    if (fcRooms.some(rid => planFacilityClosed(rid, state.selectedDate, fcHours))) {
+      alert(FACILITY_CLOSED_MESSAGE);
+      if (dateInput) dateInput.value = '';
+      state.selectedDate = '';
+    }
+  }
+
   const plan = state.selectedPlan;
   if (!plan) return;
   const pt = plan.planType;
@@ -3337,6 +3412,9 @@ function isTennisSlotFree(courtId, date, timeStr) {
     const nowMin = now.getHours() * 60 + now.getMinutes();
     if (slotMin <= nowMin) return false;
   }
+  // 施設ごとの停止（テニスは HHMM キーなので、時の突合は availability.js 側で先頭2桁を見る）
+  if (facilitySlotClosed(courtId, date, timeStr)) return false;
+
   return !TENNIS_SLOTS.has(`${courtId}|${date}|${timeStr}`);
 }
 
@@ -4042,6 +4120,7 @@ async function _submitBookingInner() {
           booking_too_far: 'ご予約可能期間を超えています。日付をご確認ください。',
           invalid_pricing_total: '料金の計算でエラーが発生しました。お手数ですが選び直してください。',
           closed_day: '選択された日は定休日のため予約できません。日付をご確認ください。',
+          facility_closed: FACILITY_CLOSED_MESSAGE,
           invalid_date_range: '日程の指定に不整合がありました。お手数ですが選び直してください。',
           too_many_nights: 'キャンプは3泊までご予約いただけます。泊数をご確認ください。',
           invalid_nights: '泊数の指定に不整合がありました。日程を選び直してください。',
@@ -4056,6 +4135,10 @@ async function _submitBookingInner() {
           client_update_required: '予約画面が更新されています。ページを再読み込みして、もう一度お選びください。',
         }[code];
         alert(msg || ('入力内容をご確認ください（' + (code || '不明なエラー') + '）。'));
+        // facility_closed は運営が受付を止めた後に起きる＝画面の空き情報が古い。
+        // loadAvailabilityData は営業カレンダー（facilityClosed の正本）も併せて取り直すので、
+        // 選び直す時には停止枠が画面から消えている。
+        if (code === 'facility_closed') await loadAvailabilityData();
         return;
       }
       // ネットワーク断等（code 無し）はキーを保持し、同一キーでの再試行で二重予約を防ぐ（#19）

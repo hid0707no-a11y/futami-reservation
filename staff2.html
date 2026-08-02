@@ -169,6 +169,37 @@ body {
 .cell-closed { background: #fef2f2; }
 .closed-day { background: #fef2f2 !important; color: #e94560; }
 .cell-count { font-size: 11px; line-height: 1; }
+/* 施設ごとの停止（facilityClosed）。色は既存トークン（#fef2f2 / #e94560）だけを使い、
+   終日停止＝ベタ塗り、時間帯だけの停止＝斜線 で見分ける（色を増やさない）。 */
+.cell-stop { background: #fef2f2; color: #e94560; font-weight: 700; cursor: default; }
+.cell-stop-part {
+  background: repeating-linear-gradient(45deg, #fef2f2 0 4px, #fff 4px 8px);
+  color: #e94560;
+  font-weight: 700;
+  cursor: default;
+}
+.cell-stop.has-res, .cell-stop-part.has-res { cursor: pointer; }
+/* 停止の解除（✕）。運営は現場からスマホで触るので指で押せる大きさを確保する */
+.stop-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  margin: -6px -6px -6px 2px;
+  cursor: pointer;
+  color: #666;
+  font-size: 14px;
+}
+.cal-subhead {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 14px 0 6px;
+  padding-left: 8px;
+  border-left: 3px solid var(--gray-200);
+}
+.cal-note { font-size: 11px; color: var(--gray-600); margin: 2px 0 6px; line-height: 1.5; }
 
 /* セル詳細ポップアップ */
 .popup-overlay {
@@ -262,7 +293,7 @@ body {
     <button class="today-btn" onclick="goToday()">今月</button>
     <a href="staff.html" class="back-btn">📋 詳細</a>
     <a href="staff_tennis.html" class="back-btn" style="background:#fef3c7;color:#b45309">🎾 テニス</a>
-    <button onclick="openCalendarSettings()" class="back-btn" style="background:#e0f2fe;color:#0369a1;border:none;cursor:pointer">📅 営業設定</button>
+    <button onclick="openCalendarSettings()" class="back-btn" style="background:#e0f2fe;color:#0369a1;border:none;cursor:pointer">📅 休館・休止設定</button>
     <button onclick="doLogout()" class="back-btn" style="background:#fef2f2;color:#dc2626;margin-left:auto;font-size:12px;border:none;cursor:pointer">ログアウト</button>
   </div>
   <div class="cat-tabs">
@@ -281,6 +312,8 @@ body {
   <div class="legend-item"><div class="legend-box" style="background:#34d399"></div>多め</div>
   <div class="legend-item"><div class="legend-box" style="background:#dc2626"></div>満</div>
   <div class="legend-item"><div class="legend-box" style="background:#fef3c7"></div>★ふたみの日</div>
+  <div class="legend-item"><div class="legend-box" style="background:#fef2f2"></div>停 終日停止</div>
+  <div class="legend-item"><div class="legend-box" style="background:repeating-linear-gradient(45deg,#fef2f2 0 4px,#fff 4px 8px)"></div>停 一部停止</div>
 </div>
 
 <div class="scroll-wrapper">
@@ -327,6 +360,91 @@ const ROOMS = [
   { id: 'lodge_b', name: 'ロッジB', building: 'アウトドア', category: 'outdoor' },
 ];
 
+// ===== 施設ごとの停止（facilityClosed）用の定義 =====
+// 施設名の正本は functions/src/lib/labels.ts の ROOM_LABELS。ここは表示用のコピーなので、
+// 向こうを変えたらこちらも合わせること（創作した名前を入れない）。
+// 上の ROOMS は「月俯瞰の行」用（テニスは別画面・キャンプは1行に集約）なので流用できない。
+const FACILITY_STOP_GROUPS = [
+  { building: 'サウナ', rooms: [
+    { id: 'sauna', name: 'サンセットサウナ' },
+  ] },
+  { building: 'テニス', rooms: [
+    { id: 'court_1', name: 'テニスコートA' },
+    { id: 'court_2', name: 'テニスコートB' },
+    { id: 'court_3', name: 'テニスコートC' },
+    { id: 'court_4', name: 'テニスコートD' },
+    { id: 'court_5', name: 'テニスコートE' },
+    { id: 'court_wall', name: '半面コート（壁打ち練習用）' },
+  ] },
+  { building: 'グラウンド', rooms: [
+    { id: 'midori', name: 'みどりの広場' },
+  ] },
+  { building: 'ふれあいの館', rooms: [
+    { id: 'room_27', name: '1号室（大部屋・27畳）' },
+    { id: 'room_6_1', name: '2号室（6畳）' },
+    { id: 'room_6_2', name: '3号室（6畳）' },
+    { id: 'room_6_3', name: '5号室（6畳）' },
+    { id: 'room_6_4', name: '6号室（6畳）' },
+    { id: 'room_exp', name: '体験学習室（25畳）' },
+    { id: 'room_train', name: '研修室' },
+    { id: 'room_kitchen', name: '厨房・食堂' },
+  ] },
+  { building: 'アウトドア', rooms: [
+    { id: 'camp_1', name: 'キャンプ区画①' },
+    { id: 'camp_2', name: 'キャンプ区画②' },
+    { id: 'camp_3', name: 'キャンプ区画③' },
+    { id: 'camp_4', name: 'キャンプ区画④' },
+    { id: 'camp_5', name: 'キャンプ区画⑤' },
+    { id: 'camp_6', name: 'キャンプ区画⑥' },
+    { id: 'camp_7', name: 'キャンプ区画⑦' },
+    { id: 'camp_8', name: 'キャンプ区画⑧' },
+    { id: 'lodge_a', name: 'ロッジA' },
+    { id: 'lodge_b', name: 'ロッジB' },
+  ] },
+];
+
+// プルダウンには出さないが、既存データを日本語で表示するために名前が要るID。
+// sauna_share は「ふたみの日」のサウナ在庫。sauna を止めれば sauna_share も止まる（サーバ側で連動）ので、
+// 職員がわざわざ選ぶ必要はない。
+const FACILITY_STOP_EXTRA_LABELS = { sauna_share: 'サンセットサウナ（ふたみの日）' };
+
+const FACILITY_LABELS = (function () {
+  const map = {};
+  FACILITY_STOP_GROUPS.forEach(g => g.rooms.forEach(r => { map[r.id] = r.name; }));
+  Object.keys(FACILITY_STOP_EXTRA_LABELS).forEach(k => { map[k] = FACILITY_STOP_EXTRA_LABELS[k]; });
+  return map;
+})();
+
+// facilityClosed 側の roomId → 月俯瞰の行（上の ROOMS の id）。
+//  - sauna_share は sauna と同じ物理サウナ（サーバ businessDays.ts の連動ルールと同じ思想）
+//  - キャンプは停止指定が区画単位（camp_1〜camp_8）だが、表は「キャンプ場」1行に集約されている
+//  - テニス（court_*）はこの表に行が無い＝どの行にも対応しない（staff_tennis.html 側の管轄）
+function facilityRowId(roomId) {
+  if (roomId === 'sauna_share') return 'sauna';
+  if (/^camp_\d+$/.test(roomId)) return 'camp';
+  return roomId;
+}
+// 行が代表している施設の数。全部止まって初めて「終日停止」と表示するために使う
+// （キャンプ場は8区画あるので、1区画だけ止めても行ごと閉じたことにはしない）。
+const ROW_FACILITY_COUNT = (function () {
+  const count = {};
+  FACILITY_STOP_GROUPS.forEach(g => g.rooms.forEach(r => {
+    const row = facilityRowId(r.id);
+    count[row] = (count[row] || 0) + 1;
+  }));
+  return count;
+})();
+
+// サウナの時間帯。index.html の PLANS（sauna_1〜sauna_4）と一致させること。勝手な時間を書かない。
+const SAUNA_ROOM_IDS = ['sauna', 'sauna_share'];
+const SAUNA_TIME_SLOTS = [
+  { id: 'sauna_1', label: 'A 10:00-12:00', hours: [10, 11] },
+  { id: 'sauna_2', label: 'B 12:30-14:30', hours: [12, 13, 14] },
+  { id: 'sauna_3', label: 'C 15:00-17:00', hours: [15, 16] },
+  { id: 'sauna_4', label: 'D 17:30-19:30', hours: [17, 18, 19] },
+];
+const FACILITY_CLOSED_MAX = 2000; // サーバ側 businessCalendar POST の上限と同じ
+
 // ===== 状態 =====
 let currentMonth = (function(){
   const d = new Date();
@@ -355,6 +473,40 @@ function isRealIsoDateString(value) {
   const d = new Date(value + 'T00:00:00Z');
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
+// facilityClosed の要素は次の2形式だけ（config/business_calendar の契約）：
+//   "roomId|YYYY-MM-DD"       … その施設をその日は終日停止
+//   "roomId|YYYY-MM-DD|hour"  … その施設のその時間だけ停止（hour は 0〜23・ゼロ埋めしない）
+// 形だけを見る判定。roomId が staff2 の一覧に無くても通す。
+// ★この画面が知らない roomId（テニス以外の新施設・staff側で先に増えた施設）を捨てると、
+//   保存が全置換なので「サーバ上で生きている停止を、この画面を開いただけで消す」ことになる。
+//   だから未知の roomId は温存し、保存時にそのまま送り返す（表示だけ生IDでフォールバックする）。
+function isWellFormedFacilityClosedEntry(value) {
+  if (typeof value !== 'string') return false;
+  const parts = value.split('|');
+  if (parts.length !== 2 && parts.length !== 3) return false;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(parts[0])) return false;
+  if (!isRealIsoDateString(parts[1])) return false;
+  if (parts.length === 3 && !/^(?:[0-9]|1[0-9]|2[0-3])$/.test(parts[2])) return false;
+  return true;
+}
+// 職員がこの画面から新しく足す停止は、知っている施設だけに限る（打ち間違いを通さない）。
+function isValidFacilityClosedEntry(value) {
+  if (!isWellFormedFacilityClosedEntry(value)) return false;
+  return Object.prototype.hasOwnProperty.call(FACILITY_LABELS, value.split('|')[0]);
+}
+// facilityClosed は「無ければ空配列・形が壊れた要素だけ捨てる」。
+// ここで throw すると、1件の不正データで休館設定画面ごと開けなくなる（既存3項目とは扱いを変える）。
+function sanitizeFacilityClosed(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = {};
+  const out = [];
+  for (const v of value) {
+    if (!isWellFormedFacilityClosedEntry(v) || seen[v]) continue;
+    seen[v] = true;
+    out.push(v);
+  }
+  return out;
+}
 function validateCalendarPayload(data) {
   if (!data || !Array.isArray(data.defaultClosedDays)
       || !data.defaultClosedDays.every(d => Number.isInteger(d) && d >= 0 && d <= 6)
@@ -366,6 +518,7 @@ function validateCalendarPayload(data) {
     defaultClosedDays: data.defaultClosedDays.slice(),
     forceOpen: data.forceOpen.slice(),
     forceClosed: data.forceClosed.slice(),
+    facilityClosed: sanitizeFacilityClosed(data.facilityClosed),
   };
 }
 function cloneCalendarSettings(value) {
@@ -373,6 +526,7 @@ function cloneCalendarSettings(value) {
     defaultClosedDays: (value.defaultClosedDays || []).slice(),
     forceOpen: (value.forceOpen || []).slice(),
     forceClosed: (value.forceClosed || []).slice(),
+    facilityClosed: (value.facilityClosed || []).slice(),
   };
 }
 
@@ -397,8 +551,13 @@ async function loadData() {
     const nextCalendar = validateCalendarPayload(dataC);
     RESERVATIONS = (dataA.reservations || []).filter(r => r.status !== 'cancelled');
     FUTAMI_DAYS = new Set(dataF.dates || []);
-    CAL_SETTINGS = nextCalendar;
-    LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(nextCalendar);
+    // ★60秒ごとの自動更新が、編集中の休館・休止設定を裏で差し替えないようにする。
+    //   差し替えると「職員が足した停止が消えたまま保存される（＝すでに保存済みの停止まで消える）」。
+    //   予約一覧・ふたみの日は上書きしてよい（読むだけの情報なので新しいほうが正しい）。
+    if (!isCalendarSettingsLocked()) {
+      CAL_SETTINGS = nextCalendar;
+      LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(nextCalendar);
+    }
     LAST_SYNC = new Date();
     document.getElementById('syncIndicator').textContent = '最終同期: ' + LAST_SYNC.toLocaleTimeString();
     document.getElementById('syncIndicator').style.background = 'rgba(40,140,80,0.85)';
@@ -476,6 +635,7 @@ function render() {
 
   // ボディ
   const occMap = buildOccupancyMap();
+  const stopMap = buildFacilityStopCellMap(CAL_SETTINGS.facilityClosed || []);
   const rooms = filteredRooms();
   // building 別にグループ化
   const byBuilding = {};
@@ -503,8 +663,17 @@ function render() {
           else cellClass = 'cell-full';
           label = `<span class="cell-count">${count}</span>`;
         }
+        // 施設ごとの停止。モーダルを開かないと分からない状態だと、止めた施設が表では空きに見える。
+        // 過ぎた日は運用上どうでもよいので従来どおり灰色のまま。
+        const stopState = ds < today ? '' : (stopMap[room.id + '|' + ds] || '');
+        let stopTitle = '';
+        if (stopState) {
+          cellClass = (stopState === 'all' ? 'cell-stop' : 'cell-stop-part') + (count > 0 ? ' has-res' : '');
+          stopTitle = stopState === 'all' ? ' title="施設停止（終日）"' : ' title="施設停止（一部の時間・区画のみ）"';
+          label = `<span class="cell-count">停${count > 0 ? count : ''}</span>`;
+        }
         const onclick = count > 0 ? ` onclick="showCellDetail('${room.id}','${ds}','${room.name.replace(/'/g, '')}')"` : '';
-        html += `<td class="${cellClass}"${onclick}>${label}</td>`;
+        html += `<td class="${cellClass}"${stopTitle}${onclick}>${label}</td>`;
       }
       html += '</tr>';
     }
@@ -604,16 +773,45 @@ function setCategory(cat) {
   render();
 }
 
-// ===== 営業カレンダー管理 =====
-var CAL_SETTINGS = { defaultClosedDays: [2], forceOpen: [], forceClosed: [] };
+// ===== 休館・休止設定（営業カレンダー）管理 =====
+var CAL_SETTINGS = { defaultClosedDays: [2], forceOpen: [], forceClosed: [], facilityClosed: [] };
 var LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(CAL_SETTINGS);
+// 「施設ごとに止める」フォームの入力内容。保存のたびにモーダルを描き直すので、
+// 選んだ施設・日付が消えないようここに退避する（サウナのA〜Dを続けて止める操作が多い）。
+var FACILITY_STOP_FORM = { roomId: 'sauna', date: '', range: 'all' };
+// businessCalendar POST が dryRun に対応しているか（null=未確認 / true / false）
+var CAL_DRYRUN_SUPPORTED = null;
+// 追加・削除の往復（dryRun → 職員が読む → 保存 → 読み直し）が走っている間は 0 より大きい。
+// この間に自動更新が CAL_SETTINGS を差し替えると、編集内容が消えたまま保存される。
+// applyCalendarChange の中から saveCalendarSettings を呼ぶので、真偽値でなく入れ子を数える。
+var CAL_EDIT_IN_FLIGHT = 0;
+// 過去の停止を一覧に出しているか（描き直しても畳んだ状態を保つ）
+var FACILITY_STOP_SHOW_PAST = false;
 
-async function loadCalendarSettings() {
+function isCalendarModalOpen() {
+  const el = document.getElementById('calModal');
+  return !!el && el.style.display === 'flex';
+}
+function isCalendarSettingsLocked() {
+  return CAL_EDIT_IN_FLIGHT > 0 || isCalendarModalOpen();
+}
+
+async function fetchCalendarSettings() {
   const res = await fetch(API_BASE + '/businessCalendar?t=' + Date.now());
   if (!res.ok) throw new Error('businessCalendar HTTP ' + res.status);
-  const next = validateCalendarPayload(await res.json());
+  return validateCalendarPayload(await res.json());
+}
+
+async function loadCalendarSettings() {
+  const next = await fetchCalendarSettings();
   CAL_SETTINGS = next;
   LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(next);
+}
+
+// 変更操作の起点。ここで作った控えに手を入れ、往復もこの控えを送る。
+// CAL_SETTINGS 本体は保存が通ってから差し替える（＝途中で自動更新が挟まっても送る内容が変わらない）。
+function calendarSnapshot() {
+  return cloneCalendarSettings(CAL_SETTINGS);
 }
 
 async function openCalendarSettings() {
@@ -626,7 +824,7 @@ async function openCalendarSettings() {
     console.error('calendar settings load failed', e);
     document.getElementById('calModalBody').innerHTML =
       '<div style="text-align:center;color:#b91c1c;line-height:1.7">' +
-      '<strong>営業カレンダーを取得できませんでした。</strong><br>安全のため編集を停止しています。' +
+      '<strong>休館・休止設定を取得できませんでした。</strong><br>安全のため編集を停止しています。' +
       '<br><button onclick="openCalendarSettings()" style="margin-top:12px;padding:7px 14px">再試行</button></div>';
   }
 }
@@ -637,10 +835,24 @@ function closeCalendarModal() {
 
 function renderCalendarModal() {
   const days = ['日','月','火','水','木','金','土'];
-  let html = '<h3 style="margin-bottom:12px;color:#0f3460;">営業カレンダー設定</h3>';
+  let html = '<h3 style="margin-bottom:12px;color:#0f3460;">休館・休止設定</h3>';
+
+  // ── ① 公園ぜんぶ ─────────────────────────────
+  // 「公園ぜんぶ」と「施設ごと」を取り違えると、サウナだけ止めたいのに全館を閉めてしまう。
+  // 見出しで必ず区別を明示すること。
+  // ★この①の中には「休みにする」設定と「逆に営業する」設定が同居している。
+  //   見出しを『休みにする』だけにすると、特別営業日を休業の設定だと思って触られる。
+  html += '<div style="background:var(--gray-100);border-radius:8px;padding:8px 10px;margin-bottom:10px;">' +
+    '<strong style="color:var(--navy);font-size:14px;">① 公園ぜんぶの営業設定（全施設に効きます）</strong>' +
+    '<div style="font-size:11px;color:var(--gray-600);margin-top:2px;">' +
+    'ここの設定はサウナも部屋もキャンプも、すべての施設に一度に効きます</div></div>';
+
+  html += '<div class="cal-subhead">休みにする</div>';
 
   // 定休曜日
-  html += '<div style="margin-bottom:16px;"><strong>定休曜日</strong><div style="display:flex;gap:6px;margin-top:6px;">';
+  html += '<div style="margin-bottom:16px;"><strong>定休曜日</strong>';
+  html += '<div class="cal-note">タップした曜日は、過去・未来のすべてのその曜日が休みになります</div>';
+  html += '<div style="display:flex;gap:6px;margin-top:6px;">';
   for (let i = 0; i < 7; i++) {
     const checked = (CAL_SETTINGS.defaultClosedDays || []).includes(i);
     html += '<label style="padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px;' +
@@ -649,6 +861,12 @@ function renderCalendarModal() {
       ' onchange="toggleClosedDay(' + i + ')" style="display:none;">' + days[i] + '</label>';
   }
   html += '</div></div>';
+
+  // 休業強制日（forceClosed）は「休みにする」側なので定休曜日の隣に置く
+  html += renderForceClosedSection();
+
+  html += '<div class="cal-subhead">例外的に営業する</div>';
+  html += '<div class="cal-note">この欄は逆に“営業する”設定です。休みにしたいときは上の「休みにする」を使ってください</div>';
 
   // 営業強制日（forceOpen）
   html += '<div style="margin-bottom:16px;"><strong>特別営業日</strong>（定休日でも営業する日）';
@@ -660,15 +878,24 @@ function renderCalendarModal() {
   html += '<span>〜</span>';
   html += '<input type="date" id="rangeOpenTo" style="padding:6px;border:1px solid #ccc;border-radius:6px;width:130px;">';
   html += '<button onclick="addForceRange(\'forceOpen\')" style="padding:6px 12px;background:#16c79a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">期間の定休日を一括営業</button></div>';
+  html += '<div class="cal-note">✕ を押すとその日は定休日に戻ります（＝公園ぜんぶが予約できなくなります）</div>';
   html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">';
   (CAL_SETTINGS.forceOpen || []).sort().forEach(d => {
     html += '<span style="background:#d1fae5;padding:2px 8px;border-radius:10px;font-size:12px;">' + d +
-      ' <span onclick="removeForceDate(\'forceOpen\',\'' + d + '\')" style="cursor:pointer;color:#e94560;">✕</span></span>';
+      '<span class="stop-x" style="color:#e94560;" onclick="removeForceDate(\'forceOpen\',\'' + d + '\')">✕</span></span>';
   });
   html += '</div></div>';
 
-  // 休業強制日（forceClosed）
-  html += '<div style="margin-bottom:16px;"><strong>臨時休業日</strong>（営業日でも休業する日）';
+  // ── ② 施設ごと ─────────────────────────────
+  html += renderFacilityStopSection();
+
+  document.getElementById('calModalBody').innerHTML = html;
+  syncFacilityStopForm();
+}
+
+// 臨時休業日（forceClosed）。「休みにする」側の設定なので定休曜日の直後に描く。
+function renderForceClosedSection() {
+  let html = '<div style="margin-bottom:16px;"><strong>臨時休業日</strong>（営業日でも休業する日）';
   html += '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">';
   html += '<input type="date" id="addForceClosed" style="padding:6px;border:1px solid #ccc;border-radius:6px;">';
   html += '<button onclick="addForceDate(\'forceClosed\')" style="padding:6px 12px;background:#e94560;color:#fff;border:none;border-radius:6px;cursor:pointer;">追加</button></div>';
@@ -680,29 +907,359 @@ function renderCalendarModal() {
   html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">';
   (CAL_SETTINGS.forceClosed || []).sort().forEach(d => {
     html += '<span style="background:#fecaca;padding:2px 8px;border-radius:10px;font-size:12px;">' + d +
-      ' <span onclick="removeForceDate(\'forceClosed\',\'' + d + '\')" style="cursor:pointer;color:#666;">✕</span></span>';
+      '<span class="stop-x" onclick="removeForceDate(\'forceClosed\',\'' + d + '\')">✕</span></span>';
   });
   html += '</div></div>';
+  return html;
+}
 
-  document.getElementById('calModalBody').innerHTML = html;
+// ===== ② 施設ごとに止める（facilityClosed）=====
+function facilityLabel(roomId) {
+  return FACILITY_LABELS[roomId] || roomId;
+}
+function formatJpDate(ds) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ds || '');
+  if (!m) return ds || '';
+  const wd = ['日','月','火','水','木','金','土'][new Date(ds + 'T00:00:00').getDay()];
+  return Number(m[1]) + '年' + Number(m[2]) + '月' + Number(m[3]) + '日(' + wd + ')';
+}
+function isSaunaRoom(roomId) {
+  return SAUNA_ROOM_IDS.indexOf(roomId) !== -1;
+}
+
+// facilityClosed（生の文字列配列）を「施設×日付」の行に畳んで、行の中を人が読める単位に直す。
+// サウナは 12/13/14時 が揃っていれば「B 12:30-14:30」と1つにまとめて見せる。
+function groupFacilityClosed(list) {
+  const order = [];
+  const map = {};
+  (list || []).forEach(k => {
+    const p = k.split('|');
+    const gk = p[0] + '|' + p[1];
+    if (!map[gk]) { map[gk] = { roomId: p[0], date: p[1], allDayKeys: [], hours: [] }; order.push(gk); }
+    if (p.length === 2) map[gk].allDayKeys.push(k);
+    else map[gk].hours.push({ hour: Number(p[2]), key: k });
+  });
+  const groups = order.map(k => map[k]);
+  groups.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.roomId < b.roomId ? -1 : a.roomId > b.roomId ? 1 : 0)));
+  groups.forEach(g => { g.units = buildFacilityStopUnits(g); });
+  return groups;
+}
+function buildFacilityStopUnits(group) {
+  const units = [];
+  if (group.allDayKeys.length) units.push({ label: '終日', keys: group.allDayKeys.slice() });
+  let hours = group.hours.slice().sort((a, b) => a.hour - b.hour);
+  if (isSaunaRoom(group.roomId)) {
+    SAUNA_TIME_SLOTS.forEach(slot => {
+      const hit = slot.hours.map(h => hours.filter(x => x.hour === h)[0]).filter(Boolean);
+      if (hit.length !== slot.hours.length) return;
+      units.push({ label: slot.label, keys: hit.map(x => x.key) });
+      hours = hours.filter(x => slot.hours.indexOf(x.hour) === -1);
+    });
+  }
+  hours.forEach(x => units.push({ label: x.hour + '時台', keys: [x.key] }));
+  return units;
+}
+
+// 月俯瞰の表用：facilityClosed を「行roomId|日付 → 'all'（終日停止）/ 'part'（一部だけ停止）」に畳む。
+// 判定の意味はサーバ businessDays.ts の isFacilitySlotClosed と同じ（sauna⇄sauna_share 連動込み）。
+// 空配列なら空のマップを返す＝facilityClosed 未設定なら導入前と完全に同じ描画になる。
+function buildFacilityStopCellMap(list) {
+  const map = {};
+  if (!Array.isArray(list) || list.length === 0) return map;
+  const acc = {};
+  groupFacilityClosed(list).forEach(g => {
+    const row = facilityRowId(g.roomId);
+    const key = row + '|' + g.date;
+    if (!acc[key]) acc[key] = { row: row, allDay: {}, part: false };
+    if (g.allDayKeys.length) acc[key].allDay[g.roomId] = true;
+    if (g.hours.length) acc[key].part = true;
+  });
+  Object.keys(acc).forEach(key => {
+    const a = acc[key];
+    // 行が代表する施設が全部「終日」で止まっているときだけ終日扱い
+    // （キャンプ場8区画のうち3区画だけ止めた状態を、行ごと閉じたように見せない）
+    const need = ROW_FACILITY_COUNT[a.row] || 1;
+    map[key] = Object.keys(a.allDay).length >= need ? 'all' : 'part';
+  });
+  return map;
+}
+
+// 一覧に出している ✕ の対象。onclick には番号だけ渡す（施設名や時間帯を属性に埋め込まない）。
+var FACILITY_STOP_UNIT_INDEX = [];
+
+function isPastFacilityStopKey(key) {
+  const p = String(key || '').split('|');
+  return p.length >= 2 && p[1] < todayStr();
+}
+function pastFacilityStopKeys(list) {
+  return (list || []).filter(isPastFacilityStopKey);
+}
+// 上限判定に使う「これから効く停止」の件数（過去分は効かないので数えない）
+function activeFacilityStopCount(list) {
+  return (list || []).length - pastFacilityStopKeys(list).length;
+}
+
+function renderFacilityStopSection() {
+  let html = '<div style="background:var(--gray-100);border-radius:8px;padding:8px 10px;margin:18px 0 10px;">' +
+    '<strong style="color:var(--navy);font-size:14px;">② 施設ごとに止める</strong>' +
+    '<div style="font-size:11px;color:var(--gray-600);margin-top:2px;">' +
+    '選んだ施設だけ予約できなくなります。ほかの施設はふだんどおり営業します</div></div>';
+
+  // 施設プルダウン
+  html += '<div style="margin-bottom:10px;"><label style="font-size:12px;color:var(--gray-600);">施設</label>';
+  html += '<select id="facilityStopRoom" onchange="onFacilityStopRoomChange()" ' +
+    'style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-top:2px;">';
+  FACILITY_STOP_GROUPS.forEach(g => {
+    html += '<optgroup label="' + escapeHtml(g.building) + '">';
+    g.rooms.forEach(r => {
+      html += '<option value="' + escapeHtml(r.id) + '">' + escapeHtml(r.name) + '</option>';
+    });
+    html += '</optgroup>';
+  });
+  html += '</select></div>';
+
+  // 日付
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">';
+  html += '<div style="flex:1 1 130px;"><label style="font-size:12px;color:var(--gray-600);">日付</label>' +
+    '<input type="date" id="facilityStopDate" onchange="rememberFacilityStopForm()" ' +
+    'style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-top:2px;"></div>';
+  // 範囲（サウナのときだけ A〜D を選べる）
+  html += '<div style="flex:1 1 150px;" id="facilityStopRangeWrap"></div>';
+  html += '<button onclick="addFacilityStop()" style="flex:0 0 auto;padding:8px 14px;background:#e94560;color:#fff;' +
+    'border:none;border-radius:6px;cursor:pointer;font-weight:700;">追加</button>';
+  html += '</div>';
+
+  // 現在の停止一覧。過ぎた日の停止は効かないので既定では畳んでおく
+  // （古い順に積み上がると、いま効いている停止が画面外へ押し出されて読めなくなる）。
+  FACILITY_STOP_UNIT_INDEX = [];
+  const today = todayStr();
+  const allGroups = groupFacilityClosed(CAL_SETTINGS.facilityClosed || []);
+  const upcoming = allGroups.filter(g => g.date >= today);
+  const past = allGroups.filter(g => g.date < today);
+  const pastKeyCount = pastFacilityStopKeys(CAL_SETTINGS.facilityClosed || []).length;
+
+  html += '<div style="font-size:12px;color:var(--gray-600);margin-bottom:4px;">いま止めている施設（' + upcoming.length + '件・今日以降）</div>';
+  if (!upcoming.length) {
+    html += '<div style="font-size:12px;color:var(--gray-600);padding:6px 0;">まだありません</div>';
+  } else {
+    html += renderFacilityStopGroups(upcoming);
+  }
+
+  if (past.length) {
+    html += '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">';
+    html += '<button onclick="toggleFacilityStopPast()" style="padding:6px 12px;background:var(--gray-100);' +
+      'color:var(--gray-700);border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:12px;">' +
+      (FACILITY_STOP_SHOW_PAST ? '過去の停止を隠す' : '過去の停止を表示') + '（' + past.length + '件）</button>';
+    html += '<button onclick="removePastFacilityStops()" style="padding:6px 12px;background:var(--gray-100);' +
+      'color:var(--gray-700);border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:12px;">' +
+      '過去の停止をまとめて削除（' + pastKeyCount + '件）</button>';
+    html += '</div>';
+    if (FACILITY_STOP_SHOW_PAST) {
+      html += '<div style="margin-top:8px;opacity:0.65;">' + renderFacilityStopGroups(past) + '</div>';
+    }
+  }
+  return html;
+}
+
+function renderFacilityStopGroups(groups) {
+  let html = '';
+  groups.forEach(g => {
+    html += '<div style="border:1px solid var(--gray-200);border-radius:8px;padding:6px 8px;margin-bottom:6px;">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--navy);">' + escapeHtml(facilityLabel(g.roomId)) + '</div>';
+    html += '<div style="font-size:12px;color:var(--gray-600);margin-bottom:4px;">' + escapeHtml(formatJpDate(g.date)) + '</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">';
+    g.units.forEach(u => {
+      const idx = FACILITY_STOP_UNIT_INDEX.length;
+      FACILITY_STOP_UNIT_INDEX.push({ roomId: g.roomId, date: g.date, label: u.label, keys: u.keys.slice() });
+      html += '<span style="background:#fecaca;padding:3px 4px 3px 8px;border-radius:10px;font-size:12px;' +
+        'display:inline-flex;align-items:center;">' + escapeHtml(u.label) +
+        '<span class="stop-x" onclick="removeFacilityStop(' + idx + ')">✕</span></span>';
+    });
+    html += '</div></div>';
+  });
+  return html;
+}
+
+function toggleFacilityStopPast() {
+  FACILITY_STOP_SHOW_PAST = !FACILITY_STOP_SHOW_PAST;
+  renderCalendarModal();
+}
+
+// 範囲プルダウンの中身を施設に合わせて差し替える（サウナ以外は「終日」だけ）
+function renderFacilityStopRange() {
+  const wrap = document.getElementById('facilityStopRangeWrap');
+  if (!wrap) return;
+  const roomId = (document.getElementById('facilityStopRoom') || {}).value || '';
+  let html = '<label style="font-size:12px;color:var(--gray-600);">範囲</label>';
+  html += '<select id="facilityStopRange" onchange="rememberFacilityStopForm()" ' +
+    'style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-top:2px;">';
+  html += '<option value="all">終日</option>';
+  if (isSaunaRoom(roomId)) {
+    SAUNA_TIME_SLOTS.forEach(s => {
+      html += '<option value="' + escapeHtml(s.id) + '">' + escapeHtml(s.label) + '</option>';
+    });
+  }
+  html += '</select>';
+  wrap.innerHTML = html;
+}
+function onFacilityStopRoomChange() {
+  const sel = document.getElementById('facilityStopRoom');
+  if (sel) FACILITY_STOP_FORM.roomId = sel.value;
+  FACILITY_STOP_FORM.range = 'all'; // 施設を変えたら時間帯はリセット（サウナのA〜Dを別施設へ持ち越さない）
+  renderFacilityStopRange();
+  rememberFacilityStopForm();
+}
+function rememberFacilityStopForm() {
+  const room = document.getElementById('facilityStopRoom');
+  const date = document.getElementById('facilityStopDate');
+  const range = document.getElementById('facilityStopRange');
+  if (room) FACILITY_STOP_FORM.roomId = room.value;
+  if (date) FACILITY_STOP_FORM.date = date.value;
+  FACILITY_STOP_FORM.range = range ? range.value : 'all';
+}
+// 描き直しのたびに、直前に選んでいた施設・日付・範囲を入力欄へ戻す
+function syncFacilityStopForm() {
+  const room = document.getElementById('facilityStopRoom');
+  if (!room) return;
+  if (FACILITY_STOP_FORM.roomId) room.value = FACILITY_STOP_FORM.roomId;
+  if (!room.value) room.selectedIndex = 0;
+  FACILITY_STOP_FORM.roomId = room.value;
+  renderFacilityStopRange();
+  const date = document.getElementById('facilityStopDate');
+  if (date) date.value = FACILITY_STOP_FORM.date || '';
+  const range = document.getElementById('facilityStopRange');
+  if (range) {
+    range.value = FACILITY_STOP_FORM.range || 'all';
+    if (!range.value) range.value = 'all';
+    FACILITY_STOP_FORM.range = range.value;
+  }
+}
+
+function buildFacilityStopKeys(roomId, date, range) {
+  if (range === 'all') return [roomId + '|' + date];
+  const slot = SAUNA_TIME_SLOTS.filter(s => s.id === range)[0];
+  if (!slot || !isSaunaRoom(roomId)) return [];
+  return slot.hours.map(h => roomId + '|' + date + '|' + h);
+}
+
+async function addFacilityStop() {
+  rememberFacilityStopForm();
+  const roomId = FACILITY_STOP_FORM.roomId;
+  const date = FACILITY_STOP_FORM.date;
+  const range = FACILITY_STOP_FORM.range;
+  if (!Object.prototype.hasOwnProperty.call(FACILITY_LABELS, roomId)) { alert('施設を選んでください'); return; }
+  if (!isRealIsoDateString(date)) { alert('日付を選んでください'); return; }
+  const keys = buildFacilityStopKeys(roomId, date, range);
+  if (!keys.length || !keys.every(isValidFacilityClosedEntry)) { alert('止める範囲を選び直してください'); return; }
+  // ★ここで控えを取り、以後この控えだけを触る。dryRun と職員の確認で時間がかかる間に
+  //   自動更新が CAL_SETTINGS を差し替えても、送る内容は変わらない。
+  const next = calendarSnapshot();
+  if (!next.facilityClosed) next.facilityClosed = [];
+  const added = keys.filter(k => next.facilityClosed.indexOf(k) === -1);
+  if (!added.length) { alert('その停止はすでに登録されています'); return; }
+  // 上限は「これから効く停止」で数える（過ぎた分は効かないので枠を食わせない）
+  if (activeFacilityStopCount(next.facilityClosed) + added.length > FACILITY_CLOSED_MAX) {
+    alert('停止の登録は最大' + FACILITY_CLOSED_MAX + '件までです。いま止めている分を減らしてください');
+    return;
+  }
+  if (next.facilityClosed.length + added.length > FACILITY_CLOSED_MAX) {
+    alert('過去の停止が溜まって上限' + FACILITY_CLOSED_MAX + '件に達しています。\n「過去の停止をまとめて削除」を実行してから追加してください');
+    return;
+  }
+  const rangeLabel = range === 'all' ? '終日'
+    : (SAUNA_TIME_SLOTS.filter(s => s.id === range)[0] || {}).label || '';
+  next.facilityClosed = next.facilityClosed.concat(added);
+  if (await applyCalendarChange(next)) {
+    // ★保存したつもりで消えている事故を止めるため、必ずサーバから読み直して実物を見る。
+    //   Cloud Functions と GitHub Pages は別デプロイなので、
+    //   「画面は facilityClosed を送るがサーバはまだ知らない（黙って捨てる）」状態が実在する。
+    const verified = await verifyFacilityStopSaved(added);
+    renderCalendarModal();
+    if (verified === 'ok') {
+      alert(facilityLabel(roomId) + ' / ' + formatJpDate(date) + ' / ' + rangeLabel + ' を予約できないようにしました');
+    } else if (verified === 'missing') {
+      alert('停止を保存できませんでした。サーバー側が未対応です。システム担当に連絡してください。\n（お客様はまだ予約できる状態です）');
+    } else {
+      alert('保存しましたが、反映されたかを確認できませんでした（通信エラー）。\n画面を開き直して、一覧に出ているか確かめてください');
+    }
+  }
+}
+
+// ③ 保存後の実地確認。'ok'=サーバに入っている / 'missing'=入っていない / 'unknown'=通信エラーで確認できず
+async function verifyFacilityStopSaved(keys) {
+  let server;
+  try {
+    server = await fetchCalendarSettings();
+  } catch (e) {
+    console.warn('calendar verify failed', e);
+    return 'unknown';
+  }
+  // 確認で取れた内容がサーバの実物。これを画面の正とする
+  CAL_SETTINGS = server;
+  LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(server);
+  render();
+  const list = server.facilityClosed || [];
+  return keys.every(k => list.indexOf(k) !== -1) ? 'ok' : 'missing';
+}
+
+async function removeFacilityStop(index) {
+  const unit = FACILITY_STOP_UNIT_INDEX[Number(index)];
+  if (!unit || !unit.keys.length) return;
+  // 同じ日に A〜D が並ぶので、施設名と日付だけでは誤タップを止められない。枠まで読ませる
+  if (!confirm(facilityLabel(unit.roomId) + '\n' + formatJpDate(unit.date) + '\n' + unit.label +
+    '\n\nこの停止を解除します。解除するとお客様がまた予約できるようになります。よろしいですか？')) return;
+  const next = calendarSnapshot();
+  next.facilityClosed = (next.facilityClosed || []).filter(k => unit.keys.indexOf(k) === -1);
+  // 解除は「予約できる方向」の変更なので、既存予約と矛盾しない＝事前チェックは不要
+  if (await saveCalendarSettings(next)) renderCalendarModal();
+}
+
+// 過ぎた停止をまとめて片付ける（今日より前の要素だけを除いて保存する）
+async function removePastFacilityStops() {
+  const list = (CAL_SETTINGS.facilityClosed || []);
+  const pastKeys = pastFacilityStopKeys(list);
+  if (!pastKeys.length) { alert('過去の停止はありません'); return; }
+  if (!confirm('今日より前の停止 ' + pastKeys.length + '件を一覧から削除します。\n過ぎた日の設定なので、お客様の予約や今後の停止には影響しません。よろしいですか？')) return;
+  const next = calendarSnapshot();
+  next.facilityClosed = (next.facilityClosed || []).filter(k => !isPastFacilityStopKey(k));
+  if (await saveCalendarSettings(next)) {
+    renderCalendarModal();
+    alert(pastKeys.length + '件を削除しました');
+  }
 }
 
 async function toggleClosedDay(dow) {
-  let arr = CAL_SETTINGS.defaultClosedDays || [];
-  if (arr.includes(dow)) arr = arr.filter(d => d !== dow);
-  else arr.push(dow);
-  CAL_SETTINGS.defaultClosedDays = arr;
-  if (await saveCalendarSettings()) renderCalendarModal();
+  const days = ['日','月','火','水','木','金','土'];
+  const current = CAL_SETTINGS.defaultClosedDays || [];
+  const willClose = !current.includes(dow);
+  const next = calendarSnapshot();
+  next.defaultClosedDays = willClose
+    ? (next.defaultClosedDays || []).concat([dow])
+    : (next.defaultClosedDays || []).filter(d => d !== dow);
+  if (willClose) {
+    // 1タップで全期間に効く、この画面でいちばん破壊的な操作。範囲が全期間であることを必ず読ませる
+    if (!confirm('毎週' + days[dow] + '曜日を定休日にします。\n過去・未来のすべての' + days[dow] + '曜日が予約できなくなります。\nよろしいですか？')) {
+      renderCalendarModal(); // チェックボックスの見た目を元に戻す
+      return;
+    }
+    if (await applyCalendarChange(next)) renderCalendarModal();
+    return;
+  }
+  // 定休日の解除は「予約できる方向」なので従来どおり
+  if (await saveCalendarSettings(next)) renderCalendarModal();
 }
 
 async function addForceDate(field) {
   const input = document.getElementById(field === 'forceOpen' ? 'addForceOpen' : 'addForceClosed');
   const val = input.value;
   if (!val) return;
-  if (!CAL_SETTINGS[field]) CAL_SETTINGS[field] = [];
-  if (!CAL_SETTINGS[field].includes(val)) CAL_SETTINGS[field].push(val);
+  const next = calendarSnapshot();
+  if (!next[field]) next[field] = [];
+  if (!next[field].includes(val)) next[field].push(val);
   input.value = '';
-  if (await saveCalendarSettings()) renderCalendarModal();
+  // 臨時休業日を足すと、その日に入っている予約が宙に浮く（2026-09-24 に有料予約が取り残された事故）
+  const ok = field === 'forceClosed' ? await applyCalendarChange(next) : await saveCalendarSettings(next);
+  if (ok) renderCalendarModal();
 }
 
 async function addForceRange(field) {
@@ -711,8 +1268,9 @@ async function addForceRange(field) {
   var from = document.getElementById(fromId).value;
   var to = document.getElementById(toId).value;
   if (!from || !to || from > to) { alert('期間を正しく指定してください'); return; }
-  if (!CAL_SETTINGS[field]) CAL_SETTINGS[field] = [];
-  var closedDays = CAL_SETTINGS.defaultClosedDays || [2];
+  var next = calendarSnapshot();
+  if (!next[field]) next[field] = [];
+  var closedDays = next.defaultClosedDays || [2];
   var d = new Date(from + 'T00:00:00');
   var end = new Date(to + 'T00:00:00');
   var count = 0;
@@ -720,14 +1278,14 @@ async function addForceRange(field) {
     var ds = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     if (field === 'forceOpen') {
       // 定休曜日に該当する日だけ追加
-      if (closedDays.includes(d.getDay()) && !CAL_SETTINGS.forceOpen.includes(ds)) {
-        CAL_SETTINGS.forceOpen.push(ds);
+      if (closedDays.includes(d.getDay()) && !next.forceOpen.includes(ds)) {
+        next.forceOpen.push(ds);
         count++;
       }
     } else {
       // 営業日（定休曜日でない日）だけ追加
-      if (!closedDays.includes(d.getDay()) && !CAL_SETTINGS.forceClosed.includes(ds)) {
-        CAL_SETTINGS.forceClosed.push(ds);
+      if (!closedDays.includes(d.getDay()) && !next.forceClosed.includes(ds)) {
+        next.forceClosed.push(ds);
         count++;
       }
     }
@@ -736,7 +1294,8 @@ async function addForceRange(field) {
   document.getElementById(fromId).value = '';
   document.getElementById(toId).value = '';
   if (count > 0) {
-    if (await saveCalendarSettings()) {
+    const ok = field === 'forceClosed' ? await applyCalendarChange(next) : await saveCalendarSettings(next);
+    if (ok) {
       renderCalendarModal();
       alert(count + '日追加しました');
     }
@@ -746,20 +1305,94 @@ async function addForceRange(field) {
 }
 
 async function removeForceDate(field, date) {
-  CAL_SETTINGS[field] = (CAL_SETTINGS[field] || []).filter(d => d !== date);
-  if (await saveCalendarSettings()) renderCalendarModal();
+  const next = calendarSnapshot();
+  next[field] = (next[field] || []).filter(d => d !== date);
+  if (field === 'forceOpen') {
+    // 特別営業日の削除＝その日は定休日に戻る＝公園ぜんぶが予約できなくなる。
+    // 「✕を押しただけ」に見えて、実際は臨時休業日を足したのと同じ結果になる。
+    if (!confirm(formatJpDate(date) + ' の特別営業日をやめます。\nこの日は定休日に戻り、公園ぜんぶ（全施設）が予約できなくなります。\nよろしいですか？')) return;
+    if (await applyCalendarChange(next)) renderCalendarModal();
+    return;
+  }
+  // 臨時休業日の削除は「予約できる方向」なので従来どおり
+  if (await saveCalendarSettings(next)) renderCalendarModal();
 }
 
-async function saveCalendarSettings() {
+// ===== 保存前チェック（dryRun）=====
+// 「予約できなくする方向」の変更だけ、保存前にサーバへ dryRun を投げて
+// すでに入っている予約と矛盾しないか確かめる。矛盾したら職員に続行を確認する。
+async function dryRunCalendar(settings) {
+  const authH = await getAuthHeader();
+  const body = cloneCalendarSettings(settings);
+  body.dryRun = true;
+  const res = await fetch(API_BASE + '/businessCalendar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authH },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error('businessCalendar dryRun HTTP ' + res.status);
+  return await res.json();
+}
+
+async function confirmNoConflicts(settings) {
+  let result = null;
+  try {
+    result = await dryRunCalendar(settings);
+  } catch (e) {
+    console.warn('calendar dryRun failed', e);
+    return confirm('すでに入っている予約と矛盾しないかを確認できませんでした（通信エラー）。\nこのまま設定を保存しますか？');
+  }
+  if (!result || result.dryRun !== true) {
+    // 事前チェックに未対応のサーバー。この POST が本番の書き込みになっている可能性があるので、
+    // 職員が「やめる」を選んだら applyCalendarChange 側で元の設定を送り直す。
+    CAL_DRYRUN_SUPPORTED = false;
+    return confirm('このサーバーは保存前チェックに対応していません。\nすでに入っている予約と矛盾するか確認できません。保存を続けますか？');
+  }
+  CAL_DRYRUN_SUPPORTED = true;
+  const count = Number(result.count) || 0;
+  if (count === 0) return true;
+  const affected = Array.isArray(result.affected) ? result.affected : [];
+  const ids = affected.slice(0, 5)
+    .map(a => (a && a.displayId ? String(a.displayId) : ''))
+    .filter(Boolean).join('、');
+  const more = count > 5 ? ' ほか' : '';
+  return confirm('この設定にすると、すでに入っている予約' + count + '件と矛盾します（予約番号 ' + (ids || '不明') + more + '）。\n続けますか？');
+}
+
+// 予約を締める方向の変更はこれを通す（確認 → 保存）。
+// settings は呼び出し元が作った控え。CAL_SETTINGS は保存が通ってから差し替える。
+async function applyCalendarChange(settings) {
+  const payload = cloneCalendarSettings(settings);
+  CAL_EDIT_IN_FLIGHT++;
+  try {
+    const ok = await confirmNoConflicts(payload);
+    if (ok) return await saveCalendarSettings(payload);
+    // 職員が「やめる」を選んだ。控えを捨てるだけなので CAL_SETTINGS は元のまま。
+    if (CAL_DRYRUN_SUPPORTED === false) {
+      // 未対応サーバーでは上の dryRun が本番の書き込みになっている可能性があるので元に戻す
+      await saveCalendarSettings(LAST_GOOD_CAL_SETTINGS);
+    }
+    renderCalendarModal();
+    return false;
+  } finally {
+    CAL_EDIT_IN_FLIGHT--;
+  }
+}
+
+async function saveCalendarSettings(settings) {
+  const payload = cloneCalendarSettings(settings);
+  CAL_EDIT_IN_FLIGHT++;
   try {
     const authH = await getAuthHeader();
     const res = await fetch(API_BASE + '/businessCalendar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authH },
-      body: JSON.stringify(CAL_SETTINGS),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('businessCalendar save HTTP ' + res.status);
-    LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(CAL_SETTINGS);
+    CAL_SETTINGS = cloneCalendarSettings(payload);
+    LAST_GOOD_CAL_SETTINGS = cloneCalendarSettings(payload);
+    render(); // 月俯瞰の表（停止の表示）も合わせて描き直す
     return true;
   } catch(e) {
     console.error('calendar settings save failed', e);
@@ -767,6 +1400,8 @@ async function saveCalendarSettings() {
     renderCalendarModal();
     alert('保存に失敗しました。変更前の設定に戻しました');
     return false;
+  } finally {
+    CAL_EDIT_IN_FLIGHT--;
   }
 }
 
@@ -774,9 +1409,10 @@ async function saveCalendarSettings() {
 if (_fbUser) loadData();
 </script>
 
-<!-- 営業カレンダーモーダル -->
-<div id="calModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:12px;padding:24px;width:400px;max-height:80vh;overflow-y:auto;position:relative;">
+<!-- 休館・休止設定モーダル -->
+<div id="calModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;padding:12px;">
+  <!-- スマホでも入るように max-width を併記（運営は現場からスマホで触る） -->
+  <div style="background:#fff;border-radius:12px;padding:24px;width:400px;max-width:100%;max-height:85vh;overflow-y:auto;position:relative;">
     <button onclick="closeCalendarModal()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
     <div id="calModalBody"></div>
   </div>

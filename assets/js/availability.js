@@ -57,6 +57,101 @@
     return 'some';
   }
 
+  // ─────────────────────────────────────────
+  // 施設ごとの停止（facilityClosed）
+  // ─────────────────────────────────────────
+  //
+  // 2026-08-02 新設。運営要望「サウナだけをその日は予約不可にしたい」への対応。
+  // 従来の営業カレンダー（forceClosed）は日付単位・全施設一斉でしか閉じられず、
+  // 代わりにダミー予約で塞いだ結果、運営宛メールの大量送信と行政報告スプシへの
+  // 架空売上計上が起きていた。
+  //
+  // facilityClosed の要素は次の2形式のみ（config/business_calendar が持つ）：
+  //   "roomId|YYYY-MM-DD"        … その施設をその日は終日停止
+  //   "roomId|YYYY-MM-DD|hour"   … その施設のその時間だけ停止（hour はゼロ埋めしない文字列）
+  // 例: "sauna|2026-09-20"  /  "sauna|2026-09-20|10"
+  //
+  // ★サウナ連動ルール（忘れると穴になる）
+  //   サウナは通常日が roomId=sauna、毎月23日前後の「ふたみの日」だけ roomId=sauna_share を
+  //   使う（同じ物理サウナ）。よって sauna の停止指定は sauna_share にも効き、その逆も効く。
+  //   サーバ側 createReservation.ts の alternateSaunaKeys と同じ思想。
+  var SAUNA_ROOM_IDS = ['sauna', 'sauna_share'];
+
+  // 同じ物理施設として扱う roomId 群を返す
+  function relatedRoomIds(roomId) {
+    if (roomId === 'sauna' || roomId === 'sauna_share') return SAUNA_ROOM_IDS;
+    return [roomId];
+  }
+
+  // 時間部分を「ゼロ埋めしない時（0〜23）の文字列」に正規化する。
+  // 受け付ける形：10 / '10' / '08'（旧staff整数時）/ '0830'（テニスのHHMM。先頭2桁を時とみなす）
+  //               / '8:30'（旧colon形式）
+  // 判定できないもの（null・空・範囲外）は null を返す＝「時間指定なし」扱い。
+  function normalizeHourPart(value) {
+    if (value === null || value === undefined) return null;
+    var s = String(value).trim();
+    if (s === '') return null;
+    if (/^\d{4}$/.test(s)) {
+      s = s.slice(0, 2);            // テニス HHMM（0830 → 08）
+    } else if (s.indexOf(':') >= 0) {
+      s = s.split(':')[0];          // 8:30 → 8
+    }
+    if (!/^\d{1,2}$/.test(s)) return null;
+    var h = Number(s);
+    if (!isFinite(h) || h < 0 || h > 23) return null;
+    return String(h);               // ゼロ埋めしない（slots コレクションのキーと同形式）
+  }
+
+  // roomId・date・hour の枠が停止中か
+  //  - facilityClosed が未設定／空配列なら常に false（＝導入前と完全に同じ動作）
+  //  - 壊れた要素（形式違い・時が範囲外）は黙って無視する
+  //  - hour を渡さない場合は「終日停止」だけを見る（時間指定の停止では閉じない）
+  function isFacilitySlotClosed(facilityClosed, roomId, date, hour) {
+    if (!Array.isArray(facilityClosed) || facilityClosed.length === 0) return false;
+    if (!roomId || !date) return false;
+    var rooms = relatedRoomIds(String(roomId));
+    var targetHour = normalizeHourPart(hour);
+    for (var i = 0; i < facilityClosed.length; i++) {
+      var entry = facilityClosed[i];
+      if (typeof entry !== 'string') continue;
+      var parts = entry.split('|');
+      if (parts.length < 2 || parts.length > 3) continue;
+      if (parts[1] !== date) continue;
+      if (rooms.indexOf(parts[0]) < 0) continue;
+      if (parts.length === 2) return true;             // 終日停止
+      var closedHour = normalizeHourPart(parts[2]);
+      if (closedHour === null) continue;               // 壊れた時間指定は無視
+      if (targetHour !== null && closedHour === targetHour) return true;
+    }
+    return false;
+  }
+
+  // プラン単位の停止判定（hours のいずれか1つでも停止していれば true）
+  //
+  // 2026-08-02 追加。この規則はもともと index.html の <script> 内に
+  // `plan.slots.some(h => isFacilitySlotClosed(...))` として書かれていた。
+  // 「プランを構成する時間のうち1つでも止まっていればプランごと予約不可」は
+  // 在庫規則そのものなので、テスト可能な純粋関数としてこちらへ移設した。
+  //
+  // 想定利用：ふたみの日サウナ（1予約で枠を丸ごと占有する）のように、
+  // 個々の時間を利用者が選べないプラン。
+  //
+  //  - hours が配列でない／空配列のときは「終日停止」だけを見る。
+  //    時間を利用者が選ぶプラン（テニス・ロッジ日帰り）を1枠の停止で
+  //    日付ごと弾いてしまわないため（その場合は枠単位の isFacilitySlotClosed が担当）。
+  //  - facilityClosed が未設定／空なら常に false（＝導入前と完全に同じ動作）
+  function isPlanFacilityClosed(facilityClosed, roomId, date, hours) {
+    if (!Array.isArray(facilityClosed) || facilityClosed.length === 0) return false;
+    if (!roomId || !date) return false;
+    if (!Array.isArray(hours) || hours.length === 0) {
+      return isFacilitySlotClosed(facilityClosed, roomId, date, null);
+    }
+    for (var i = 0; i < hours.length; i++) {
+      if (isFacilitySlotClosed(facilityClosed, roomId, date, hours[i])) return true;
+    }
+    return false;
+  }
+
   // 凡例・バッジ用の日本語ラベル（記号は index.html 側が持つ）
   var LEVEL_LABELS = {
     ok: '空きあり',
@@ -76,5 +171,7 @@
     dayAvailabilityLevel: dayAvailabilityLevel,
     levelLabel: levelLabel,
     LEVEL_LABELS: LEVEL_LABELS,
+    isFacilitySlotClosed: isFacilitySlotClosed,
+    isPlanFacilityClosed: isPlanFacilityClosed,
   };
 });

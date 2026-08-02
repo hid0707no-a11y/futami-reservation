@@ -24,6 +24,7 @@ import { getFutamiDaysFresh } from '../lib/futamiDays';
 import {
   businessCalendarFromData,
   findClosedDayInServiceDates,
+  findClosedFacilitySlot,
   getBusinessCalendarFresh,
 } from '../lib/businessDays';
 import { canonicalizeReservation } from '../lib/reservationPlans';
@@ -218,17 +219,28 @@ export const createReservation = onRequest(
         return;
       }
 
+      // 施設単位の停止（例：サウナだけその日は受け付けない）。日付単位の closed_day と違い
+      // 部屋×日（×時間）で当たるので、canonical slots をそのまま突き合わせる。
+      // 終日停止の突合は canonical.serviceDates 基準（＝定休日判定と同じ規約）。
+      // 渡さないと、宿泊の翌朝チェックアウト分の slot まで終日停止に当たり、
+      // 「その日にチェックアウトするだけ」の連泊が作れなくなる。
+      const closedFacilitySlot = findClosedFacilitySlot(slots, businessCal, canonical.serviceDates);
+      if (closedFacilitySlot) {
+        res.status(400).json({ error: 'facility_closed', detail: closedFacilitySlot });
+        return;
+      }
+
       // ===== テニス専用ルート（tennis_slots 30分単位）=====
       const isTennis = canonical.kind === 'tennis' && isTennisPayload(roomIds);
       if (isTennis) {
         try {
           const tennisResult = await db.runTransaction(async tx => {
             const calendarDoc = await tx.get(db.doc('config/business_calendar'));
-            const txClosedDay = findClosedDayInServiceDates(
-              canonical.serviceDates,
-              businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {}),
-            );
+            const txCal = businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {});
+            const txClosedDay = findClosedDayInServiceDates(canonical.serviceDates, txCal);
             if (txClosedDay) throw { code: 'closed_day', detail: txClosedDay };
+            const txClosedFacility = findClosedFacilitySlot(slots, txCal, canonical.serviceDates);
+            if (txClosedFacility) throw { code: 'facility_closed', detail: txClosedFacility };
 
             const slotRefs = slots.map((key: string) => db.collection('tennis_slots').doc(key));
             // staff旧形式（court|date|8）が残っていても、新HHMM形式と二重予約させない。
@@ -339,11 +351,12 @@ export const createReservation = onRequest(
               tx.get(db.doc('config/business_calendar')),
               tx.get(db.doc('config/special_days')),
             ]);
-            const txClosedDay = findClosedDayInServiceDates(
-              canonical.serviceDates,
-              businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {}),
-            );
+            const txCal = businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {});
+            const txClosedDay = findClosedDayInServiceDates(canonical.serviceDates, txCal);
             if (txClosedDay) throw { code: 'closed_day', detail: txClosedDay };
+            // sauna_share の slots でも、'sauna' 側への停止指定に当たる（連動ルール）。
+            const txClosedFacility = findClosedFacilitySlot(slots, txCal, canonical.serviceDates);
+            if (txClosedFacility) throw { code: 'facility_closed', detail: txClosedFacility };
             const txFutamiDates: string[] = specialDaysDoc.exists
               && Array.isArray((specialDaysDoc.data() as any)?.sauna_capacity_days)
               ? (specialDaysDoc.data() as any).sauna_capacity_days
@@ -428,11 +441,12 @@ export const createReservation = onRequest(
       // ===== 通常プラン（slots collection）=====
       const result = await db.runTransaction(async tx => {
         const calendarDoc = await tx.get(db.doc('config/business_calendar'));
-        const txClosedDay = findClosedDayInServiceDates(
-          canonical.serviceDates,
-          businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {}),
-        );
+        const txCal = businessCalendarFromData(calendarDoc.exists ? calendarDoc.data() : {});
+        const txClosedDay = findClosedDayInServiceDates(canonical.serviceDates, txCal);
         if (txClosedDay) throw { code: 'closed_day', detail: txClosedDay };
+        // 通常サウナ（sauna）の slots は 'sauna_share' 側への停止指定にも当たる（連動ルール）。
+        const txClosedFacility = findClosedFacilitySlot(slots, txCal, canonical.serviceDates);
+        if (txClosedFacility) throw { code: 'facility_closed', detail: txClosedFacility };
 
         if (isRegularSauna) {
           const specialDaysDoc = await tx.get(db.doc('config/special_days'));
@@ -517,7 +531,8 @@ export const createReservation = onRequest(
         res.status(409).json({ error: 'slot_conflict', conflicts: e.conflicts });
         return;
       }
-      if (e?.code === 'closed_day' || e?.code === 'not_futami_day'
+      if (e?.code === 'closed_day' || e?.code === 'facility_closed'
+          || e?.code === 'not_futami_day'
           || e?.code === 'futami_day_requires_shared_sauna') {
         res.status(400).json({ error: e.code, detail: e.detail });
         return;
