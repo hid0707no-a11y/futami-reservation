@@ -2041,9 +2041,14 @@ function selectPlanFromSearch(planId) {
   state.useLighting = false;
   state.midoriLightingHours = 0;
 
-  // #25 ふたみの日サウナは最小2名。検索フロー経由で1名のまま進むとサーバ400になるためここで補正
+  // #25 ふたみの日サウナは最小2名。検索フロー経由で1名のまま進むとサーバ400になるためここで補正。
+  // ★2026-08-03：この補正を planType==='sauna' 全体に掛けていたため、1名から使える
+  //   通常サウナ（貸切）でも1名が黙って2名へ書き換わっていた。要望④で人数を実際に
+  //   送るようにした結果、その誤りがそのまま記録・メールに載るようになったので日付で限定する。
+  //   下限は stepBookingGuests（ふたみの日=2 / 通常=1）と一致させること。
   if (plan.planType === 'sauna') {
-    state.guests = Math.max(2, Math.min(8, state.guests || 2));
+    const saunaMin = isFutamiDay(state.selectedDate) ? 2 : 1;
+    state.guests = Math.max(saunaMin, Math.min(8, state.guests || saunaMin));
   }
 
   // 空いている部屋を自動選択
