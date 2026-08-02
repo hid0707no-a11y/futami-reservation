@@ -110,6 +110,17 @@ export interface MailData {
   customerAddress?: string;
   note: string;
   reservationId: string;
+  /**
+   * 人数・区画数の人向け表記（複数行可）。組み立ては純粋関数
+   * `format.formatPartyText()` が担当し、本文テンプレートはこれを1箇所差し込むだけ。
+   * 例: '人数：中学生以上2名／小学生1名（計3名）' / '区画数：3区画\n人数：5名'
+   * 空文字・undefined なら行ごと出さない（「0名」「undefined名」を出さないため）。
+   */
+  partyText?: string;
+  /**
+   * ⚠️ 2026-08-03 以降、本文の表示には使わない（人数表記は partyText 経由）。
+   * ふたみの日サウナの座席数・キャンプの区画数として呼出側が保持している値。
+   */
   guestCount?: number;
   isCamp?: boolean;
   isFutamiDay?: boolean;
@@ -137,7 +148,7 @@ export async function sendConfirmationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.partyText ? '\n' + data.partyText : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 ━━━━━━━━━━━━━━━━━━
 
 ※このメールは自動送信です。
@@ -179,7 +190,7 @@ export async function sendStaffNotification(data: MailData, type: 'new' | 'cance
 ご住所：${data.customerAddress || 'なし'}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.guestCount ? '\n' + (data.isCamp ? '区画数' : '人数') + '：' + data.guestCount + (data.isCamp ? '区画' : '名') : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.partyText ? '\n' + data.partyText : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 `;
     await transporter.sendMail({
       from: `"ふたみ予約システム" <${SMTP_USER}>`,
@@ -211,7 +222,7 @@ export async function sendCancellationEmail(data: MailData): Promise<void> {
 予約番号：${data.reservationId}
 プラン：${data.planName}
 施設：${data.roomName}
-日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}
+日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.partyText ? '\n' + data.partyText : ''}
 ━━━━━━━━━━━━━━━━━━
 
 またのご利用をお待ちしております。

@@ -4079,6 +4079,12 @@ async function _submitBookingInner() {
         createdBy: 'web',
       };
       if (isFutamiSauna) payload.guestCount = futamiSeats;
+      // 2026-08-03 要望④：通常サウナ（A〜D枠）の人数を送る。
+      // 画面には「ご利用人数（8名まで）」のステッパーがあり state.guests は動いていたのに、
+      // payload に載せているのが上の isFutamiSauna 行だけだったため、通常日の人数は
+      // ブラウザの外へ一度も出ていなかった（＝Firestore にもメールにも存在しなかった）。
+      // guests.adult は入力欄の無いプランでも初期値1が入るので人数として使えない。
+      else if (plan.planType === 'sauna') payload.guestCount = state.guests;
       if (isCamp) payload.guestCount = state.selectedCampSites.length;
       state.idempotencyKey = state.idempotencyKey || generateIdempotencyKey();
       const apiResult = await submitReservation(payload, state.idempotencyKey);

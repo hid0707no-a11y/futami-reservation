@@ -10,7 +10,7 @@ import { setCors, checkOrigin } from '../lib/cors';
 import { checkRateLimit } from '../lib/rateLimit';
 import { requireStaffAuth } from '../lib/auth';
 import { audit as auditLog, logMailFailure } from '../lib/logger';
-import { formatCustomerAddress, generateDisplayId } from '../lib/format';
+import { formatCustomerAddress, formatPartyText, generateDisplayId } from '../lib/format';
 import { MailData, sendCancellationEmail, sendStaffNotification } from '../lib/mail';
 import { planLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
 import { validateUpdateFields } from '../lib/validation';
@@ -386,6 +386,17 @@ export const cancelReservation = onRequest(
           customerAddress: formatCustomerAddress(cancelledData.customer),
           note: cancelledData.note || '',
           reservationId: cancelDisplayId,
+          // 2026-08-03（運営要望④）：キャンセル通知にも人数を載せる。
+          // 保存済みドキュメントから復元するので、新規予約時と同じ表記になる。
+          partyText: formatPartyText({
+            planId: cancelledData.planId,
+            roomIds: cancelledData.roomIds,
+            createdBy: cancelledData.createdBy,
+            isCamp: cancelledData.isCamp,
+            guests: cancelledData.guests,
+            guestCount: cancelledData.guestCount,
+            sportGuestEstimate: cancelledData.pricing?.sportGuestEstimate,
+          }) || undefined,
         };
         // #7 メール送信は応答前に await（Gen2 応答後 CPU スロットリング対策）
         await Promise.allSettled([

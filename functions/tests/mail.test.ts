@@ -201,3 +201,106 @@ describe('sendStaffNotification の宛先', () => {
     expect(transport.sendMail.mock.calls[0][0].to).toBe('staff@example.com');
   });
 });
+
+// 2026-08-03 運営要望④：通知メールに予約人数を載せる。
+// 本文テンプレートは partyText（format.formatPartyText の出力）を1箇所差し込むだけ。
+// 「どの施設で何を拾うか」は format.test.ts 側で固定している。
+describe('メール本文の人数表記', () => {
+  function baseMail(over: Record<string, any> = {}) {
+    return {
+      planName: '宿泊（27畳）', roomName: '27畳',
+      startDate: '2026-09-10', endDate: '2026-09-11',
+      customerName: '山田', customerPhone: '090-0000-0000', customerEmail: 'y@example.com',
+      customerAddress: '〒791-3120 愛媛県伊予市双海町',
+      note: '', reservationId: 'F-ABC123',
+      ...over,
+    } as any;
+  }
+
+  it('スタッフ通知：人数が日程の次の行に入る', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    await mail.sendStaffNotification(
+      baseMail({ partyText: '人数：中学生以上2名／小学生1名（計3名）' }), 'new');
+    const text: string = transport.sendMail.mock.calls[0][0].text;
+    expect(text).toContain('\n人数：中学生以上2名／小学生1名（計3名）\n');
+    expect(text).toContain('日程：2026-09-10 ～ 2026-09-11\n人数：');
+  });
+
+  it('顧客確認メール：スタッフ通知と同じ人数表記が入る', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    const data = baseMail({ partyText: '人数：中学生以上2名／小学生1名（計3名）' });
+    await mail.sendConfirmationEmail(data);
+    await mail.sendStaffNotification(data, 'new');
+    const customerText: string = transport.sendMail.mock.calls[0][0].text;
+    const staffText: string = transport.sendMail.mock.calls[1][0].text;
+    expect(customerText).toContain('人数：中学生以上2名／小学生1名（計3名）');
+    expect(staffText).toContain('人数：中学生以上2名／小学生1名（計3名）');
+  });
+
+  it('キャンプ：区画数と人数の2行が本文に入る', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    await mail.sendStaffNotification(baseMail({
+      planName: 'キャンプ泊', roomName: '区画①・区画②',
+      partyText: '区画数：2区画\n人数：5名',
+    }), 'new');
+    const text: string = transport.sendMail.mock.calls[0][0].text;
+    expect(text).toContain('\n区画数：2区画\n人数：5名\n');
+  });
+
+  it('キャンセル通知（スタッフ）でも人数が出る', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    await mail.sendStaffNotification(
+      baseMail({ planName: 'A 10:00-12:00', roomName: 'サンセットサウナ', partyText: '人数：4名' }),
+      'cancel');
+    const sent = transport.sendMail.mock.calls[0][0];
+    expect(sent.subject).toContain('【キャンセル】');
+    expect(sent.text).toContain('人数：4名');
+  });
+
+  it('キャンセル確認メール（顧客）でも人数が出る', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    await mail.sendCancellationEmail(baseMail({ partyText: '人数：4名' }));
+    expect(transport.sendMail.mock.calls[0][0].text).toContain('人数：4名');
+  });
+
+  it('人数が不明（partyText なし）なら行ごと出さない', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    const data = baseMail();
+    await mail.sendStaffNotification(data, 'new');
+    await mail.sendConfirmationEmail(data);
+    await mail.sendCancellationEmail(data);
+    for (const call of transport.sendMail.mock.calls) {
+      const text: string = call[0].text;
+      expect(text).not.toContain('人数');
+      expect(text).not.toContain('区画数');
+      expect(text).not.toContain('undefined');
+      expect(text).toContain('日程：2026-09-10 ～ 2026-09-11\n');
+    }
+  });
+
+  it('partyText が空文字なら行を出さない（0名/空ラベルを印字しない）', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    await mail.sendStaffNotification(baseMail({ partyText: '' }), 'new');
+    expect(transport.sendMail.mock.calls[0][0].text).not.toContain('人数');
+  });
+
+  it('guestCount / isCamp だけを渡しても本文には出ない（表示の正本は partyText）', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    await mail.sendStaffNotification(
+      baseMail({ guestCount: 3, isCamp: true, planId: 'camp_stay', roomIds: ['camp_1'] }), 'new');
+    const text: string = transport.sendMail.mock.calls[0][0].text;
+    expect(text).not.toContain('区画数');
+    expect(text).not.toContain('人数');
+  });
+
+  it('時間・オプション・備考との並び順が崩れない（人数は時間の次・オプションの前）', async () => {
+    const { mail, transport } = loadMail({ smtp: true, staffEmail: 'staff@example.com' });
+    await mail.sendStaffNotification(baseMail({
+      startDate: '2026-09-10', endDate: '2026-09-10',
+      timeText: '10:00〜12:00', partyText: '人数：4名',
+      saunaOptionsText: 'タオル×2', note: '初めて利用します',
+    }), 'new');
+    const text: string = transport.sendMail.mock.calls[0][0].text;
+    expect(text).toContain('日程：2026-09-10\n時間：10:00〜12:00\n人数：4名\nオプション：タオル×2\n備考：初めて利用します');
+  });
+});

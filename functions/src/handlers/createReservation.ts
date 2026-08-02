@@ -15,7 +15,7 @@ import { setCors, checkOrigin } from '../lib/cors';
 import { isVerifiedStaffRequest } from '../lib/auth';
 import { checkRateLimit } from '../lib/rateLimit';
 import { audit as auditLog, logMailFailure, logIdempotencyFailure } from '../lib/logger';
-import { formatCustomerAddress, formatSaunaOptions, generateDisplayId } from '../lib/format';
+import { formatCustomerAddress, formatPartyText, formatSaunaOptions, generateDisplayId } from '../lib/format';
 import { detectDisplayIdCollision } from '../lib/displayId';
 import { MailData, sendConfirmationEmail, sendStaffNotification, sendMonitorAlert } from '../lib/mail';
 import { validateReservationBody } from '../lib/validation';
@@ -288,6 +288,12 @@ export const createReservation = onRequest(
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: tennisResult.displayId, isTennis: true,
             timeText: formatTennisTimeRanges(slots) || undefined,
+            // テニスは「ご利用予定人数(目安)」＝ pricing.sportGuestEstimate（職員経路は
+            // serverPricing=null なので guests.adult の単純人数が採用される）。
+            partyText: formatPartyText({
+              planId, roomIds, createdBy, guests,
+              sportGuestEstimate: serverPricing?.sportGuestEstimate,
+            }) || undefined,
           };
           // #7 メール送信は応答前に await（Gen2 は応答後 CPU スロットリングで未完になり得る）
           await Promise.allSettled([
@@ -407,6 +413,9 @@ export const createReservation = onRequest(
             customerName: customer.name, customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
+            partyText: formatPartyText({
+              planId, roomIds: ['sauna_share'], createdBy, guests, guestCount: seats,
+            }) || undefined,
             // 職員経路は serverPricing=null（区分不明のため計算しない）→ オプション表記は省略。
             saunaOptionsText: formatSaunaOptions(serverPricing?.saunaOptions) || undefined,
           };
@@ -437,6 +446,16 @@ export const createReservation = onRequest(
 
       // ===== キャンプ場（2026-04-28〜 8区画個別管理）=====
       const isCamp = canonical.kind === 'overnight' && planId === 'camp_stay';
+
+      // 通常サウナ（sauna_1〜4）の利用人数。ふたみの日と同じ guestCount で受け取る。
+      // 2026-08-03 追加（運営要望④）：それまでサーバは通常サウナの guestCount を
+      // 一切保存せず、通知メール・職員画面のどちらにも人数が出せなかった。
+      // 定員は8名。範囲外・未送信は従来どおり「人数不明」として無視する
+      // （ここで 400 を返すと、これまで成立していた予約を新たに落とすことになる）。
+      const saunaSeats = isRegularSauna
+        && Number.isSafeInteger(guestCount) && guestCount >= 1 && guestCount <= 8
+        ? guestCount as number
+        : null;
 
       // ===== 通常プラン（slots collection）=====
       const result = await db.runTransaction(async tx => {
@@ -479,6 +498,7 @@ export const createReservation = onRequest(
           planId, roomIds, slots, startDate, endDate, nights,
           customer, guests: guests || null,
           ...(isCamp ? { guestCount: roomIds.length, isCamp: true } : {}),
+          ...(saunaSeats !== null ? { guestCount: saunaSeats } : {}),
           pricing: serverPricing,
           ...(pricingMismatch ? { pricingMismatch } : {}),
           payment: { method: 'onsite', status: 'unpaid' },
@@ -507,6 +527,15 @@ export const createReservation = onRequest(
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '', reservationId: result.displayId,
         ...(isCamp ? { isCamp: true, guestCount: roomIds.length } : {}),
+        // キャンプは「区画数」＋（職員入力があれば）人数、宿泊は3区分、みどりの広場は
+        // 目安人数、通常サウナは guestCount。入力欄が無いプラン（日帰り各室・ロッジの
+        // web 予約）はデータ自体が存在しないので行ごと出さない。
+        partyText: formatPartyText({
+          planId, roomIds, createdBy, guests,
+          isCamp,
+          guestCount: saunaSeats ?? undefined,
+          sportGuestEstimate: serverPricing?.sportGuestEstimate,
+        }) || undefined,
         // 職員経路は serverPricing=null（区分不明のため計算しない）→ オプション表記は省略。
         saunaOptionsText: formatSaunaOptions(serverPricing?.saunaOptions) || undefined,
       };
