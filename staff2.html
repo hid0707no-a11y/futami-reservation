@@ -57,6 +57,7 @@ body {
 .header button:hover, .header a:hover { background: rgba(255,255,255,0.25); }
 .header .month-label { font-size: 18px; font-weight: 700; padding: 0 8px; min-width: 130px; text-align: center; }
 .header .today-btn { background: #fbbf24; color: #78350f; }
+.header .print-btn { background: #fff; color: var(--navy); font-weight: 700; }
 .header .back-btn { background: #f3f4f6; color: var(--navy); }
 .cat-tabs {
   display: flex;
@@ -269,6 +270,120 @@ body {
   font-size: 11px;
   z-index: 999;
 }
+
+/* ============================================================
+   印刷用（2026-08-06 現場運営の要望）
+   ・PC不慣れなスタッフが台帳画面をそのまま紙で使うため
+   ・ここは @media print の中だけ＝画面の見た目は一切変えない
+   ・直した3点：左が見切れる／罫線が薄い／色が薄い
+   ============================================================ */
+@page { size: A4 landscape; margin: 8mm; }
+
+@media print {
+  /* ★背景色はブラウザ既定で印刷されない。これが「色が薄い」の主因 */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* ★「左が見切れる」の主因＝画面を1画面に収める指定と、左列の sticky。
+     印刷では全部を素直に流し込む */
+  html, body {
+    overflow: visible !important;
+    height: auto !important;
+    background: #fff !important;
+  }
+  .scroll-wrapper {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  .month-table thead th,
+  .month-table thead th.col-room,
+  .month-table .room-name,
+  .month-table .building-row td {
+    position: static !important;
+  }
+
+  /* 紙に要らないもの */
+  .header-row button, .header-row a, .cat-tabs, .popup-overlay { display: none !important; }
+
+  /* 見出しは残す（何月の台帳か紙で分かるように） */
+  .header {
+    position: static !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    padding: 0 0 4px !important;
+    border-bottom: 2px solid #000;
+  }
+  .header-title { font-size: 13px !important; margin: 0 !important; color: #000 !important; }
+  .header-row { display: block !important; }
+  .header .month-label {
+    display: block !important;
+    font-size: 15px !important;
+    text-align: left !important;
+    padding: 0 !important;
+    color: #000 !important;
+  }
+
+  /* 凡例は紙でも要る（色の意味が分からないと読めない） */
+  .legend { padding: 4px 0 !important; font-size: 9px !important; gap: 10px !important; border-bottom: none !important; }
+  .legend-box { width: 10px; height: 10px; border: 1px solid #555; }
+
+  /* ★表：1ページ幅に収める（table-layout:fixed + width:100%）*/
+  .month-table { font-size: 8px !important; width: 100% !important; table-layout: fixed !important; }
+  .month-table th, .month-table td {
+    height: 17px !important;
+    padding: 0 !important;
+    border: 1px solid #555 !important;   /* ★罫線を濃く */
+  }
+  .month-table .cell-count { font-size: 8px !important; }
+
+  /* ★「日」と「施設」の区分＝ここだけ太線にする */
+  .month-table thead th { border-bottom: 2.5px solid #000 !important; font-size: 8px !important; }
+  .month-table thead th.col-room,
+  .month-table .room-name { border-right: 2.5px solid #000 !important; }
+  .month-table .building-row td { border-top: 2.5px solid #000 !important; }
+
+  /* 施設名は省略記号で切らずに折り返す */
+  .month-table thead th.col-room,
+  .month-table .room-name {
+    width: 62px !important; min-width: 62px !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 8px !important;
+    line-height: 1.15 !important;
+    padding: 1px 3px !important;
+  }
+  .month-table .building-row td { font-size: 9px !important; padding: 1px 4px !important; }
+
+  /* ★色を濃く（画面はそのまま・紙だけ濃くする） */
+  .month-table thead th               { background: #e8e8e8 !important; color: #000 !important; }
+  .month-table thead th.weekend-sat   { background: #bfdbfe !important; color: #1e3a8a !important; }
+  .month-table thead th.weekend-sun,
+  .month-table thead th.closed-day    { background: #fca5a5 !important; color: #7f1d1d !important; }
+  .month-table thead th.futami        { background: #fcd34d !important; color: #78350f !important; }
+  .month-table .building-row td       { background: #bfdbfe !important; color: #000 !important; }
+  .month-table .room-name             { background: #f0f0f0 !important; color: #000 !important; }
+
+  .cell-empty      { background: #fff !important; }
+  .cell-some       { background: #6ee7b7 !important; color: #064e3b !important; font-weight: 700 !important; }
+  .cell-many       { background: #059669 !important; color: #fff  !important; font-weight: 700 !important; }
+  .cell-full       { background: #b91c1c !important; color: #fff  !important; font-weight: 700 !important; }
+  .cell-past       { background: #d4d4d8 !important; color: #52525b !important; }
+  .cell-closed     { background: #fca5a5 !important; }
+  .cell-stop       { background: #fca5a5 !important; color: #7f1d1d !important; font-weight: 700 !important; }
+  .cell-stop-part  { background: repeating-linear-gradient(45deg,#fca5a5 0 3px,#fff 3px 6px) !important; color: #7f1d1d !important; font-weight: 700 !important; }
+
+  /* 横に31日ぶん目で追うので、空きセルだけ1行おきに薄く敷く（意味のある色は塗り替えない） */
+  .month-table tbody tr:nth-of-type(even) .cell-empty { background: #efefef !important; }
+
+  /* 行が紙の切れ目でちぎれないように */
+  .month-table tr { page-break-inside: avoid; }
+  .stop-x { display: none !important; }
+}
 </style>
 </head>
 <body>
@@ -291,6 +406,7 @@ body {
     <div class="month-label" id="monthLabel">2026年4月</div>
     <button onclick="changeMonth(1)">▶</button>
     <button class="today-btn" onclick="goToday()">今月</button>
+    <button class="print-btn" onclick="window.print()" title="この月の台帳をそのまま印刷します">🖨 印刷</button>
     <a href="staff.html" class="back-btn">📋 詳細</a>
     <a href="staff_tennis.html" class="back-btn" style="background:#fef3c7;color:#b45309">🎾 テニス</a>
     <button onclick="openCalendarSettings()" class="back-btn" style="background:#e0f2fe;color:#0369a1;border:none;cursor:pointer">📅 休館・休止設定</button>
