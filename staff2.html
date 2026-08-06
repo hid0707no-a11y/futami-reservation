@@ -306,7 +306,10 @@ body {
   }
 
   /* 紙に要らないもの */
-  .header-row button, .header-row a, .cat-tabs, .popup-overlay { display: none !important; }
+  /* ★#syncIndicator（右下の「読み込み中...」）は position:fixed で紙にも出るうえ、
+     ページ幅を 1590px まで押し広げて2ページ目を作る。印刷では必ず消す。 */
+  .header-row button, .header-row a, .cat-tabs, .popup-overlay,
+  #syncIndicator { display: none !important; }
 
   /* 見出しは残す（何月の台帳か紙で分かるように） */
   .header {
@@ -332,16 +335,17 @@ body {
   .legend-box { width: 10px; height: 10px; border: 1px solid #555; }
 
   /* ★表：1ページ幅に収める（table-layout:fixed + width:100%）*/
-  .month-table { font-size: 8px !important; width: 100% !important; table-layout: fixed !important; }
+  /* ★スキャンでは紙の下半分が空。小さくする必要はなく、むしろ大きくして読みやすくする */
+  .month-table { font-size: 10px !important; width: 100% !important; table-layout: fixed !important; }
   .month-table th, .month-table td {
-    height: 17px !important;
+    height: 24px !important;
     padding: 0 !important;
     border: 1px solid #555 !important;   /* ★罫線を濃く */
   }
-  .month-table .cell-count { font-size: 8px !important; }
+  .month-table .cell-count { font-size: 11px !important; font-weight: 700 !important; }
 
   /* ★「日」と「施設」の区分＝ここだけ太線にする */
-  .month-table thead th { border-bottom: 2.5px solid #000 !important; font-size: 8px !important; }
+  .month-table thead th { border-bottom: 2.5px solid #000 !important; font-size: 9.5px !important; }
   .month-table thead th.col-room,
   .month-table .room-name { border-right: 2.5px solid #000 !important; }
   .month-table .building-row td { border-top: 2.5px solid #000 !important; }
@@ -349,33 +353,36 @@ body {
   /* 施設名は省略記号で切らずに折り返す */
   .month-table thead th.col-room,
   .month-table .room-name {
-    width: 62px !important; min-width: 62px !important;
+    width: 92px !important; min-width: 92px !important;
     white-space: normal !important;
     overflow: visible !important;
     text-overflow: clip !important;
-    font-size: 8px !important;
-    line-height: 1.15 !important;
-    padding: 1px 3px !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+    padding: 1px 4px !important;
   }
-  .month-table .building-row td { font-size: 9px !important; padding: 1px 4px !important; }
+  .month-table .building-row td { font-size: 10.5px !important; padding: 2px 5px !important; }
 
   /* ★色を濃く（画面はそのまま・紙だけ濃くする） */
   .month-table thead th               { background: #e8e8e8 !important; color: #000 !important; }
   .month-table thead th.weekend-sat   { background: #bfdbfe !important; color: #1e3a8a !important; }
   .month-table thead th.weekend-sun,
-  .month-table thead th.closed-day    { background: #fca5a5 !important; color: #7f1d1d !important; }
+  .month-table thead th.closed-day    { background: #fecaca !important; color: #7f1d1d !important; }
   .month-table thead th.futami        { background: #fcd34d !important; color: #78350f !important; }
   .month-table .building-row td       { background: #bfdbfe !important; color: #000 !important; }
   .month-table .room-name             { background: #f0f0f0 !important; color: #000 !important; }
 
-  .cell-empty      { background: #fff !important; }
-  .cell-some       { background: #6ee7b7 !important; color: #064e3b !important; font-weight: 700 !important; }
-  .cell-many       { background: #059669 !important; color: #fff  !important; font-weight: 700 !important; }
-  .cell-full       { background: #b91c1c !important; color: #fff  !important; font-weight: 700 !important; }
-  .cell-past       { background: #d4d4d8 !important; color: #52525b !important; }
-  .cell-closed     { background: #fca5a5 !important; }
-  .cell-stop       { background: #fca5a5 !important; color: #7f1d1d !important; font-weight: 700 !important; }
-  .cell-stop-part  { background: repeating-linear-gradient(45deg,#fca5a5 0 3px,#fff 3px 6px) !important; color: #7f1d1d !important; font-weight: 700 !important; }
+  /* ★スキャンで判明：2件以上のセルは color:#fff（白文字）。背景が刷られないので
+     数字が消えて「偶数だけ薄い」ように見えていた。紙では白文字を一切使わない。
+     プリンタ側で「背景のグラフィック」がOFFでも数字が必ず読める状態にする。 */
+  .cell-empty      { background: #fff     !important; }
+  .cell-some       { background: #bbf7d0  !important; color: #065f46 !important; font-weight: 700 !important; }
+  .cell-many       { background: #6ee7b7  !important; color: #064e3b !important; font-weight: 700 !important; }
+  .cell-full       { background: #fca5a5  !important; color: #7f1d1d !important; font-weight: 700 !important; }
+  .cell-past       { background: #e5e7eb  !important; color: #6b7280 !important; }
+  .cell-closed     { background: #fecaca  !important; color: #7f1d1d !important; }
+  .cell-stop       { background: #fecaca  !important; color: #7f1d1d !important; font-weight: 700 !important; }
+  .cell-stop-part  { background: repeating-linear-gradient(45deg,#fecaca 0 3px,#fff 3px 6px) !important; color: #7f1d1d !important; font-weight: 700 !important; }
 
   /* 横に31日ぶん目で追うので、空きセルだけ1行おきに薄く敷く（意味のある色は塗り替えない） */
   .month-table tbody tr:nth-of-type(even) .cell-empty { background: #efefef !important; }
