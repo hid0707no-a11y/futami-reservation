@@ -857,7 +857,76 @@ body {
     box-shadow: 0 0 40px rgba(0,0,0,0.08);
   }
 }
+
+/* ========== 埋め込みモード（公式サイトに iframe で入っている時だけ効く） ==========
+   親サイト側にヘッダー・パンくず・施設案内があるため、二重に出さないための表示調整。
+   1) アプリのヘッダー（ロゴ「ふたみ潮風ふれあい公園」＋「オンライン予約」）を出さない
+      ただし「戻る」は残す＝ヘッダー枠は残したまま高さ0にし、戻るボタンが出る画面でだけ枠が開く。
+      :has() を使わないので古い端末でも「戻るが消える」事故は起きない。
+   2) 営業/休み/住所/TEL（トップ下部）は親サイトの施設案内と重複するので出さない
+   判定は <head> 末尾のスクリプト（iframe 内なら自動ON／?embed=1 で強制ON／?embed=0 で強制OFF）
+   ============================================================================== */
+html.embed .header {
+  position: static;         /* sticky をやめる＝高さ0の時に浮かない */
+  padding: 0;
+  background: transparent;
+  border-bottom: none;
+  box-shadow: none;
+  text-align: left;
+  font-size: 0;             /* 改行など空白テキストで行が生まれないように */
+  line-height: 0;
+}
+html.embed .header-logo,
+html.embed .header-sub { display: none; }
+
+/* 戻るボタンは絶対配置をやめて通常の流れに置く＝本文に重ならず、押せる大きさを保つ */
+html.embed .header-back {
+  position: static;
+  transform: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 10px 0 0 16px;
+  padding: 12px 18px;      /* スマホで指で押せる高さ(約43px)を確保する */
+  font-size: 1.05rem;
+  line-height: 1;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow);
+}
+html.embed .header-back::after {
+  content: '戻る';
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+/* 上の display:inline-flex に負けないよう、非表示指定を明示的に再掲する */
+html.embed .header-back.hidden { display: none; }
+
+/* 営業時間・休館日・住所・TEL：HTML側にインライン style="display:grid" があるため !important が要る */
+html.embed .info-section { display: none !important; }
 </style>
+
+<script>
+/* 埋め込み判定（表示だけの判定・予約ロジックには一切触らない）
+   公式サイトの予約ページに iframe で入っている時は「埋め込みモード」にする。
+   ・?embed=1 … 強制ON（iframe でなくても）
+   ・?embed=0 … 強制OFF（iframe でもヘッダーを出す＝切り戻し用）
+   ・指定なし … iframe の中なら自動ON
+   <html> にクラスを付けるため描画前に確定する＝ヘッダーが一瞬見えてから消える現象が起きない。 */
+(function () {
+  try {
+    var m = location.search.match(/[?&]embed=([^&]*)/);
+    var q = m ? m[1] : null;
+    if (q === '0') return;
+    var inIframe;
+    try { inIframe = window.self !== window.top; } catch (e) { inIframe = true; }
+    if (q === '1' || inIframe) document.documentElement.classList.add('embed');
+  } catch (e) {
+    /* 判定に失敗しても通常表示のまま＝予約導線は絶対に壊さない */
+  }
+})();
+</script>
 </head>
 <body>
 
