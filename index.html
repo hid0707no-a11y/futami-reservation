@@ -337,6 +337,25 @@ body {
 }
 .tab:active { transform: scale(0.96); }
 
+/* 「施設から探す」のカテゴリタブ（#facility-tabs）は HTML 側のインライン style で
+   3列グリッドになっている。列幅は 1fr ＝ 最小が min-content で、.tab は
+   white-space:nowrap のため「☀️ 日帰り」「⛺ アウトドア」の文字幅(126.5px)より
+   狭くなれない。結果、幅360px級の端末で入れ物を35pxはみ出し、ページごと横にずれていた
+   （制作会社が2026-08-10に親サイト側で余白と枠線を削って幅を広げたが、それでも足りず
+   「アプリ側の修正が要る」とコメントを残していた箇所）。
+   ・列が縮めるようにする＝インラインstyleを上書きするので !important が要る
+   ・幅389px以下でだけ余白と文字を詰め、折り返しも許す（390px は元から収まるので触らない） */
+#facility-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+@media (max-width: 389px) {
+  #facility-tabs { gap: 5px !important; }
+  #facility-tabs .tab {
+    padding: 10px 4px;
+    font-size: 0.78rem;
+    white-space: normal;
+    line-height: 1.25;
+  }
+}
+
 .facility-card {
   background: var(--white);
   border-radius: var(--radius);
