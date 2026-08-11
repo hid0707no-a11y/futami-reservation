@@ -155,7 +155,7 @@ export async function sendConfirmationEmail(data: MailData): Promise<void> {
 ※ご不明な点がございましたら、お電話にてお問い合わせください。
 
 ふたみ潮風ふれあい公園
-TEL: 089-986-0522
+TEL: 089-986-1559
 `;
     await transporter.sendMail({
       from: `"ふたみふれあい公園" <${SMTP_USER}>`,
@@ -228,7 +228,7 @@ export async function sendCancellationEmail(data: MailData): Promise<void> {
 またのご利用をお待ちしております。
 
 ふたみ潮風ふれあい公園
-TEL: 089-986-0522
+TEL: 089-986-1559
 `;
     await transporter.sendMail({
       from: `"ふたみふれあい公園" <${SMTP_USER}>`,
