@@ -1,12 +1,16 @@
 // スタッフ通知メールの宛先解決（2026-08-01 運営要望①）
 //
 // env を読むモジュールなので、pricing 系と違い jest.isolateModules で読み直す。
+//
+// 変数名を ORIGINAL_ENV にしないこと：このファイルは top-level import が無く
+// TypeScript にスクリプト扱いされるため、同じくスクリプト扱いの mail.test.ts の
+// ORIGINAL_ENV と同一ワーカーに載った時だけ TS2451 で衝突する（CI が不定期に落ちる）。
 
-const ORIGINAL_ENV = process.env;
+const SAVED_ENV = process.env;
 
 function loadModule(env: { staffEmail?: string; saunaEmails?: string } = {}) {
   jest.resetModules();
-  process.env = { ...ORIGINAL_ENV };
+  process.env = { ...SAVED_ENV };
   if (env.staffEmail === undefined) delete process.env.STAFF_EMAIL;
   else process.env.STAFF_EMAIL = env.staffEmail;
   if (env.saunaEmails === undefined) delete process.env.SAUNA_NOTIFY_EMAILS;
@@ -20,7 +24,7 @@ function loadModule(env: { staffEmail?: string; saunaEmails?: string } = {}) {
 }
 
 afterEach(() => {
-  process.env = ORIGINAL_ENV;
+  process.env = SAVED_ENV;
   jest.restoreAllMocks();
 });
 
