@@ -8,6 +8,8 @@
 //  - { ok: true } 通過
 //  - { ok: false, error: 'xxx', detail?: 'yyy' } バリデーション失敗
 
+import { isSaunaReservation } from './notifyRecipients';
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_GUESTS = 150;
 const HEADER_CONTROL_RE = /[\r\n]/;
@@ -272,4 +274,29 @@ export function validateUpdateFields(body: any): UpdateValidationResult {
     return { ok: false, error: 'no_updatable_fields' };
   }
   return { ok: true, updates };
+}
+
+/**
+ * サウナ予約はメールアドレス必須（2026-08-16 運営要望③）。
+ *
+ * 従来メールは全プランで任意だった。サウナは当日のご案内を運営がメールで送る運用に
+ * なっているため、公開画面からの予約ではメール無しを受け付けない。
+ *
+ * ★職員入力（staff.html＝電話受付）は対象外にする。職員画面にメール欄が無く、
+ *   電話で受けた予約はメールを持たないお客様が実在する。ここで一律に必須化すると
+ *   運営が代理入力できなくなり、既存の受付導線を新たに壊す（2026-08-03 のサウナ人数
+ *   検証で「範囲外・未送信は無視。ここで400を返すと既存導線を壊す」と同じ判断）。
+ *
+ * ★サウナ判定は lib/notifyRecipients.ts の isSaunaReservation を使う（SSOT）。
+ *   planId と roomIds の両方を見る実装なので、ふたみの日（plan_sauna_futami /
+ *   sauna_share）も通常サウナ（sauna_1〜4 / sauna）も同じ関数で拾える。
+ *
+ * @param createdBy 'staff' なら常に false（＝必須にしない）
+ */
+export function isCustomerEmailRequired(
+  identity: { planId?: string; roomIds?: string[] },
+  createdBy: string,
+): boolean {
+  if (createdBy === 'staff') return false;
+  return isSaunaReservation(identity);
 }

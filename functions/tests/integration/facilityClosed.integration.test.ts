@@ -403,7 +403,9 @@ describe('createReservation — facility_closed の強制（real-path）', () =>
       planId: 'sauna_1', roomIds: ['sauna'],
       slots: fixedSlots('sauna', OPEN_WEDNESDAY, [10, 11]),
       startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
-      customer: { name: 'サウナ 太郎', phone: '090-1111-2222' },
+      // ★email は 2026-08-16 の運営要望③（サウナはメール必須）以降、公開経路では必須。
+      //   ここで省くと全部 400 email_required_for_sauna になり、停止の検証に到達しない。
+      customer: { name: 'サウナ 太郎', phone: '090-1111-2222', email: 'sauna@test.example' },
       ...over,
     },
   });

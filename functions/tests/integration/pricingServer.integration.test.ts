@@ -157,7 +157,8 @@ describe('#17 サーバ権威料金（createReservation 実コード・emulator�
         planId: 'sauna_1', roomIds: ['sauna'],
         slots: fixedSlots('sauna', OPEN_WEDNESDAY, [10, 11]),
         startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
-        customer: { name: '山田', phone: '090-0000-0000' },
+        // サウナは公開経路ではメール必須（2026-08-16 運営要望③）
+        customer: { name: '山田', phone: '090-0000-0000', email: 'sauna@test.example' },
         pricing: { total: 5, saunaOptions: { towels: 2, tarpTent: 1, ice20kg: 0 } },
       },
     });

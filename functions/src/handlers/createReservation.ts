@@ -18,7 +18,7 @@ import { audit as auditLog, logMailFailure, logIdempotencyFailure } from '../lib
 import { formatCustomerAddress, formatPartyText, formatSaunaOptions, generateDisplayId } from '../lib/format';
 import { detectDisplayIdCollision } from '../lib/displayId';
 import { MailData, sendConfirmationEmail, sendStaffNotification, sendMonitorAlert } from '../lib/mail';
-import { validateReservationBody } from '../lib/validation';
+import { validateReservationBody, isCustomerEmailRequired } from '../lib/validation';
 import { VALID_ROOM_IDS } from '../constants';
 import { getFutamiDaysFresh } from '../lib/futamiDays';
 import {
@@ -179,6 +179,14 @@ export const createReservation = onRequest(
 
       // createdBy はクライアント申告を信用せず、任意Bearerの実検証結果から決める。
       const createdBy = await isVerifiedStaffRequest(req) ? 'staff' : 'web';
+
+      // サウナはメール必須（2026-08-16 運営要望③）。職員入力（電話受付）は対象外。
+      // 判定は canonical 化後の planId/roomIds で行う（クライアント申告の planId では
+      // ふたみの日サウナが sauna_1〜4 のまま届く経路がある）。
+      if (isCustomerEmailRequired({ planId, roomIds }, createdBy) && !customer?.email) {
+        res.status(400).json({ error: 'email_required_for_sauna' });
+        return;
+      }
 
       // #17 料金はサーバが canonical plan/slots と選択事実（市民区分・照明・オプション）から
       // 権威的に再計算し、この serverPricing だけを保存する。クライアント申告の pricing.total は

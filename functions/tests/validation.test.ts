@@ -1,7 +1,7 @@
 // 予約入力バリデーションのユニットテスト
 // 2026-05-05 新設（/gfu Phase A-2）
 
-import { validateReservationBody, validateUpdateFields } from '../src/lib/validation';
+import { validateReservationBody, validateUpdateFields, isCustomerEmailRequired } from '../src/lib/validation';
 
 const VALID_ROOMS = new Set([
   'room_27', 'room_6_1', 'court_1', 'court_2', 'midori', 'sauna', 'camp_1', 'camp_2', 'lodge_a',
@@ -406,5 +406,37 @@ describe('validateUpdateFields（#2）', () => {
   });
   it('拒否：status が30文字超', () => {
     expect(validateUpdateFields({ status: 'x'.repeat(31) })).toEqual({ ok: false, error: 'invalid_status' });
+  });
+});
+
+// ─────────────────────────────────────────
+// サウナのメール必須（2026-08-16 運営要望③）
+// ─────────────────────────────────────────
+describe('isCustomerEmailRequired — サウナはメール必須・職員入力は除外', () => {
+  it('通常サウナ（sauna_1〜4 / roomIds:sauna）は公開画面から必須', () => {
+    for (const planId of ['sauna_1', 'sauna_2', 'sauna_3', 'sauna_4']) {
+      expect(isCustomerEmailRequired({ planId, roomIds: ['sauna'] }, 'web')).toBe(true);
+    }
+  });
+
+  it('ふたみの日サウナ（plan_sauna_futami / sauna_share）も必須', () => {
+    expect(isCustomerEmailRequired({ planId: 'plan_sauna_futami', roomIds: ['sauna_share'] }, 'web')).toBe(true);
+  });
+
+  it('planId を知らなくても roomIds がサウナなら必須（判定の取りこぼし防止）', () => {
+    expect(isCustomerEmailRequired({ planId: 'sauna_future_plan', roomIds: ['sauna'] }, 'web')).toBe(true);
+    expect(isCustomerEmailRequired({ roomIds: ['sauna_share'] }, 'web')).toBe(true);
+  });
+
+  it('★職員入力（電話受付）は必須にしない＝運営の代理入力を止めない', () => {
+    expect(isCustomerEmailRequired({ planId: 'sauna_1', roomIds: ['sauna'] }, 'staff')).toBe(false);
+    expect(isCustomerEmailRequired({ planId: 'plan_sauna_futami', roomIds: ['sauna_share'] }, 'staff')).toBe(false);
+  });
+
+  it('サウナ以外は従来どおり任意のまま（既存の予約導線を変えない）', () => {
+    expect(isCustomerEmailRequired({ planId: 'stay_6', roomIds: ['room_6_1'] }, 'web')).toBe(false);
+    expect(isCustomerEmailRequired({ planId: 'day_27_pm', roomIds: ['room_27'] }, 'web')).toBe(false);
+    expect(isCustomerEmailRequired({ planId: 'tennis_full', roomIds: ['court_1'] }, 'web')).toBe(false);
+    expect(isCustomerEmailRequired({ planId: 'camp_stay', roomIds: ['camp_1'] }, 'web')).toBe(false);
   });
 });

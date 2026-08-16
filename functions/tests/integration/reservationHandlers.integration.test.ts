@@ -257,6 +257,10 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
     },
   });
 
+  // サウナは公開経路ではメール必須（2026-08-16 運営要望③）。ここで省くと 400
+  // email_required_for_sauna が先に返り、ふたみの日ガードや slot 競合の検証に到達しない。
+  const SAUNA_CUSTOMER = { name: '山田', phone: '090-0000-0000', email: 'sauna@test.example' };
+
   it('定休日（火曜）は 400 closed_day で拒否（config 未設定＝既定 defaultClosedDays=[2]）', async () => {
     const r = await invoke(createReservation, base({
       slots: fixedSlots('room_27', CLOSED_TUESDAY, [8,9,10,11]),
@@ -364,6 +368,7 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
       planId: 'sauna_1', roomIds: ['sauna'],
       slots: fixedSlots('sauna', OPEN_WEDNESDAY, [10,11]),
       startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+      customer: SAUNA_CUSTOMER,
     }));
     expect(r.statusCode).toBe(400);
     expect(r.body.error).toBe('futami_day_requires_shared_sauna');
@@ -375,6 +380,7 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
       slots: fixedSlots('sauna_share', OPEN_THURSDAY, [10,11]),
       startDate: OPEN_THURSDAY, endDate: OPEN_THURSDAY, nights: 0,
       guestCount: 4,
+      customer: SAUNA_CUSTOMER,
     }));
     expect(r.statusCode).toBe(400);
     expect(r.body.error).toBe('not_futami_day');
@@ -390,6 +396,7 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
       slots: fixedSlots('sauna_share', OPEN_WEDNESDAY, [10,11]),
       startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
       guestCount: 4,
+      customer: SAUNA_CUSTOMER,
     }));
     expect(r.statusCode).toBe(409);
     expect(r.body.error).toBe('slot_conflict');
@@ -403,6 +410,7 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
       planId: 'sauna_1', roomIds: ['sauna'],
       slots: fixedSlots('sauna', OPEN_WEDNESDAY, [10,11]),
       startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+      customer: SAUNA_CUSTOMER,
     }));
     expect(r.statusCode).toBe(409);
     expect(r.body.error).toBe('slot_conflict');
@@ -608,5 +616,80 @@ describe('tennis_half 復活（court_wall・real-path）', () => {
       customer: { name: '半面 三郎', phone: '090-7777-8888', isMember: true },
     }));
     expect(again.statusCode).toBe(201);
+  });
+});
+
+// ─────────────────────────────────────────────
+// サウナはメールアドレス必須（2026-08-16 運営要望③・real-path）
+//
+// 運営は当日のご案内をメールで送る運用なので、メール無しのサウナ予約が入ると連絡が付かない。
+// 画面側（index.html の requireEmail）でも止めているが、API 直叩きでも通らないことをここで担保する。
+//
+// ★職員入力（staff.html＝電話受付）は対象外。職員画面にメール欄が無く、電話で受けた
+//   お客様はメールを持たないことがある。ここまで必須にすると運営が代理入力できなくなる。
+// ─────────────────────────────────────────────
+describe('createReservation — サウナのメール必須（2026-08-16 運営要望③）', () => {
+  const authMock = jest.requireMock('../../src/lib/auth') as { isVerifiedStaffRequest: jest.Mock };
+  const asStaff = () => authMock.isVerifiedStaffRequest.mockImplementation(async () => true);
+  const asWeb = () => authMock.isVerifiedStaffRequest.mockImplementation(async () => false);
+  // 他 describe は web 前提なので、この describe を出るときに必ず戻す
+  afterEach(asWeb);
+
+  const saunaBody = (over: any = {}) => ({
+    method: 'POST', query: {}, headers: {},
+    body: {
+      planId: 'sauna_1', roomIds: ['sauna'],
+      slots: fixedSlots('sauna', OPEN_WEDNESDAY, [10, 11]),
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+      customer: { name: 'サウナ 太郎', phone: '090-1111-2222' },
+      ...over,
+    },
+  });
+
+  it('公開経路：メール無しのサウナは 400 email_required_for_sauna（在庫も予約も作らない）', async () => {
+    const r = await invoke(createReservation, saunaBody());
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('email_required_for_sauna');
+    expect((await db.collection('slots').get()).size).toBe(0);
+    expect((await db.collection('reservations').get()).size).toBe(0);
+  });
+
+  it('公開経路：メール有りのサウナは従来どおり 201', async () => {
+    const r = await invoke(createReservation, saunaBody({
+      customer: { name: 'サウナ 太郎', phone: '090-1111-2222', email: 'sauna@test.example' },
+    }));
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('公開経路：ふたみの日（plan_sauna_futami / sauna_share）もメール無しは 400', async () => {
+    await db.doc('config/special_days').set({ sauna_capacity_days: [OPEN_WEDNESDAY] });
+    const r = await invoke(createReservation, saunaBody({
+      planId: 'plan_sauna_futami', roomIds: ['sauna_share'],
+      slots: fixedSlots('sauna_share', OPEN_WEDNESDAY, [10, 11]),
+      guestCount: 4,
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('email_required_for_sauna');
+  });
+
+  it('職員入力（電話受付）はメール無しでも 201＝既存の受付導線を壊さない', async () => {
+    asStaff();
+    const req = saunaBody({ pricing: null, createdBy: 'staff' });
+    req.headers = { authorization: 'Bearer staff' };
+    const r = await invoke(createReservation, req);
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('回帰：サウナ以外はメール無しでも従来どおり 201', async () => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'day_27_am', roomIds: ['room_27'],
+        slots: fixedSlots('room_27', OPEN_WEDNESDAY, [8, 9, 10, 11]),
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田', phone: '090-0000-0000' },
+      },
+    });
+    expect(r.statusCode).toBe(201);
   });
 });

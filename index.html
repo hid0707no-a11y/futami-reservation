@@ -1069,12 +1069,14 @@ html.embed .info-section { display: none !important; }
         <label class="form-label" for="confirm-phone">電話番号 *</label>
         <input type="tel" class="form-input" id="confirm-phone" placeholder="090-1234-5678" maxlength="20">
       </div>
+      <!-- メール欄（サウナは必須・2026-08-16 運営要望③。ラベルの * は JS で切り替える） -->
       <div class="form-group">
-        <label class="form-label" for="confirm-email">メールアドレス</label>
+        <label class="form-label" for="confirm-email"><span id="email-label">メールアドレス</span></label>
         <input type="email" class="form-input" id="confirm-email" placeholder="example@mail.com" maxlength="100">
+        <div id="email-required-note" class="text-muted" style="font-size:12px;margin-top:4px;display:none">※ 貸切サウナは当日のご案内をメールでお送りするため、メールアドレスのご記入をお願いしております</div>
       </div>
       <div class="form-group">
-        <label class="form-label" for="confirm-email2">メールアドレス（確認）</label>
+        <label class="form-label" for="confirm-email2"><span id="email2-label">メールアドレス（確認）</span></label>
         <input type="email" class="form-input" id="confirm-email2" placeholder="もう一度入力してください" maxlength="100">
         <div id="email-mismatch" style="color:#e94560;font-size:12px;margin-top:4px;display:none;">メールアドレスが一致しません</div>
       </div>
@@ -1450,6 +1452,7 @@ const PLANS = [
     timeRange: '10:00-12:00', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
+    requireEmail: true, // 2026-08-16 運営要望③：サウナはメールアドレス必須
     extras: [
       { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
       { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
@@ -1459,6 +1462,7 @@ const PLANS = [
     timeRange: '12:30-14:30', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
+    requireEmail: true, // 2026-08-16 運営要望③：サウナはメールアドレス必須
     extras: [
       { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
       { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
@@ -1468,6 +1472,7 @@ const PLANS = [
     timeRange: '15:00-17:00', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
+    requireEmail: true, // 2026-08-16 運営要望③：サウナはメールアドレス必須
     extras: [
       { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
       { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
@@ -1477,6 +1482,7 @@ const PLANS = [
     timeRange: '17:30-19:30', basePrice: 13200,
     priceDisplay: '13,200円/グループ',
     badge: 'サウナ', badgeColor: '#ec4899',
+    requireEmail: true, // 2026-08-16 運営要望③：サウナはメールアドレス必須
     extras: [
       { id: 'towel', name: 'タオルオプション', price: 550, unit: '1セット' },
       { id: 'tarp_tent', name: 'タープテント', price: 1100, unit: '1張', max: 1 },
@@ -3898,6 +3904,8 @@ function proceedToConfirm() {
 
   // 住所欄の必須/任意切替（宿泊系プランのみ必須）
   configureAddressRequirement(plan);
+  // メール欄の必須/任意切替（サウナのみ必須）
+  configureEmailRequirement(plan);
 
   navigate('screen-confirm');
 }
@@ -3914,6 +3922,24 @@ function configureAddressRequirement(plan) {
   const noteEl = document.getElementById('address-required-note');
   if (labelEl) labelEl.textContent = isLodging ? '郵便番号 / 住所 *' : '郵便番号 / 住所（任意）';
   if (noteEl) noteEl.style.display = isLodging ? 'block' : 'none';
+}
+
+// メールアドレス必須プラン判定（2026-08-16 運営要望③：サウナ予約はメール必須）
+// 住所と同じく、各プラン定義の requireEmail: true で宣言する（PLANS配列を真実の唯一の源とする）。
+// ★ふたみの日のサウナは送信時に planId を plan_sauna_futami へ差し替えるが、
+//   画面で選ぶプラン自体は sauna_1〜4 のままなので、この判定でどちらも拾える。
+function isEmailRequiredPlan(plan) {
+  return !!(plan && plan.requireEmail);
+}
+
+function configureEmailRequirement(plan) {
+  const required = isEmailRequiredPlan(plan);
+  const labelEl = document.getElementById('email-label');
+  const label2El = document.getElementById('email2-label');
+  const noteEl = document.getElementById('email-required-note');
+  if (labelEl) labelEl.textContent = required ? 'メールアドレス *' : 'メールアドレス';
+  if (label2El) label2El.textContent = required ? 'メールアドレス（確認）*' : 'メールアドレス（確認）';
+  if (noteEl) noteEl.style.display = required ? 'block' : 'none';
 }
 
 // zipcloud API（無料・APIキー不要）で郵便番号→住所自動補完。
@@ -3970,6 +3996,11 @@ function showReview() {
 
   if (!name) { alert('お名前を入力してください'); return; }
   if (!phone) { alert('電話番号を入力してください'); return; }
+  // サウナはメール必須（2026-08-16 運営要望③）
+  if (isEmailRequiredPlan(state.selectedPlan) && !email) {
+    alert('メールアドレスを入力してください。貸切サウナは当日のご案内をメールでお送りします。');
+    return;
+  }
   if (email && email !== email2) {
     document.getElementById('email-mismatch').style.display = 'block';
     alert('メールアドレスが一致しません。もう一度ご確認ください。');
@@ -4213,6 +4244,7 @@ async function _submitBookingInner() {
           invalid_customer_name: 'お名前の入力をご確認ください（50文字以内）。',
           invalid_customer_phone: '電話番号の入力をご確認ください（20文字以内）。',
           invalid_customer_email: 'メールアドレスの入力をご確認ください（100文字以内）。',
+          email_required_for_sauna: '貸切サウナのご予約にはメールアドレスが必要です。ご入力のうえ、もう一度お試しください。',
           invalid_note: '備考が長すぎます（団体名を含め500文字以内）。短くしてお試しください。',
           slot_room_mismatch: '予約枠の指定に不整合がありました。お手数ですが選び直してください。',
           invalid_roomIds: '施設の選択に不整合がありました。お手数ですが選び直してください。',
