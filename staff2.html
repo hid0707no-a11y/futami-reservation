@@ -11,6 +11,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <!-- 認証共通化 2026-05-05 Phase B-2：staff/staff2/staff_tennis.html で重複していたコードを集約 -->
 <script src="assets/js/auth-bootstrap.js" data-load-fn="loadData"></script>
+<!-- 月俯瞰のセル表記（IN/泊/OUT・日）純粋関数。2026-08-16 運営要望①②。
+     ★HTMLとJSは別々にキャッシュされるので ?v= を必ず上げる（2026-08-02 の教訓）。
+     読めていない場合は render() が従来の数字表示へフォールバックする。 -->
+<script src="assets/js/ledger.js?v=20260816"></script>
 <style>
 :root {
   --navy: #1e3a8a;
@@ -170,6 +174,18 @@ body {
 .cell-closed { background: #fef2f2; }
 .closed-day { background: #fef2f2 !important; color: #e94560; }
 .cell-count { font-size: 11px; line-height: 1; }
+/* 宿泊のIN/泊/OUTと日帰りの「日」（2026-08-16 運営要望①②）。
+   ★意味は色ではなく文字に載せる：この台帳は印刷すると背景色が飛ぶ実績がある。
+   上から時系列（朝に出る out → 日中の 日 → 泊まる 泊/IN）で積む。 */
+.cell-marks { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.cell-marks .mark { font-size: 10px; line-height: 1.15; letter-spacing: -0.02em; }
+.cell-marks.tight .mark { font-size: 9px; line-height: 1.05; }
+.mark-in  { font-weight: 700; color: #065f46; }
+.mark-mid { font-weight: 600; color: #047857; }
+.mark-day { font-weight: 700; color: #9a3412; }
+.mark-out { font-weight: 600; color: #6b7280; font-size: 9px !important; }
+/* その日は朝に出るだけ＝新しい宿泊は受けられる。空きにも満室にも見せない薄さにする */
+.cell-out-only { background: #ecfdf5; cursor: pointer; }
 /* 施設ごとの停止（facilityClosed）。色は既存トークン（#fef2f2 / #e94560）だけを使い、
    終日停止＝ベタ塗り、時間帯だけの停止＝斜線 で見分ける（色を増やさない）。 */
 .cell-stop { background: #fef2f2; color: #e94560; font-weight: 700; cursor: default; }
@@ -344,6 +360,16 @@ body {
   }
   .month-table .cell-count { font-size: 11px !important; font-weight: 700 !important; }
 
+  /* ★IN / 泊 / out / 日（2026-08-16）。A4横31日で1マス約8mm＝「out」3文字が入る幅がある。
+     紙では白文字を一切使わない方針（背景が刷られなくても必ず読める）に合わせ、
+     どの記号も濃い文字色を明示する。 */
+  .month-table .cell-marks .mark       { font-size: 9.5px !important; line-height: 1.12 !important; font-weight: 700 !important; }
+  .month-table .cell-marks.tight .mark { font-size: 8px  !important; line-height: 1.02 !important; }
+  .month-table .mark-in  { color: #064e3b !important; }
+  .month-table .mark-mid { color: #065f46 !important; }
+  .month-table .mark-day { color: #7c2d12 !important; }
+  .month-table .mark-out { color: #4b5563 !important; font-size: 8.5px !important; font-weight: 600 !important; }
+
   /* ★「日」と「施設」の区分＝ここだけ太線にする */
   .month-table thead th { border-bottom: 2.5px solid #000 !important; font-size: 9.5px !important; }
   .month-table thead th.col-room,
@@ -376,6 +402,8 @@ body {
      数字が消えて「偶数だけ薄い」ように見えていた。紙では白文字を一切使わない。
      プリンタ側で「背景のグラフィック」がOFFでも数字が必ず読める状態にする。 */
   .cell-empty      { background: #fff     !important; }
+  /* 朝に出るだけの日。空き(#fff)とも一部予約(#bbf7d0)とも見分けが付く薄さにする */
+  .cell-out-only   { background: #e8f6ee  !important; }
   .cell-some       { background: #bbf7d0  !important; color: #065f46 !important; font-weight: 700 !important; }
   .cell-many       { background: #6ee7b7  !important; color: #064e3b !important; font-weight: 700 !important; }
   .cell-full       { background: #fca5a5  !important; color: #7f1d1d !important; font-weight: 700 !important; }
@@ -434,6 +462,10 @@ body {
   <div class="legend-item"><div class="legend-box" style="background:#a7f3d0"></div>一部予約</div>
   <div class="legend-item"><div class="legend-box" style="background:#34d399"></div>多め</div>
   <div class="legend-item"><div class="legend-box" style="background:#dc2626"></div>満</div>
+  <div class="legend-item"><span style="font-weight:700;color:#065f46">IN</span>チェックイン</div>
+  <div class="legend-item"><span style="font-weight:600;color:#047857">泊</span>連泊中</div>
+  <div class="legend-item"><span style="font-weight:600;color:#6b7280">out</span>この日の朝に退室</div>
+  <div class="legend-item"><span style="font-weight:700;color:#9a3412">日</span>日帰り利用</div>
   <div class="legend-item"><div class="legend-box" style="background:#fef3c7"></div>★ふたみの日</div>
   <div class="legend-item"><div class="legend-box" style="background:#fef2f2"></div>停 終日停止</div>
   <div class="legend-item"><div class="legend-box" style="background:repeating-linear-gradient(45deg,#fef2f2 0 4px,#fff 4px 8px)"></div>停 一部停止</div>
@@ -462,25 +494,31 @@ const AVAILABILITY_URL = 'https://availability-6ry33ad4oa-an.a.run.app';
 // APIキーは廃止済み。Firebase Auth IDトークンのみで認証。
 
 // ===== ROOMS定義（カテゴリ・建物別） =====
+//
+// ledger: 'marks' … 宿泊が入り得る行。IN / 泊 / OUT / 日 の文字で出す（2026-08-16 運営要望①②）
+// ledger: 'count' … 日帰りしか入らない行。従来どおり件数の数字を出す
+//   ★サウナ（4枠）・研修室（午前/午後/夜間）は「その日に何件入っているか」自体が
+//     読みたい情報なので、全部を「日」に潰すと枠数が読めなくなる。宿泊と混ざらない
+//     行では区別する必要が無いため数字のまま残す。
 const ROOMS = [
-  // 宿泊（ふれあいの館）
-  { id: 'room_27', name: '1号室（27畳）', building: 'ふれあいの館', category: 'stay' },
-  { id: 'room_6_1', name: '2号室（6畳）', building: 'ふれあいの館', category: 'stay' },
-  { id: 'room_6_2', name: '3号室（6畳）', building: 'ふれあいの館', category: 'stay' },
-  { id: 'room_6_3', name: '5号室（6畳）', building: 'ふれあいの館', category: 'stay' },
-  { id: 'room_6_4', name: '6号室（6畳）', building: 'ふれあいの館', category: 'stay' },
-  { id: 'room_exp', name: '体験学習室（25畳）', building: 'ふれあいの館', category: 'stay' },
+  // 宿泊（ふれあいの館）※同じ部屋に日帰りプランも入る
+  { id: 'room_27', name: '1号室（27畳）', building: 'ふれあいの館', category: 'stay', ledger: 'marks' },
+  { id: 'room_6_1', name: '2号室（6畳）', building: 'ふれあいの館', category: 'stay', ledger: 'marks' },
+  { id: 'room_6_2', name: '3号室（6畳）', building: 'ふれあいの館', category: 'stay', ledger: 'marks' },
+  { id: 'room_6_3', name: '5号室（6畳）', building: 'ふれあいの館', category: 'stay', ledger: 'marks' },
+  { id: 'room_6_4', name: '6号室（6畳）', building: 'ふれあいの館', category: 'stay', ledger: 'marks' },
+  { id: 'room_exp', name: '体験学習室（25畳）', building: 'ふれあいの館', category: 'stay', ledger: 'marks' },
   // 日帰り
-  { id: 'room_train', name: '研修室', building: '日帰り施設', category: 'day' },
-  { id: 'room_kitchen', name: '厨房・食堂', building: '日帰り施設', category: 'day' },
+  { id: 'room_train', name: '研修室', building: '日帰り施設', category: 'day', ledger: 'count' },
+  { id: 'room_kitchen', name: '厨房・食堂', building: '日帰り施設', category: 'day', ledger: 'count' },
   // スポーツ（テニスは別画面 staff_tennis.html）
-  { id: 'midori', name: 'みどりの広場', building: 'スポーツ施設', category: 'sport' },
+  { id: 'midori', name: 'みどりの広場', building: 'スポーツ施設', category: 'sport', ledger: 'count' },
   // サウナ
-  { id: 'sauna', name: 'サンセットサウナ', building: 'サウナ', category: 'sauna' },
-  // アウトドア
-  { id: 'camp', name: 'キャンプ場', building: 'アウトドア', category: 'outdoor' },
-  { id: 'lodge_a', name: 'ロッジA', building: 'アウトドア', category: 'outdoor' },
-  { id: 'lodge_b', name: 'ロッジB', building: 'アウトドア', category: 'outdoor' },
+  { id: 'sauna', name: 'サンセットサウナ', building: 'サウナ', category: 'sauna', ledger: 'count' },
+  // アウトドア（キャンプ場は8区画を1行に集約・ロッジは宿泊と日帰りの両方が入る）
+  { id: 'camp', name: 'キャンプ場', building: 'アウトドア', category: 'outdoor', ledger: 'marks' },
+  { id: 'lodge_a', name: 'ロッジA', building: 'アウトドア', category: 'outdoor', ledger: 'marks' },
+  { id: 'lodge_b', name: 'ロッジB', building: 'アウトドア', category: 'outdoor', ledger: 'marks' },
 ];
 
 // ===== 施設ごとの停止（facilityClosed）用の定義 =====
@@ -704,8 +742,12 @@ function buildOccupancyMap() {
     for (const k of r.slots) {
       const parts = k.split('|');
       if (parts.length !== 3) continue;
-      let roomId = parts[0];
-      if (roomId === 'sauna_share') roomId = 'sauna';
+      // 予約の roomId → 表の行。写像は facilityRowId が正本（sauna_share→sauna / camp_1〜8→camp）。
+      // ★2026-08-16 修正：ここが sauna_share だけの変換だったため、区画IDで slot を持つ
+      //   キャンプ（camp_1〜camp_8）がどの行にも結びつかず、「キャンプ場」行は予約が
+      //   何件入っていても常に空白だった。2026-04-28 にキャンプを共有枠から8区画へ移行
+      //   した際の追随漏れ（停止表示の側だけ facilityRowId で集約済みだった）。
+      const roomId = facilityRowId(parts[0]);
       const date = parts[1];
       datesAndRooms.add(roomId + '|' + date);
     }
@@ -731,6 +773,63 @@ function isClosedDayLocal(ds) {
   if (CAL_SETTINGS.forceOpen && CAL_SETTINGS.forceOpen.includes(ds)) return false;
   var d = new Date(ds + 'T00:00:00');
   return (CAL_SETTINGS.defaultClosedDays || [2]).includes(d.getDay());
+}
+
+// ===== セルの中身（IN / 泊 / OUT / 日）=====
+//
+// 判定そのものは assets/js/ledger.js（純粋関数・Jest対象）に置いてある。
+// ★ここでは「読めていなければ従来の数字表示に戻す」防御だけを持つ。
+//   HTMLとJSは別々にキャッシュされるため、新しいHTMLが古い（＝まだ ledger.js を
+//   持たない）キャッシュを掴む再訪ユーザーが実在する。undefined を触って
+//   TypeError を出すと台帳が丸ごと描画不能になる（2026-08-02 に踏みかけた事故）。
+function isLedgerLibReady() {
+  return typeof NisshoLedger === 'object' && NisshoLedger !== null
+    && typeof NisshoLedger.ledgerCellMarks === 'function'
+    && typeof NisshoLedger.ledgerCellLines === 'function'
+    && typeof NisshoLedger.ledgerCellLevel === 'function';
+}
+
+const LEDGER_LEVEL_CLASS = {
+  'empty': 'cell-empty',
+  'out-only': 'cell-out-only',
+  'some': 'cell-some',
+  'many': 'cell-many',
+  'full': 'cell-full',
+};
+
+// マウスを載せた時の説明。紙では出ないので、意味は必ずセルの文字側にも載せる。
+function ledgerCellTitle(marks) {
+  const parts = [];
+  if (marks.out > 0) parts.push('朝チェックアウト ' + marks.out + '件');
+  if (marks.day > 0) parts.push('日帰り ' + marks.day + '件');
+  if (marks.mid > 0) parts.push('連泊中 ' + marks.mid + '件');
+  if (marks.in > 0) parts.push('チェックイン ' + marks.in + '件');
+  if (marks.other > 0) parts.push('その他 ' + marks.other + '件');
+  return parts.join(' / ');
+}
+
+function buildCellContent(room, reservations, ds) {
+  const count = reservations.length;
+  // 宿泊が入らない行（研修室・厨房・みどり・サウナ）と、ledger.js を読めていない場合は従来表示
+  if (room.ledger !== 'marks' || !isLedgerLibReady()) {
+    let levelClass = 'cell-empty';
+    if (count === 1) levelClass = 'cell-some';
+    else if (count > 1 && count <= 3) levelClass = 'cell-many';
+    else if (count > 3) levelClass = 'cell-full';
+    return {
+      levelClass,
+      label: count > 0 ? `<span class="cell-count">${count}</span>` : '',
+      title: '',
+    };
+  }
+  const marks = NisshoLedger.ledgerCellMarks(reservations, ds);
+  const lines = NisshoLedger.ledgerCellLines(marks);
+  const level = NisshoLedger.ledgerCellLevel(marks);
+  const label = lines.length === 0 ? ''
+    : '<span class="cell-marks' + (lines.length >= 3 ? ' tight' : '') + '">'
+      + lines.map(l => '<span class="mark mark-' + l.kind + '">' + escapeHtml(l.text) + '</span>').join('')
+      + '</span>';
+  return { levelClass: LEDGER_LEVEL_CLASS[level] || 'cell-empty', label, title: ledgerCellTitle(marks) };
 }
 
 function render() {
@@ -776,27 +875,23 @@ function render() {
         const ds = dateStr(year, month, d);
         const reservations = (occMap[room.id] || {})[ds] || [];
         const count = reservations.length;
+        const content = buildCellContent(room, reservations, ds);
         let cellClass = 'cell-empty';
-        let label = '';
+        let label = content.label;
         if (ds < today) cellClass = 'cell-past';
         else if (isClosedDayLocal(ds) && count === 0) cellClass = 'cell-closed';
-        if (count > 0) {
-          if (count === 1) cellClass = 'cell-some';
-          else if (count <= 3) cellClass = 'cell-many';
-          else cellClass = 'cell-full';
-          label = `<span class="cell-count">${count}</span>`;
-        }
+        if (count > 0) cellClass = content.levelClass;
+        let titleAttr = content.title ? ` title="${escapeHtml(content.title)}"` : '';
         // 施設ごとの停止。モーダルを開かないと分からない状態だと、止めた施設が表では空きに見える。
         // 過ぎた日は運用上どうでもよいので従来どおり灰色のまま。
         const stopState = ds < today ? '' : (stopMap[room.id + '|' + ds] || '');
-        let stopTitle = '';
         if (stopState) {
           cellClass = (stopState === 'all' ? 'cell-stop' : 'cell-stop-part') + (count > 0 ? ' has-res' : '');
-          stopTitle = stopState === 'all' ? ' title="施設停止（終日）"' : ' title="施設停止（一部の時間・区画のみ）"';
+          titleAttr = stopState === 'all' ? ' title="施設停止（終日）"' : ' title="施設停止（一部の時間・区画のみ）"';
           label = `<span class="cell-count">停${count > 0 ? count : ''}</span>`;
         }
         const onclick = count > 0 ? ` onclick="showCellDetail('${room.id}','${ds}','${room.name.replace(/'/g, '')}')"` : '';
-        html += `<td class="${cellClass}"${stopTitle}${onclick}>${label}</td>`;
+        html += `<td class="${cellClass}"${titleAttr}${onclick}>${label}</td>`;
       }
       html += '</tr>';
     }
@@ -848,8 +943,8 @@ function closePopup() {
 
 function inferCategory(r) {
   const room = (r.roomIds && r.roomIds[0]) || '';
-  const norm = room === 'sauna_share' ? 'sauna' : room;
-  const def = ROOMS.find(x => x.id === norm);
+  // 行への写像は buildOccupancyMap と同じ facilityRowId を使う（キャンプの区画IDも拾う）
+  const def = ROOMS.find(x => x.id === facilityRowId(room));
   return def ? def.category : 'all';
 }
 
