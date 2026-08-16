@@ -150,6 +150,44 @@ describe('壊れた・古いデータで台帳が消えないこと（安全側�
   });
 });
 
+describe('複数施設をまとめた行の色（capacity・2026-08-17 レビュー指摘）', () => {
+  // キャンプ場は camp_1〜camp_8 の8区画を1行に集約している。1部屋1行のしきい値
+  // （4件以上＝満）をそのまま当てると、半分空いている日が赤「満」になり、
+  // 運営が予約を断りかねない。
+  const campers = (n: number, date: string): Res[] =>
+    Array.from({ length: n }, () => stay('camp_stay', date, '2026-08-11'));
+  const campLevel = (n: number): string =>
+    Ledger.ledgerCellLevel(marks(campers(n, '2026-08-10'), '2026-08-10'), 8);
+
+  it('8区画中4件は「多め」であって「満」ではない', () => {
+    expect(campLevel(4)).toBe('many');
+  });
+
+  it('半分に満たなければ「一部予約」', () => {
+    expect(campLevel(1)).toBe('some');
+    expect(campLevel(3)).toBe('some');
+  });
+
+  it('全区画が埋まって初めて「満」', () => {
+    expect(campLevel(7)).toBe('many');
+    expect(campLevel(8)).toBe('full');
+  });
+
+  it('capacity 省略・1 は従来どおり（1部屋1行の見慣れた色を変えない）', () => {
+    const one = stay('stay_6', '2026-08-10', '2026-08-11');
+    expect(level([one], '2026-08-10')).toBe('some');
+    expect(Ledger.ledgerCellLevel(marks([one], '2026-08-10'), 1)).toBe('some');
+    // 旧しきい値（2〜3件＝多め / 4件以上＝満）も維持
+    expect(Ledger.ledgerCellLevel({ in: 2, mid: 0, out: 0, day: 0, other: 0 })).toBe('many');
+    expect(Ledger.ledgerCellLevel({ in: 4, mid: 0, out: 0, day: 0, other: 0 })).toBe('full');
+  });
+
+  it('capacity を渡してもチェックアウトだけの日は out-only のまま', () => {
+    const leaving = stay('camp_stay', '2026-08-09', '2026-08-10');
+    expect(Ledger.ledgerCellLevel(marks([leaving], '2026-08-10'), 8)).toBe('out-only');
+  });
+});
+
 describe('プラン分類がサーバ側カタログと食い違っていないこと', () => {
   // functions/src/lib/reservationPlans.ts の kind:'overnight' が STAY、それ以外が DAY。
   // 片方に足し忘れると台帳の IN/OUT がその施設だけ出なくなるため、ここで固定する。

@@ -14,7 +14,7 @@
 <!-- 月俯瞰のセル表記（IN/泊/OUT・日）純粋関数。2026-08-16 運営要望①②。
      ★HTMLとJSは別々にキャッシュされるので ?v= を必ず上げる（2026-08-02 の教訓）。
      読めていない場合は render() が従来の数字表示へフォールバックする。 -->
-<script src="assets/js/ledger.js?v=20260816"></script>
+<script src="assets/js/ledger.js?v=20260817"></script>
 <style>
 :root {
   --navy: #1e3a8a;
@@ -184,6 +184,12 @@ body {
 .mark-mid { font-weight: 600; color: #047857; }
 .mark-day { font-weight: 700; color: #9a3412; }
 .mark-out { font-weight: 600; color: #6b7280; font-size: 9px !important; }
+/* ★濃い背景（多め #34d399 / 満 #dc2626）の上では白に戻す。従来 .cell-count は
+   .cell-many/.cell-full の color:#fff を継いでいたが、IN/泊/out/日 は自前の濃い色を
+   持つため赤セル上でほぼ読めなくなっていた（2026-08-17 のレビュー指摘）。
+   ★印刷用ブロックは背景が薄色（#fca5a5 等）で濃い文字が正しいので、そちらの
+   !important 指定はそのまま効かせる＝紙は白文字にしない。 */
+.cell-many .mark, .cell-full .mark { color: #fff; }
 /* その日は朝に出るだけ＝新しい宿泊は受けられる。空きにも満室にも見せない薄さにする */
 .cell-out-only { background: #ecfdf5; cursor: pointer; }
 /* 施設ごとの停止（facilityClosed）。色は既存トークン（#fef2f2 / #e94560）だけを使い、
@@ -464,7 +470,7 @@ body {
   <div class="legend-item"><div class="legend-box" style="background:#dc2626"></div>満</div>
   <div class="legend-item"><span style="font-weight:700;color:#065f46">IN</span>チェックイン</div>
   <div class="legend-item"><span style="font-weight:600;color:#047857">泊</span>連泊中</div>
-  <div class="legend-item"><span style="font-weight:600;color:#6b7280">out</span>この日の朝に退室</div>
+  <div class="legend-item"><div class="legend-box" style="background:#ecfdf5"></div><span style="font-weight:600;color:#6b7280">out</span>この日の朝に退室（夕方から泊まれる）</div>
   <div class="legend-item"><span style="font-weight:700;color:#9a3412">日</span>日帰り利用</div>
   <div class="legend-item"><div class="legend-box" style="background:#fef3c7"></div>★ふたみの日</div>
   <div class="legend-item"><div class="legend-box" style="background:#fef2f2"></div>停 終日停止</div>
@@ -824,7 +830,9 @@ function buildCellContent(room, reservations, ds) {
   }
   const marks = NisshoLedger.ledgerCellMarks(reservations, ds);
   const lines = NisshoLedger.ledgerCellLines(marks);
-  const level = NisshoLedger.ledgerCellLevel(marks);
+  // ★色は「その行が代表している施設の数」と比べて決める。キャンプ場は8区画で1行なので、
+  //   1部屋1行のしきい値のままだと4区画で赤「満」になり、半分空いているのに断りかねない。
+  const level = NisshoLedger.ledgerCellLevel(marks, ROW_FACILITY_COUNT[room.id] || 1);
   const label = lines.length === 0 ? ''
     : '<span class="cell-marks' + (lines.length >= 3 ? ' tight' : '') + '">'
       + lines.map(l => '<span class="mark mark-' + l.kind + '">' + escapeHtml(l.text) + '</span>').join('')

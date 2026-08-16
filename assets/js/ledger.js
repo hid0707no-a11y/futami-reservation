@@ -173,17 +173,29 @@
   //
   //   'empty'    予約なし
   //   'out-only' その日は朝に出るだけ（＝新しい宿泊は受けられる）
-  //   'some'     1件
-  //   'many'     2〜3件
-  //   'full'     4件以上
+  //   'some'     一部予約
+  //   'many'     多め
+  //   'full'     満
   //
-  // some/many/full のしきい値は従来の月俯瞰と同じ（見慣れた色を変えない）。
-  function ledgerCellLevel(marks) {
+  // capacity … その行が代表している施設の数（キャンプ場は8区画で1行）。
+  //   省略・1以下なら1部屋1行とみなし、従来の月俯瞰と同じしきい値（見慣れた色を変えない）。
+  //
+  // ★複数施設をまとめた行に1部屋1行のしきい値を当てると「満」が早すぎる。
+  //   キャンプ場は8区画あるので4件で赤「満」になり、半分空いているのに運営が
+  //   予約を断りかねない（2026-08-17 のレビュー指摘）。埋まった区画の数を
+  //   区画数と比べて決める：全部埋まって初めて「満」、半分を超えたら「多め」。
+  function ledgerCellLevel(marks, capacity) {
     var active = activeCount(marks);
     if (active === 0) return marks.out > 0 ? 'out-only' : 'empty';
-    if (active === 1) return 'some';
-    if (active <= 3) return 'many';
-    return 'full';
+    var cap = (typeof capacity === 'number' && capacity > 1) ? capacity : 0;
+    if (cap === 0) {
+      if (active === 1) return 'some';
+      if (active <= 3) return 'many';
+      return 'full';
+    }
+    if (active >= cap) return 'full';
+    if (active * 2 >= cap) return 'many';
+    return 'some';
   }
 
   return {

@@ -3997,7 +3997,10 @@ function showReview() {
   if (!name) { alert('お名前を入力してください'); return; }
   if (!phone) { alert('電話番号を入力してください'); return; }
   // サウナはメール必須（2026-08-16 運営要望③）
+  // ★不一致の警告は先に消す。両方を空にして出し直した時に「一致しません」が
+  //   残ったまま「入力してください」と言うことになるため（2026-08-17 のレビュー指摘）。
   if (isEmailRequiredPlan(state.selectedPlan) && !email) {
+    document.getElementById('email-mismatch').style.display = 'none';
     alert('メールアドレスを入力してください。貸切サウナは当日のご案内をメールでお送りします。');
     return;
   }
