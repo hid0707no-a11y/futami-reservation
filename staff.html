@@ -1805,9 +1805,29 @@ async function saveEdit() {
       showToast(msg, 6000);
       return;
     }
-    // ★保存後にローカルのスナップショットを捨てる。残っていると loadReservations() が
-    //   古い値を先に返し、直したはずの内容が画面に出ない（チェックイン操作が書いた分）。
-    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    // ★localStorage のスナップショットは**消さずに、直した1件だけを書き換える**。
+    //   チェックイン（toggleCheckin）はサーバへ送られず localStorage にしか無いので、
+    //   ここで全消しすると「その端末のチェックイン済みマークが全部消える」。
+    //   一方で放置すると loadReservations() が古い値を先に返し、直した内容が画面に出ない。
+    //   よって該当レコードだけを上書きする（キャンプは部屋ごとに行が割れるので全行）。
+    try {
+      const snapshot = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      let touched = false;
+      for (const r of snapshot) {
+        if ((r._origId || r.id) !== ctx.id) continue;
+        r.name = after.name;
+        r.kana = after.kana;
+        r.phone = after.phone;
+        r.email = after.email;
+        r.zip = after.zip;
+        r.address1 = after.address1;
+        r.address2 = after.address2;
+        r.note = after.note;
+        r.paymentStatus = after.paymentStatus;
+        touched = true;
+      }
+      if (touched) saveReservations(snapshot);
+    } catch (e) { /* スナップショットが壊れていても保存自体は成功しているので握りつぶす */ }
     closeEditModal();
     closeDetail();
     await loadGcalData();

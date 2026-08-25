@@ -31,7 +31,7 @@ jest.mock('../../src/lib/mail', () => ({
 }));
 
 import * as admin from 'firebase-admin';
-import { updateReservation, cancelReservation } from '../../src/handlers/reservation';
+import { updateReservation, cancelReservation, changeCampSites } from '../../src/handlers/reservation';
 import { availability, businessCalendar, futamiDays } from '../../src/handlers/availability';
 import { createReservation } from '../../src/handlers/createReservation';
 
@@ -873,5 +873,74 @@ describe('運営要望 2026-08-25（③キャンプ8区画 / ④職員の期間�
 
     const logs = await db.collection('reservations').doc(id).collection('audit_log').get();
     expect(logs.docs.some(d => d.data().action === 'update')).toBe(true);
+  });
+});
+
+// =====================================================================
+// changeCampSites の書込み件数ガード（2026-08-25 要望③のレビュー指摘）
+// =====================================================================
+describe('changeCampSites：区画の総入れ替えでトランザクション上限を超えない', () => {
+  const CAMP_H = [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12];
+
+  const createCamp = async (sites: string[], nights: number) => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'camp_stay', roomIds: sites,
+        slots: overnightSlots(sites, OPEN_WEDNESDAY, nights, CAMP_H),
+        startDate: OPEN_WEDNESDAY, endDate: addDays(OPEN_WEDNESDAY, nights), nights,
+        customer: { name: '山田', phone: '090-0000-0000' },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+    return r.body.internalId as string;
+  };
+
+  // ★これがレビューで見つかった穴。新規slotだけを数えるガードでは 276 ≦ 499 で通ってしまい、
+  //   実際には 276削除 + 276新規 + 2 = 554 writes で Firestore が commit ごと失敗し、
+  //   職員には原因の分からない internal_error が出ていた。
+  it('3泊4区画 → 排他の別4区画は、理由の分かる 400 で止まる（500にしない）', async () => {
+    const id = await createCamp(['camp_1','camp_2','camp_3','camp_4'], 3);
+    const r = await invoke(changeCampSites, {
+      method: 'POST', query: {}, headers: {},
+      body: { id, newCampSites: ['camp_5','camp_6','camp_7','camp_8'] },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('camp_sites_too_many_slots');
+
+    // 元の予約は1件も壊れていない
+    const stored = (await db.collection('reservations').doc(id).get()).data() as any;
+    expect(stored.roomIds).toEqual(['camp_1','camp_2','camp_3','camp_4']);
+    expect(stored.slots).toHaveLength(4 * 23 * 3);
+  });
+
+  it('3泊4区画 → 2区画だけ付け替え（重なりあり）は通る', async () => {
+    const id = await createCamp(['camp_1','camp_2','camp_3','camp_4'], 3);
+    const r = await invoke(changeCampSites, {
+      method: 'POST', query: {}, headers: {},
+      body: { id, newCampSites: ['camp_1','camp_2','camp_5','camp_6'] },
+    });
+    expect(r.statusCode).toBe(200);
+    const stored = (await db.collection('reservations').doc(id).get()).data() as any;
+    expect(stored.roomIds.slice().sort()).toEqual(['camp_1','camp_2','camp_5','camp_6']);
+  });
+
+  it('1泊なら8区画の総入れ替えでも通る（368+2 writes）', async () => {
+    const id = await createCamp(['camp_1','camp_2','camp_3','camp_4'], 1);
+    const r = await invoke(changeCampSites, {
+      method: 'POST', query: {}, headers: {},
+      body: { id, newCampSites: ['camp_5','camp_6','camp_7','camp_8'] },
+    });
+    expect(r.statusCode).toBe(200);
+  });
+
+  it('9区画以上は入口で 400（区画IDのホワイトリスト前に件数で弾く）', async () => {
+    const id = await createCamp(['camp_1'], 1);
+    const r = await invoke(changeCampSites, {
+      method: 'POST', query: {}, headers: {},
+      body: { id, newCampSites: ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8','camp_9'] },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('invalid_camp_sites_count');
   });
 });

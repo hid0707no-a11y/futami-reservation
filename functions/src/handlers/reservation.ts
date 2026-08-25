@@ -22,12 +22,19 @@ import {
 import { RESERVATION_STATUS } from '../constants';
 
 /**
- * changeCampSites で一度に書ける slot の上限。
- * Firestore のトランザクションは 500 writes までで、予約doc の update 1件を使うので 499。
- * 1区画1泊 = 23 slot（CAMP_HOURS）なので、8区画なら2泊(368)まで／7区画なら3泊(483)まで。
- * 2026-08-25 要望③で区画上限を 3→8 に広げた際に追加。
+ * Firestore のトランザクション1回あたりの書込み上限。
+ *
+ * changeCampSites が書くのは「削除する旧slot」＋「新規に確保するslot」＋「予約doc の update」
+ * ＋「audit_log の1件」の4種。★**新規slot だけを数えてはいけない**＝区画を総入れ替えすると
+ * 旧slot の削除が同じ数だけ発生し、新規側が上限内でも合計で超える。
+ * 例）3泊4区画（276 slot）を別の4区画へ丸ごと移す＝276削除＋276新規＋2＝554 writes。
+ * 超えると Firestore が commit ごと失敗し、職員には原因の分からない internal_error に見える。
+ * 2026-08-25 要望③で区画上限を 3→8 に広げた際に到達可能になった（旧上限3では最大416）。
  */
-const CAMP_SITE_CHANGE_SLOT_CAP = 499;
+const FIRESTORE_TX_WRITE_LIMIT = 500;
+
+/** slot 以外に必ず書く2件（予約doc の update ＋ audit_log）。 */
+const CAMP_SITE_CHANGE_FIXED_WRITES = 2;
 
 /** GET /listReservations?date=&status=&from=&to= — スタッフ用予約一覧 */
 export const listReservations = onRequest(
@@ -220,17 +227,6 @@ export const changeCampSites = onRequest(
           }
         }
 
-        // ★区画上限を8へ広げた（2026-08-25 要望③）ことで、区画数×泊数によっては
-        //   slot 書込みが Firestore トランザクションの 500 writes を超える。
-        //   超えた場合、Firestore は途中まで書いた状態にはならず全体が失敗するが、
-        //   職員には原因不明の 500 に見えるので、ここで理由の分かる 400 にして返す。
-        //   （予約doc の update 1件ぶんを引いて 499 を上限にする）
-        if (newSlots.length > CAMP_SITE_CHANGE_SLOT_CAP) {
-          throw {
-            code: 'camp_sites_too_many_slots',
-            detail: `${newCampSites.length}区画×この予約の泊数は一度に変更できません（8区画なら2泊まで／7区画なら3泊まで）`,
-          };
-        }
 
         // 停止中のキャンプ区画へ付け替えられないようにする（createReservation と同じ判定）。
         // 判定対象は「新しい」slots だけ＝元の区画が停止されても付け替え自体は妨げない
@@ -244,6 +240,22 @@ export const changeCampSites = onRequest(
 
         const oldSlotSet = new Set(oldSlots);
         const slotsToWrite = newSlots.filter(k => !oldSlotSet.has(k));
+        const newSlotSet = new Set(newSlots);
+        const slotsToDelete = oldSlots.filter(k => !newSlotSet.has(k));
+
+        // ★書込み総数のガード（2026-08-25 要望③）。**新規slotだけを数えると足りない**＝
+        //   区画を総入れ替えすると旧slotの削除が同数発生し、合計で 500 writes を超える。
+        //   ここは集合演算だけで判定しており読取を伴わないので、tx.get より前に置ける
+        //   （超える組み合わせで数百件の無駄な読取を走らせないため）。
+        const totalWrites = slotsToDelete.length + slotsToWrite.length + CAMP_SITE_CHANGE_FIXED_WRITES;
+        if (totalWrites > FIRESTORE_TX_WRITE_LIMIT) {
+          throw {
+            code: 'camp_sites_too_many_slots',
+            detail: '一度に変更できる規模を超えています（変更前の区画と変更後の区画を合わせた数が多すぎます）。'
+              + '2回に分けて移動してください（例：まず半分だけ付け替え、次に残りを付け替える）。',
+          };
+        }
+
         const newRefs = slotsToWrite.map(k => db.collection('slots').doc(k));
         const newDocs = await Promise.all(newRefs.map(r => tx.get(r)));
         const conflicts: string[] = [];
@@ -254,8 +266,6 @@ export const changeCampSites = onRequest(
         });
         if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
 
-        const newSlotSet = new Set(newSlots);
-        const slotsToDelete = oldSlots.filter(k => !newSlotSet.has(k));
         const now = admin.firestore.FieldValue.serverTimestamp();
         slotsToDelete.forEach(k => {
           tx.delete(db.collection('slots').doc(k));

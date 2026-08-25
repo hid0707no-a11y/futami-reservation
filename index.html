@@ -725,25 +725,30 @@ body {
 .cancel-guide {
   margin-top: 16px;
   padding: 14px 16px;
-  background: var(--bg-warm, #F8F4ED);
-  border: 1px solid var(--border, #e5e0d8);
-  border-radius: 12px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 .cancel-guide-title {
   font-size: 0.9rem;
   font-weight: 700;
-  color: var(--text, #464442);
+  color: var(--text);
   margin-bottom: 6px;
 }
 .cancel-guide-body {
   font-size: 0.85rem;
   line-height: 1.9;
-  color: var(--text-light, #6b6864);
+  color: var(--text);
   word-break: break-all;
 }
+/* ★リンクは --main（#5DA5C5・施設情報の tel: と同色）だと白地で 2.7:1 しか出ず、
+   キャンセル時の連絡先という読めないと困る情報には弱い。同系色の --main-dark
+   （3.9:1）＋下線にする。公式サイトの配色（青は副色）からは外れない。 */
 .cancel-guide-body a {
-  color: var(--main, #EA9B24);
+  color: var(--main-dark);
   font-weight: 600;
+  text-decoration: underline;
 }
 
 /* ========== AVAILABILITY BADGE ========== */
@@ -3349,10 +3354,15 @@ function isClosedDay(dateStr) {
 function getMaxNights() {
   const plan = state.selectedPlan;
   const baseDate = state.selectedDate;
-  if (!plan || !baseDate) return 14;
+  if (!plan) return 14;
 
   // プラン側の連泊上限（キャンプは3泊・分けて予約推奨）
   const planCap = (typeof plan.maxNights === 'number' && plan.maxNights > 0) ? plan.maxNights : 14;
+
+  // ★日付が未入力でも「プランの上限」までは確定している。ここで 14 を返すと、
+  //   日付を入れずにキャンプを選んだ画面に「泊数（最大14泊）」と出て、すぐ下の
+  //   「8区画なら2泊まで」という注記と矛盾する（2026-08-25 要望③の表示回帰）。
+  if (!baseDate) return planCap;
 
   // キャンプは複数区画選択方式: 選択中の全区画に対して連泊チェック
   // 区画未選択時は単純に planCap までは試算可
