@@ -498,6 +498,13 @@ describe('validateUpdateFields（#2）', () => {
     expect(validateUpdateFields({ customer: { kana: 'ヤマダ\nBcc: evil@example.com' } }))
       .toEqual({ ok: false, error: 'invalid_customer_kana' });
   });
+  it('拒否：更新で name / phone を空文字にして消せない（新規で必須のため）', () => {
+    expect(validateUpdateFields({ customer: { name: '' } })).toEqual({ ok: false, error: 'invalid_customer_name' });
+    expect(validateUpdateFields({ customer: { name: '   ' } })).toEqual({ ok: false, error: 'invalid_customer_name' });
+    expect(validateUpdateFields({ customer: { phone: '' } })).toEqual({ ok: false, error: 'invalid_customer_phone' });
+    // email は任意なので空文字で消せる
+    expect(validateUpdateFields({ customer: { email: '' } }).ok).toBe(true);
+  });
   it('拒否：customer.isMember が真偽値でない', () => {
     expect(validateUpdateFields({ customer: { isMember: 'yes' } }))
       .toEqual({ ok: false, error: 'invalid_customer_isMember' });

@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PARK_TEL, PARK_EMAIL, SAUNA_EMAIL, CANCEL_POLICY_URL, cancelGuideText } from '../src/lib/contact';
+import { PARK_TEL, PARK_TEL_HOURS, PARK_EMAIL, SAUNA_EMAIL, CANCEL_POLICY_URL, cancelGuideText } from '../src/lib/contact';
 
 const ROOT = path.join(__dirname, '..', '..');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -20,6 +20,10 @@ describe('連絡先の正本がサーバと公開画面で一致している', (
   it('電話番号', () => {
     expect(ClientContact.PARK_TEL).toBe(PARK_TEL);
     expect(PARK_TEL).toBe('089-986-1559');
+  });
+  it('電話受付時間（2026-08-26 追加・メールと画面で食い違わない）', () => {
+    expect(ClientContact.PARK_TEL_HOURS).toBe(PARK_TEL_HOURS);
+    expect(cancelGuideText(false)).toContain(PARK_TEL_HOURS);
   });
   it('代表メールアドレス', () => {
     expect(ClientContact.PARK_EMAIL).toBe(PARK_EMAIL);

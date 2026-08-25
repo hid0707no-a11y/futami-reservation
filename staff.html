@@ -1688,9 +1688,9 @@ async function cancelReservationApi(resId, name) {
 // ★変えられないもの：日時・プラン・部屋・区画。在庫（slots）の取り直しが必要で、
 //   updateReservation はスロットを触らない。日程変更は「キャンセル→新規予約」で行う。
 //   キャンプの区画だけは専用の changeCampSites があるので従来どおりそちらを使う。
-// ★保存後は localStorage のスナップショットを捨てる。チェックイン操作が全件を
-//   localStorage へ書くため、残っていると loadReservations() が古い値を先に返し、
-//   保存したはずの備考が画面に反映されない。
+// ★保存後は localStorage のスナップショットの**該当1件だけ**を書き換える（全消し禁止）。
+//   チェックインはサーバへ送られず localStorage にしか無いので、全消しすると端末の
+//   チェックイン記録が消える。放置すると loadReservations() が古い値を先に返す。
 // お支払いの状況を職員が記録するための欄（2026-08-25 要望⑧で初めて画面に出した）。
 // ★システムは新規予約に必ず「現地でのお支払い・未入金」を記録しているが、これまで
 //   どの画面にも出しておらず、実際に払われたかどうかは誰も更新していなかった。
@@ -1710,7 +1710,10 @@ function paymentStatusLabel(value) {
 let _editContext = null;
 
 function openEditModal(resId) {
-  const list = loadReservations();
+  // ★API 由来（GCAL_BOOKINGS・30秒ごとに更新）を先に引く。loadReservations() は localStorage の
+  //   スナップショットを優先するため、他の端末が直した内容が古いまま出る（2026-08-26 レビュー指摘）。
+  const fresh = (typeof GCAL_BOOKINGS !== 'undefined' && Array.isArray(GCAL_BOOKINGS)) ? GCAL_BOOKINGS : [];
+  const list = fresh.concat(loadReservations());
   const res = list.find(r => (r._origId || r.id) === resId) || list.find(r => r.id === resId);
   if (!res) { showToast('予約が見つかりません'); return; }
   _editContext = {
@@ -1722,7 +1725,12 @@ function openEditModal(resId) {
     },
   };
   const b = _editContext.before;
-  const opts = PAYMENT_STATUS_OPTIONS
+  // 選択肢に無い値（将来の値や手入力）は <select> が先頭の '' に落ち、備考だけ直しても
+  // 支払い状況が '' で上書きされてしまう。現在の値を選択肢として残す（2026-08-26 レビュー指摘）。
+  const statusOptions = PAYMENT_STATUS_OPTIONS.some(o => o.value === b.paymentStatus)
+    ? PAYMENT_STATUS_OPTIONS
+    : PAYMENT_STATUS_OPTIONS.concat([{ value: b.paymentStatus, label: '（現在の値：' + b.paymentStatus + '）' }]);
+  const opts = statusOptions
     .map(o => `<option value="${escapeHtml(o.value)}"${o.value === b.paymentStatus ? ' selected' : ''}>${escapeHtml(o.label)}</option>`)
     .join('');
   let html = '<div class="modal-title">予約内容の修正</div>';
@@ -1780,6 +1788,7 @@ async function saveEdit() {
     paymentStatus: document.getElementById('editPaymentStatus') ? document.getElementById('editPaymentStatus').value : '',
   };
   if (!after.name) { showToast('お名前は必須です'); return; }
+  if (!after.phone) { showToast('電話番号は必須です'); return; }
 
   // 変わった項目だけ送る（部分送信でも既存値はサーバ側でマージされる）
   const customerKeys = ['name', 'kana', 'phone', 'email', 'zip', 'address1', 'address2'];
@@ -1984,7 +1993,9 @@ async function saveCampChange() {
       if (data.error === 'slot_conflict') {
         showToast('他予約と重複しています：' + (data.conflicts || []).join(','));
       } else {
-        showToast('変更失敗: ' + (data.error || res.status));
+        // サーバは camp_sites_too_many_slots / facility_closed 等で日本語の detail を返す。
+        // コードだけ出すと「何をすればいいか」が伝わらない（2026-08-26 レビュー指摘）。
+        showToast((typeof data.detail === 'string' && data.detail) ? data.detail : apiErrorMessage(data.error, res.status), 8000);
       }
       return;
     }

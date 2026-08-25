@@ -9,8 +9,11 @@
 //   ドリフト検出は functions/tests/contact.test.ts が index.html / assets/js/contact.js を
 //   読んで突合する。
 
-/** 公園代表の電話番号（受付 8:30〜17:30）。 */
+/** 公園代表の電話番号。 */
 export const PARK_TEL = '089-986-1559';
+
+/** 電話受付時間（assets/js/contact.js の PARK_TEL_HOURS と一致させる・突合はテスト）。 */
+export const PARK_TEL_HOURS = '8:30〜17:30';
 
 /** 公園代表のメールアドレス。 */
 export const PARK_EMAIL = 'info@fureai-iyosasaeru.com';
@@ -33,12 +36,11 @@ export const CANCEL_POLICY_URL = 'https://www.fureai-iyosasaeru.com/terms/';
  * サウナ予約のときだけサウナ専用アドレスを併記する。
  */
 export function cancelGuideText(isSauna: boolean): string {
-  const contactLines = isSauna
-    ? `TEL: ${PARK_TEL}（8:30〜17:30）\nMAIL: ${PARK_EMAIL}\nサウナ専用: ${SAUNA_EMAIL}`
-    : `TEL: ${PARK_TEL}（8:30〜17:30）\nMAIL: ${PARK_EMAIL}`;
+  const contactLines = [`TEL: ${PARK_TEL}（${PARK_TEL_HOURS}）`, `MAIL: ${PARK_EMAIL}`];
+  if (isSauna) contactLines.push(`サウナ専用: ${SAUNA_EMAIL}`);
   return `【ご予約の変更・キャンセル】
 お電話またはメールでご連絡ください。
-${contactLines}
+${contactLines.join('\n')}
 
 キャンセル料については利用規約をご覧ください。
 ${CANCEL_POLICY_URL}`;

@@ -3157,7 +3157,9 @@ function renderCampSitePicker(plan) {
   const nights = state.selectedNights || 1;
   let html = '<div class="card" style="margin-top:12px">';
   html += '<div style="font-weight:700;margin-bottom:8px;font-size:14px">⛺ ご利用区画を選択（最大' + max + '区画）</div>';
-  html += '<div class="text-muted" style="font-size:12px;margin-bottom:10px">下の場内マップで位置をご確認ください。' + (max + 1) + '区画以上ご希望の場合は分けてご予約ください。</div>';
+  // 泊数の上限（8区画なら2泊まで等）は泊数ステッパーの直下に出す。ここに「9区画以上」と
+  // 出していたのは上限が3だった頃の名残（8が全区画なので存在しない数になっていた）。
+  html += '<div class="text-muted" style="font-size:12px;margin-bottom:10px">下の場内マップで位置をご確認ください。</div>';
   html += '<div id="camp-site-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
   for (let i = 1; i <= 8; i++) {
     const roomId = 'camp_' + i;
@@ -3214,10 +3216,9 @@ function toggleCampSite(roomId) {
   }
   // 互換性: 単一選択APIを使う既存処理向けに先頭IDを残す
   state.selectedRoomId = state.selectedCampSites[0] || null;
-  // ★2026-08-25 要望③：区画上限を8へ広げたので、区画を増やすと連泊できる上限が下がる
-  //   （区画数×泊数×23時間 ≦ 499 slot）。ここで取り直さないと「3泊のまま8区画」を選べてしまい、
-  //   最後の送信でサーバに弾かれる（画面上はどこにも理由が出ない）。
-  checkNightsAvailability();
+  // 区画を増減すると連泊できる上限が変わる（区画数×泊数×23時間 ≦ 499 slot）が、
+  // showRoomBooking() の末尾の onBookingDateChange() → checkNightsAvailability() が
+  // 泊数を取り直すので、ここで別途呼ばない（呼ぶと getMaxNights が1タップで3回走る）。
   showRoomBooking();
   updateBookingPriceSummary();
 }
@@ -3359,10 +3360,6 @@ function getMaxNights() {
   // プラン側の連泊上限（キャンプは3泊・分けて予約推奨）
   const planCap = (typeof plan.maxNights === 'number' && plan.maxNights > 0) ? plan.maxNights : 14;
 
-  // ★日付が未入力でも「プランの上限」までは確定している。ここで 14 を返すと、
-  //   日付を入れずにキャンプを選んだ画面に「泊数（最大14泊）」と出て、すぐ下の
-  //   「8区画なら2泊まで」という注記と矛盾する（2026-08-25 要望③の表示回帰）。
-  if (!baseDate) return planCap;
 
   // キャンプは複数区画選択方式: 選択中の全区画に対して連泊チェック
   // 区画未選択時は単純に planCap までは試算可
@@ -3380,8 +3377,15 @@ function getMaxNights() {
   if (slots.length === 0) return planCap;
   if (!checkRoomIds[0]) return planCap;
   // slot doc + reservation doc がFirestore transaction 500 writesを超えない上限。
+  // ★499 = functions/src/constants.ts の MAX_SLOTS_PER_RESERVATION（ビルドが無く import できない）。
+  //   変える時は両方。突合は functions/tests/reservationPlans.test.ts。
   const transactionCap = Math.max(1, Math.floor(499 / (slots.length * checkRoomIds.length)));
   const effectivePlanCap = Math.min(planCap, transactionCap);
+
+  // ★日付が未入力でも「プランの上限」と「区画数から決まる上限」は確定している。
+  //   ここで planCap だけを返すと、8区画を選んで日付未入力の画面に「最大3泊」と出て、
+  //   すぐ下の「8区画なら2泊まで」という注記と矛盾する（2026-08-26 レビュー指摘）。
+  if (!baseDate) return effectivePlanCap;
 
   let max = 0;
   for (let n = 0; n < effectivePlanCap; n++) {
@@ -4363,6 +4367,7 @@ async function _submitBookingInner() {
           not_futami_day: '選択された日はふたみの日（サウナ貸切日）ではありません。日付をご確認ください。',
           invalid_customer_name: 'お名前の入力をご確認ください（50文字以内）。',
           invalid_customer_kana: 'フリガナの入力をご確認ください（50文字以内）。',
+          invalid_slots: '区画数と泊数の組み合わせが大きすぎます（8区画なら2泊まで／7区画なら3泊まで）。区画を減らすか、日程を分けてご予約ください。',
           invalid_customer_phone: '電話番号の入力をご確認ください（20文字以内）。',
           invalid_customer_email: 'メールアドレスの入力をご確認ください（100文字以内）。',
           email_required_for_sauna: '貸切サウナのご予約にはメールアドレスが必要です。ご入力のうえ、もう一度お試しください。',

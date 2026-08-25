@@ -40,11 +40,12 @@ export interface ReservationRow {
 // 列追加時：
 //   1. SHEET_HEADERS に追加
 //   2. ReservationRow に追加
-//   3. rowToArray の末尾に追加
-//   4. functions/src/constants.ts の SHEET_LAST_COLUMN を更新（A:Y → A:Z 等）
-//   5. functions/src/services/sheetsSync.ts の SYNC_CLEAR_RANGE_* も同期更新
-//   6. commit message に [sheet-schema] タグ
-//   7. docs/<日付>_sheet_schema_change.md に記録
+//   3. rowToArray の末尾に追加 ＋ reservationToRow で値を拾う
+//   4. functions/src/constants.ts の SHEET_LAST_COLUMN を更新（A:Z → A:AA 等）
+//      ★update と clear の範囲はこの定数だけで決まる。直し忘れは sheets.test.ts が止める
+//   5. commit message に [sheet-schema] タグ
+//   6. docs/<日付>_sheet_schema_change.md に記録（当時の SHEET_LAST_COLUMN の右隣が
+//      空であることを Sheets API で実測してから広げる＝運営メモを消さない）
 //
 // 直近の変更履歴：
 //  - 2026-05-13: 「予約番号」を末尾に追加（26列目・Z列）。要望#8 関連で displayId を

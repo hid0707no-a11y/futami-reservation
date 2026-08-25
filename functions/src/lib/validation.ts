@@ -9,6 +9,7 @@
 //  - { ok: false, error: 'xxx', detail?: 'yyy' } バリデーション失敗
 
 import { isSaunaReservation } from './notifyRecipients';
+import { MAX_SLOTS_PER_RESERVATION } from '../constants';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_GUESTS = 150;
@@ -92,8 +93,8 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   }
 
   // slots：構造（roomId|date|time）と roomIds との突合・重複検査（#3）
-  // Firestore transaction は予約doc 1件も同時に書くため、slotは最大499件。
-  if (!Array.isArray(slots) || slots.length === 0 || slots.length > 499) {
+  // Firestore transaction は予約doc 1件も同時に書くため、slot は MAX_SLOTS_PER_RESERVATION(499) まで。
+  if (!Array.isArray(slots) || slots.length === 0 || slots.length > MAX_SLOTS_PER_RESERVATION) {
     return { ok: false, error: 'invalid_slots' };
   }
   const roomIdSet = new Set<string>(roomIds);
@@ -271,11 +272,12 @@ export function validateUpdateFields(body: any): UpdateValidationResult {
     if (typeof c !== 'object' || c === null || Array.isArray(c)) {
       return { ok: false, error: 'invalid_customer' };
     }
-    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 50 || HEADER_CONTROL_RE.test(c.name))) return { ok: false, error: 'invalid_customer_name' };
+    // 名前・電話は新規予約で必須なので、更新で空文字にして消すことも許さない（2026-08-26 レビュー指摘）。
+    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.trim().length === 0 || c.name.length > 50 || HEADER_CONTROL_RE.test(c.name))) return { ok: false, error: 'invalid_customer_name' };
     // フリガナ（2026-08-25 要望⑩）。新規予約側と同じ規則＝任意・50文字以内・改行不可。
     if (c.kana !== undefined && c.kana !== null && c.kana !== ''
         && (typeof c.kana !== 'string' || c.kana.length > 50 || HEADER_CONTROL_RE.test(c.kana))) return { ok: false, error: 'invalid_customer_kana' };
-    if (c.phone !== undefined && (typeof c.phone !== 'string' || c.phone.length > 20)) return { ok: false, error: 'invalid_customer_phone' };
+    if (c.phone !== undefined && (typeof c.phone !== 'string' || c.phone.trim().length === 0 || c.phone.length > 20)) return { ok: false, error: 'invalid_customer_phone' };
     if (c.email !== undefined && c.email !== '' && (typeof c.email !== 'string' || c.email.length > 100 || !EMAIL_RE.test(c.email))) return { ok: false, error: 'invalid_customer_email' };
     if (c.zip !== undefined && (typeof c.zip !== 'string' || c.zip.length > 10)) return { ok: false, error: 'invalid_customer_zip' };
     if (c.address1 !== undefined && (typeof c.address1 !== 'string' || c.address1.length > 100)) return { ok: false, error: 'invalid_customer_address1' };

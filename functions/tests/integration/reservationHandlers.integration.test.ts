@@ -943,4 +943,30 @@ describe('changeCampSites：区画の総入れ替えでトランザクション�
     expect(r.statusCode).toBe(400);
     expect(r.body.error).toBe('invalid_camp_sites_count');
   });
+
+  // 2026-08-26 配信後レビューで発見：書込み件数のガードだけだと「今回は通るが出来上がる予約が
+  // 552 slot」が作れ、その予約は cancelReservation が 500 writes を超えて永久にキャンセルできない。
+  it('3泊3区画 → 8区画（552 slot）は、書込み件数が上限内でも 400（キャンセル不能な予約を作らない）', async () => {
+    const id = await createCamp(['camp_1','camp_2','camp_3'], 3);
+    const r = await invoke(changeCampSites, {
+      method: 'POST', query: {}, headers: {},
+      body: { id, newCampSites: ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8'] },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('camp_sites_too_many_slots');
+    const stored = (await db.collection('reservations').doc(id).get()).data() as any;
+    expect(stored.roomIds).toHaveLength(3);
+  });
+
+  it('3泊3区画 → 7区画（483 slot）は通り、その予約はキャンセルもできる', async () => {
+    const id = await createCamp(['camp_1','camp_2','camp_3'], 3);
+    const r = await invoke(changeCampSites, {
+      method: 'POST', query: {}, headers: {},
+      body: { id, newCampSites: ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7'] },
+    });
+    expect(r.statusCode).toBe(200);
+    const c = await invoke(cancelReservation, { method: 'POST', query: {}, headers: {}, body: { id } });
+    expect(c.statusCode).toBe(200);
+    expect(c.body.status).toBe('cancelled');
+  });
 });

@@ -71,16 +71,23 @@ export const VALID_ROOM_IDS = new Set<string>([
 export { SHEET_HEADERS } from './lib/sheets';
 
 // SHEET_HEADERS の長さに対応するスプシ列レンジ（27列なら A:AA）。
-// 列を増やす時は SHEET_HEADERS 拡張＋このレンジを同期更新する。
-// services/sheetsSync.ts のハードコード値もこの定数を import するよう統一済（2026-05-13）。
-// ★実際に clear/update の範囲を決めているのはこの定数だけ。下の SYNC_CLEAR_RANGE_* は
-//   定義だけで参照されていない（sheetsSync.ts は SHEET_LAST_COLUMN を引数で受け取る）。
-//   ここを直し忘れると、増やした列がスプシに書かれないまま静かに落ちる。
+// 列を増やす時は SHEET_HEADERS 拡張＋この定数を同期更新する（services/sheetsSync.ts は
+// これを引数で受け取り、update と clear の両方の範囲をここから決める）。
+// ★直し忘れは functions/tests/sheets.test.ts が SHEET_HEADERS.length と突き合わせて止める。
 // 2026-08-25: フリガナ列の追加で 'Z'(26列) → 'AA'(27列)。
+//   （旧 SYNC_CLEAR_RANGE_* は参照0件の死に定数だったため 2026-08-26 に削除）
 export const SHEET_LAST_COLUMN = 'AA';
-export const SYNC_CLEAR_RANGE_RESERVATIONS = `reservations!A:${SHEET_LAST_COLUMN}`;
-export const SYNC_CLEAR_RANGE_CANCELLED = `cancelled!A:${SHEET_LAST_COLUMN}`;
-export const SYNC_CLEAR_RANGE_META = 'meta!A:B';
+
+// ─────────────────────────────────────────────
+// Firestore トランザクションの書込み上限
+// ─────────────────────────────────────────────
+// 1トランザクション = 500 writes。予約は「slot 群 ＋ 予約doc」を1トランザクションで書き、
+// キャンセルも「全slotの削除 ＋ 予約doc の更新」を1トランザクションで行う。
+// よって 1件の予約が持てる slot は 499 まで（＝キャンセルできる上限でもある）。
+// ★この数字を index.html の getMaxNights()（transactionCap）も持っている＝ビルドが無く import
+//   できないため。変える時は両方。突合は functions/tests/reservationPlans.test.ts。
+export const FIRESTORE_TX_WRITE_LIMIT = 500;
+export const MAX_SLOTS_PER_RESERVATION = FIRESTORE_TX_WRITE_LIMIT - 1;
 
 // ─────────────────────────────────────────────
 // 祝日テーブル（平日割のサーバ側自律判定に使用）

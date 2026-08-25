@@ -19,22 +19,26 @@ import {
   findClosedFacilitySlot,
   serviceDatesFromRange,
 } from '../lib/businessDays';
-import { RESERVATION_STATUS } from '../constants';
+import {
+  RESERVATION_STATUS,
+  ROOM_IDS,
+  FIRESTORE_TX_WRITE_LIMIT,
+  MAX_SLOTS_PER_RESERVATION,
+} from '../constants';
 
 /**
- * Firestore のトランザクション1回あたりの書込み上限。
- *
- * changeCampSites が書くのは「削除する旧slot」＋「新規に確保するslot」＋「予約doc の update」
- * ＋「audit_log の1件」の4種。★**新規slot だけを数えてはいけない**＝区画を総入れ替えすると
- * 旧slot の削除が同じ数だけ発生し、新規側が上限内でも合計で超える。
- * 例）3泊4区画（276 slot）を別の4区画へ丸ごと移す＝276削除＋276新規＋2＝554 writes。
- * 超えると Firestore が commit ごと失敗し、職員には原因の分からない internal_error に見える。
+ * changeCampSites が1トランザクションで書くのは「削除する旧slot」＋「新規に確保するslot」＋
+ * 「予約doc の update」＋「audit_log の1件」の4種（上限は constants の FIRESTORE_TX_WRITE_LIMIT）。
+ * ★**新規slot だけを数えてはいけない**＝区画を総入れ替えすると旧slot の削除が同じ数だけ発生し、
+ *   新規側が上限内でも合計で超える。例）3泊4区画（276 slot）を別の4区画へ＝276＋276＋2＝554。
+ *   超えると Firestore が commit ごと失敗し、職員には原因の分からない internal_error に見える。
+ * ★さらに**出来上がる予約の slot 数**も MAX_SLOTS_PER_RESERVATION に収める（トランザクション内の
+ *   2つ目のガード）。3区画3泊(207)→8区画(552 slot) は今回の書込みが 345＋2 で通ってしまうが、
+ *   その予約は cancelReservation（全slot削除＋予約doc更新を1トランザクション）が 500 を超えて
+ *   **永久にキャンセルできなくなる**（2026-08-26 配信後レビューで発見）。
  * 2026-08-25 要望③で区画上限を 3→8 に広げた際に到達可能になった（旧上限3では最大416）。
  */
-const FIRESTORE_TX_WRITE_LIMIT = 500;
-
-/** slot 以外に必ず書く2件（予約doc の update ＋ audit_log）。 */
-const CAMP_SITE_CHANGE_FIXED_WRITES = 2;
+const CAMP_SITE_CHANGE_FIXED_WRITES = 2; // 予約doc の update ＋ audit_log
 
 /** GET /listReservations?date=&status=&from=&to= — スタッフ用予約一覧 */
 export const listReservations = onRequest(
@@ -173,16 +177,14 @@ export const changeCampSites = onRequest(
     const id = (req.body?.id || '').toString();
     const newCampSites: string[] = Array.isArray(req.body?.newCampSites) ? req.body.newCampSites : [];
     if (!id) { res.status(400).json({ error: 'id_required' }); return; }
-    // ★上限は 8 区画（2026-08-25 運営要望③で 3 から解放）。
-    //   ただし「区画数 × 泊数 × 23時間」が Firestore トランザクションの 500 writes を
-    //   超えられないため、実際に書ける組み合わせは下の CAMP_SITE_CHANGE_SLOT_CAP で弾く
-    //   （8区画なら2泊まで / 7区画なら3泊まで）。
-    if (newCampSites.length === 0 || newCampSites.length > 8) {
-      res.status(400).json({ error: 'invalid_camp_sites_count', detail: '1〜8区画' });
+    // ★区画数の上限は全区画数（8・2026-08-25 運営要望③で 3 から解放）。正本は constants の ROOM_IDS.CAMPS。
+    //   「区画数×泊数」で決まる書込み件数の上限は、トランザクション内の2つのガードで見る。
+    const campSiteCount = ROOM_IDS.CAMPS.length;
+    if (newCampSites.length === 0 || newCampSites.length > campSiteCount) {
+      res.status(400).json({ error: 'invalid_camp_sites_count', detail: `1〜${campSiteCount}区画` });
       return;
     }
-    const validCamp = /^camp_[1-8]$/;
-    if (!newCampSites.every(c => validCamp.test(c))) {
+    if (!newCampSites.every(c => (ROOM_IDS.CAMPS as readonly string[]).includes(c))) {
       res.status(400).json({ error: 'invalid_camp_site_id' });
       return;
     }
@@ -227,6 +229,17 @@ export const changeCampSites = onRequest(
           }
         }
 
+        // ガード1：変更後の予約そのものが createReservation と同じ上限に収まること。
+        // 下の「書込み件数」だけだと、3区画3泊→8区画 のように今回の書込みは通るのに
+        // 出来上がる予約が 552 slot になり、その予約は二度とキャンセルできなくなる。
+        if (newSlots.length > MAX_SLOTS_PER_RESERVATION) {
+          throw {
+            code: 'camp_sites_too_many_slots',
+            detail: `${newCampSites.length}区画×この予約の泊数は1件の予約として大きすぎます`
+              + '（8区画なら2泊まで／7区画なら3泊まで）。区画を減らすか、予約を分けてください。',
+          };
+        }
+
 
         // 停止中のキャンプ区画へ付け替えられないようにする（createReservation と同じ判定）。
         // 判定対象は「新しい」slots だけ＝元の区画が停止されても付け替え自体は妨げない
@@ -243,7 +256,7 @@ export const changeCampSites = onRequest(
         const newSlotSet = new Set(newSlots);
         const slotsToDelete = oldSlots.filter(k => !newSlotSet.has(k));
 
-        // ★書込み総数のガード（2026-08-25 要望③）。**新規slotだけを数えると足りない**＝
+        // ガード2：この1回の書込み総数（2026-08-25 要望③）。**新規slotだけを数えると足りない**＝
         //   区画を総入れ替えすると旧slotの削除が同数発生し、合計で 500 writes を超える。
         //   ここは集合演算だけで判定しており読取を伴わないので、tx.get より前に置ける
         //   （超える組み合わせで数百件の無駄な読取を走らせないため）。

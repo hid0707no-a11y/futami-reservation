@@ -272,3 +272,18 @@ describe('canonicalizeReservation', () => {
     })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
   });
 });
+
+// index.html はビルドが無くサーバ定数を import できないため、getMaxNights() の transactionCap に
+// 499 を直書きしている。ここで constants.ts の MAX_SLOTS_PER_RESERVATION と突き合わせて
+// 片方だけ変えられた事故を止める（2026-08-26）。
+describe('index.html の transactionCap がサーバの MAX_SLOTS_PER_RESERVATION と一致する', () => {
+  it('Math.floor(<MAX> / ...) の形で同じ数字を持つ', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('fs'); const path = require('path');
+    const { MAX_SLOTS_PER_RESERVATION } = require('../src/constants');
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+    const m = html.match(/const transactionCap = Math\.max\(1, Math\.floor\((\d+) \//);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBe(MAX_SLOTS_PER_RESERVATION);
+  });
+});

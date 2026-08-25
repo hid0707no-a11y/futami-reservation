@@ -835,12 +835,13 @@ function buildCellContent(room, reservations, ds) {
   // ★複数施設を1行に集約した行（キャンプ場8区画）は、色を「予約件数」でなく
   //   「埋まった区画数」で決める。2026-08-25 に区画上限を 3→8 へ広げた（要望③）ため、
   //   1組が全区画を貸切る日が実際に起こりうる。件数で判定すると満室の日が薄色になる。
+  //   「埋まった区画数」は複数施設を1行に集約した行でだけ意味があり、1部屋1行では捨てられる値。
+  //   月俯瞰は約1,200セルを毎回描くので、要る行でだけ数える。
+  const rowCapacity = ROW_FACILITY_COUNT[room.id] || 1;
   const level = NisshoLedger.ledgerCellLevel(
     marks,
-    ROW_FACILITY_COUNT[room.id] || 1,
-    typeof NisshoLedger.ledgerActiveUnits === 'function'
-      ? NisshoLedger.ledgerActiveUnits(reservations, ds)
-      : undefined
+    rowCapacity,
+    rowCapacity > 1 ? NisshoLedger.ledgerActiveUnits(reservations, ds) : undefined
   );
   const label = lines.length === 0 ? ''
     : '<span class="cell-marks' + (lines.length >= 3 ? ' tight' : '') + '">'
