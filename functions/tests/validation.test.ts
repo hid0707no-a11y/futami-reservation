@@ -109,6 +109,73 @@ describe('validateReservationBody — 拒否ケース', () => {
     expect((r as any).detail).toContain('90日');
   });
 
+  // 2026-08-25 要望④：職員（検証済みBearer）だけ受付期間の上限を免除する
+  it('職員(isStaff)は90日/365日の上限を超えて予約できる', () => {
+    const body = {
+      ...baseValid(),
+      planId: 'tennis_full',
+      roomIds: ['court_1'],
+      slots: ['court_1|2027-09-01|10'],
+      startDate: '2027-09-01',
+      endDate: '2027-09-01',
+    };
+    // 公開経路は従来どおり拒否
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }).ok).toBe(false);
+    // 職員は通る
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW, isStaff: true }))
+      .toEqual({ ok: true });
+  });
+
+  it('職員でも過去日は拒否する（打ち間違いを静かに通さない）', () => {
+    const body = {
+      ...baseValid(),
+      planId: 'tennis_full',
+      roomIds: ['court_1'],
+      slots: ['court_1|2026-05-01|10'],
+      startDate: '2026-05-01',
+      endDate: '2026-05-01',
+    };
+    expect(validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW, isStaff: true }))
+      .toEqual({ ok: false, error: 'booking_in_past' });
+  });
+
+  it('職員でも endDate の30日ガードは効く', () => {
+    const body = {
+      ...baseValid(),
+      planId: 'tennis_full',
+      roomIds: ['court_1'],
+      slots: ['court_1|2027-09-01|10'],
+      startDate: '2027-09-01',
+      endDate: '2027-11-01',
+    };
+    const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW, isStaff: true });
+    expect(r.ok).toBe(false);
+    expect((r as any).error).toBe('invalid_date_range');
+  });
+
+  // 2026-08-25 要望⑩：フリガナは任意フィールド
+  it('customer.kana は任意（未入力・空文字でも通る）', () => {
+    const base = baseValid();
+    expect(validateReservationBody(base, { validRoomIds: VALID_ROOMS, now: FIXED_NOW })).toEqual({ ok: true });
+    const withEmpty = { ...base, customer: { ...base.customer, kana: '' } };
+    expect(validateReservationBody(withEmpty, { validRoomIds: VALID_ROOMS, now: FIXED_NOW })).toEqual({ ok: true });
+    const withKana = { ...base, customer: { ...base.customer, kana: 'ヤマダ タロウ' } };
+    expect(validateReservationBody(withKana, { validRoomIds: VALID_ROOMS, now: FIXED_NOW })).toEqual({ ok: true });
+    // ひらがな・英字も弾かない（現場の書き方を新たに拒否しないため）
+    const hira = { ...base, customer: { ...base.customer, kana: 'やまだ たろう' } };
+    expect(validateReservationBody(hira, { validRoomIds: VALID_ROOMS, now: FIXED_NOW })).toEqual({ ok: true });
+  });
+
+  it('customer.kana は50文字超と改行を拒否する', () => {
+    const base = baseValid();
+    const long = { ...base, customer: { ...base.customer, kana: 'ア'.repeat(51) } };
+    expect(validateReservationBody(long, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'invalid_customer_kana' });
+    const nl = { ...base, customer: { ...base.customer, kana: 'ヤマダ\nBcc: evil@example.com' } };
+    expect(validateReservationBody(nl, { validRoomIds: VALID_ROOMS, now: FIXED_NOW }))
+      .toEqual({ ok: false, error: 'invalid_customer_kana' });
+  });
+
   it('customer.name 欠落', () => {
     const body = { ...baseValid(), customer: { phone: '090', email: 'a@b.c' } };
     const r = validateReservationBody(body, { validRoomIds: VALID_ROOMS, now: FIXED_NOW });
@@ -406,6 +473,34 @@ describe('validateUpdateFields（#2）', () => {
   });
   it('拒否：status が30文字超', () => {
     expect(validateUpdateFields({ status: 'x'.repeat(31) })).toEqual({ ok: false, error: 'invalid_status' });
+  });
+
+  // 2026-08-25 要望⑧（職員の予約修正）で日常的に叩く経路になるため、
+  // ★4「allowedFields をそのまま透過させるパターン禁止」に沿って詰め替えを検証する。
+  it('customer は検証済みキーだけを通す（未知キーは捨てる）', () => {
+    const r = validateUpdateFields({
+      customer: { name: '新名', kana: 'シンメイ', evil: 'x', __proto__: { polluted: true } },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.updates).toEqual({ customer: { name: '新名', kana: 'シンメイ' } });
+  });
+  it('payment も検証済みキーだけを通す', () => {
+    const r = validateUpdateFields({ payment: { status: 'paid', method: 'cash', amount: 999999 } });
+    expect(r.ok).toBe(true);
+    expect(r.updates).toEqual({ payment: { status: 'paid', method: 'cash' } });
+  });
+  it('customer が未知キーだけなら invalid_customer', () => {
+    expect(validateUpdateFields({ customer: { evil: 'x' } })).toEqual({ ok: false, error: 'invalid_customer' });
+  });
+  it('拒否：customer.kana 51文字 / 改行', () => {
+    expect(validateUpdateFields({ customer: { kana: 'ア'.repeat(51) } }))
+      .toEqual({ ok: false, error: 'invalid_customer_kana' });
+    expect(validateUpdateFields({ customer: { kana: 'ヤマダ\nBcc: evil@example.com' } }))
+      .toEqual({ ok: false, error: 'invalid_customer_kana' });
+  });
+  it('拒否：customer.isMember が真偽値でない', () => {
+    expect(validateUpdateFields({ customer: { isMember: 'yes' } }))
+      .toEqual({ ok: false, error: 'invalid_customer_isMember' });
   });
 });
 

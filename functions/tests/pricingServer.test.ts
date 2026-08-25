@@ -298,21 +298,34 @@ describe('computeServerPricing：固定/キャンプ/ロッジ', () => {
     const c = canonical({ planId: 'lodge_day', kind: 'hourly_day', roomIds: ['lodge_a'], slots: ['lodge_a|2026-05-13|10', 'lodge_a|2026-05-13|11', 'lodge_a|2026-05-13|12'] });
     expect(computeServerPricing(c, {}).pricing.total).toBe(330 * 3);
   });
-  it('ロッジ宿泊：申告 total からシーツ枚数を復元（正当価格集合へスナップ）', () => {
+  // 2026-08-25 要望②：シーツ(340円/1組)の貸出を廃止したので、申告 total からの枚数復元も撤去した。
+  // ★このテストは「340×n を申告しても加算されない」ことを守る＝snap ロジックが戻されたら落ちる。
+  it('ロッジ宿泊：棟単価×泊数のみ。シーツ相当の申告は加算されない', () => {
     const c = canonical({ planId: 'lodge_stay', kind: 'overnight', roomIds: ['lodge_a'], nights: 2 });
     const base = 4720 * 2;
-    // シーツ2枚を含む正当 total → 復元して一致（mismatch なし）
+    // 申告なし → base
+    const r0 = computeServerPricing(c, {});
+    expect(r0.pricing.total).toBe(base);
+    expect(r0.pricing.optionFee).toBe(0);
+    // 旧画面が送りうる「シーツ2枚込み」の申告 → base に落ち、差は mismatch として記録される
     const r1 = computeServerPricing(c, { declaredPricing: { total: base + 340 * 2 } });
-    expect(r1.pricing.total).toBe(base + 680);
-    expect(r1.pricing.optionFee).toBe(680);
-    expect(r1.mismatch).toBeNull();
-    // 改ざん total:1 → シーツ0にスナップ＝base、mismatch 記録
+    expect(r1.pricing.total).toBe(base);
+    expect(r1.pricing.optionFee).toBe(0);
+    expect(r1.mismatch).toEqual({ claimedTotal: base + 680, computedTotal: base });
+    // 改ざん total:1 も base
     const r2 = computeServerPricing(c, { declaredPricing: { total: 1 } });
     expect(r2.pricing.total).toBe(base);
     expect(r2.mismatch).toEqual({ claimedTotal: 1, computedTotal: base });
-    // 上限超え申告はシーツ上限(10)でクランプ
-    const r3 = computeServerPricing(c, { declaredPricing: { total: base + 340 * 999 } });
-    expect(r3.pricing.total).toBe(base + 340 * 10);
+  });
+
+  // index.html のプラン定義にシーツが復活していないことの回帰ガード（プラン定義の正本は index.html）
+  it('index.html の lodge_stay に extras のシーツが復活していない', () => {
+    const block = indexHtml.slice(indexHtml.indexOf("id: 'lodge_stay'"));
+    const end = block.indexOf("id: 'lodge_day'");
+    const lodgeStayBlock = end > 0 ? block.slice(0, end) : block.slice(0, 800);
+    expect(lodgeStayBlock).not.toContain("id: 'sheet'");
+    // extras は空配列のまま（新しい有料オプションを足すと料金の正本がサーバと二重になる）
+    expect(lodgeStayBlock).toContain('extras: []');
   });
 });
 

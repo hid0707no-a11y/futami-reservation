@@ -416,13 +416,15 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
     expect(r.body.error).toBe('slot_conflict');
   });
 
-  it('旧テニスdocの08:00形式ともcanonical HHMMが競合する', async () => {
-    await db.collection('tennis_slots').doc('court_1|' + OPEN_WEDNESDAY + '|08:00').set({
+  // ★2026-08-25 要望⑦で 8:00 開始は受理されなくなったので、旧コロン形式との競合検証は
+  //   9:00 起点で行う（旧 08:00 doc 自体は本番に残るが、新規予約がそこへ入る経路は消えた）。
+  it('旧テニスdocのコロン形式ともcanonical HHMMが競合する', async () => {
+    await db.collection('tennis_slots').doc('court_1|' + OPEN_WEDNESDAY + '|09:00').set({
       roomId: 'court_1', date: OPEN_WEDNESDAY, reservationId: 'legacy-tennis',
     });
     const r = await invoke(createReservation, base({
       planId: 'tennis_full', roomIds: ['court_1'],
-      slots: ['court_1|' + OPEN_WEDNESDAY + '|0800', 'court_1|' + OPEN_WEDNESDAY + '|0830'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|0900', 'court_1|' + OPEN_WEDNESDAY + '|0930'],
       startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
     }));
     expect(r.statusCode).toBe(409);
@@ -432,18 +434,29 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
   it('旧staff tennis入力をtennis_full/HHMMへcanonical保存する', async () => {
     const r = await invoke(createReservation, base({
       planId: 'tennis', roomIds: ['court_1'],
-      slots: ['court_1|' + OPEN_WEDNESDAY + '|8'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|9'],
       startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
     }));
     expect(r.statusCode).toBe(201);
     const stored = (await db.collection('reservations').doc(r.body.internalId).get()).data() as any;
     expect(stored.planId).toBe('tennis_full');
     expect(stored.slots).toEqual([
-      'court_1|' + OPEN_WEDNESDAY + '|0800',
-      'court_1|' + OPEN_WEDNESDAY + '|0830',
+      'court_1|' + OPEN_WEDNESDAY + '|0900',
+      'court_1|' + OPEN_WEDNESDAY + '|0930',
     ]);
-    expect((await db.collection('tennis_slots').doc('court_1|' + OPEN_WEDNESDAY + '|0800').get()).exists)
+    expect((await db.collection('tennis_slots').doc('court_1|' + OPEN_WEDNESDAY + '|0900').get()).exists)
       .toBe(true);
+  });
+
+  // 2026-08-25 要望⑦：公開画面・職員画面だけでなく API 直叩きでも 8:00 を受け付けない
+  it('テニスの8:00開始は real-path でも 400 になる', async () => {
+    const r = await invoke(createReservation, base({
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|' + OPEN_WEDNESDAY + '|0800', 'court_1|' + OPEN_WEDNESDAY + '|0830'],
+      startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+    }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('plan_slot_mismatch');
   });
 
   it('canonical移行前payloadでも成立済みidempotency応答を先に返す', async () => {
@@ -691,5 +704,174 @@ describe('createReservation — サウナのメール必須（2026-08-16 運営�
       },
     });
     expect(r.statusCode).toBe(201);
+  });
+});
+
+// =====================================================================
+// 2026-08-25 運営要望 ③④⑩ の real-path 検証
+// =====================================================================
+describe('運営要望 2026-08-25（③キャンプ8区画 / ④職員の期間制限免除 / ⑩フリガナ）', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const authMod = require('../../src/lib/auth');
+  const asStaff = () => (authMod.isVerifiedStaffRequest as jest.Mock).mockImplementation(async () => true);
+  const asWeb = () => (authMod.isVerifiedStaffRequest as jest.Mock).mockImplementation(async () => false);
+  afterEach(asWeb);
+
+  const campBody = (sites: string[], nights: number, over: any = {}) => ({
+    method: 'POST', query: {}, headers: {},
+    body: {
+      planId: 'camp_stay',
+      roomIds: sites,
+      slots: overnightSlots(sites, OPEN_WEDNESDAY, nights, CAMP_HOURS),
+      startDate: OPEN_WEDNESDAY,
+      endDate: addDays(OPEN_WEDNESDAY, nights),
+      nights,
+      customer: { name: '山田', phone: '090-0000-0000' },
+      ...over,
+    },
+  });
+
+  // ③ 旧上限は3区画。運営要望で全8区画まで解放した。
+  it('③ キャンプ8区画1泊が成立し、8区画ぶんの slot が書かれる', async () => {
+    const sites = ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8'];
+    const r = await invoke(createReservation, campBody(sites, 1));
+    expect(r.statusCode).toBe(201);
+    const stored = (await db.collection('reservations').doc(r.body.internalId).get()).data() as any;
+    expect(stored.roomIds).toHaveLength(8);
+    // 1区画1泊 = 23 slot
+    expect(stored.slots).toHaveLength(8 * 23);
+    expect((await db.collection('slots').doc('camp_8|' + OPEN_WEDNESDAY + '|14').get()).exists).toBe(true);
+  });
+
+  it('③ 4区画（旧上限の外側）も成立する', async () => {
+    const r = await invoke(createReservation, campBody(['camp_1','camp_2','camp_3','camp_4'], 1));
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('③ 7区画3泊は成立する（483 slot・トランザクション上限の内側）', async () => {
+    const sites = ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7'];
+    const r = await invoke(createReservation, campBody(sites, 3));
+    expect(r.statusCode).toBe(201);
+    const stored = (await db.collection('reservations').doc(r.body.internalId).get()).data() as any;
+    expect(stored.slots).toHaveLength(7 * 23 * 3);
+  });
+
+  it('③ 8区画3泊(552 slot)は slots 上限で 400 になる（黙って壊れない）', async () => {
+    const sites = ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8'];
+    const r = await invoke(createReservation, campBody(sites, 3));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('invalid_slots');
+  });
+
+  // ④ 職員だけ受付期間の上限を免除する
+  const farFuture = addDays(OPEN_WEDNESDAY, 200); // 90日先の上限を超える
+  const tennisFar = () => ({
+    method: 'POST', query: {}, headers: { authorization: 'Bearer staff' },
+    body: {
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|' + farFuture + '|0900', 'court_1|' + farFuture + '|0930'],
+      startDate: farFuture, endDate: farFuture, nights: 0,
+      customer: { name: '山田', phone: '090-0000-0000' },
+    },
+  });
+
+  it('④ 公開経路は90日より先を booking_too_far で拒否する', async () => {
+    const r = await invoke(createReservation, tennisFar());
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('booking_too_far');
+  });
+
+  it('④ 職員（検証済みBearer）は90日より先でも予約できる', async () => {
+    asStaff();
+    const r = await invoke(createReservation, tennisFar());
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('④ createdBy 申告だけでは免除されない（Bearer の実検証が必要）', async () => {
+    const req: any = tennisFar();
+    req.body.createdBy = 'staff';
+    const r = await invoke(createReservation, req);
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('booking_too_far');
+  });
+
+  // ⑩ フリガナ
+  it('⑩ customer.kana が Firestore に保存される', async () => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'day_27_am', roomIds: ['room_27'],
+        slots: fixedSlots('room_27', OPEN_WEDNESDAY, [8, 9, 10, 11]),
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田 太郎', kana: 'ヤマダ タロウ', phone: '090-0000-0000' },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+    const stored = (await db.collection('reservations').doc(r.body.internalId).get()).data() as any;
+    expect(stored.customer.kana).toBe('ヤマダ タロウ');
+  });
+
+  it('⑩ フリガナ未入力でも従来どおり予約できる', async () => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'day_27_am', roomIds: ['room_27'],
+        slots: fixedSlots('room_27', OPEN_WEDNESDAY, [8, 9, 10, 11]),
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田 太郎', phone: '090-0000-0000' },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('⑩ 改行入りフリガナは 400（メールヘッダ汚染の封じ込め）', async () => {
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'day_27_am', roomIds: ['room_27'],
+        slots: fixedSlots('room_27', OPEN_WEDNESDAY, [8, 9, 10, 11]),
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田', kana: 'ヤマダ\nBcc: evil@example.com', phone: '090-0000-0000' },
+      },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('invalid_customer_kana');
+  });
+
+  // ⑧ 職員の予約修正（updateReservation は既存だが画面から初めて叩く経路になる）
+  it('⑧ 備考・フリガナ・入金ステータスを更新でき audit_log が残る', async () => {
+    const created = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'day_27_am', roomIds: ['room_27'],
+        slots: fixedSlots('room_27', OPEN_WEDNESDAY, [8, 9, 10, 11]),
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        customer: { name: '山田', phone: '090-0000-0000' },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const id = created.body.internalId;
+
+    const r = await invoke(updateReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        id,
+        note: '当日は15時到着',
+        customer: { kana: 'ヤマダ', evil: 'x' },
+        payment: { status: 'paid', amount: 99999 },
+      },
+    });
+    expect(r.statusCode).toBe(200);
+
+    const stored = (await db.collection('reservations').doc(id).get()).data() as any;
+    expect(stored.note).toBe('当日は15時到着');
+    expect(stored.customer.kana).toBe('ヤマダ');
+    expect(stored.customer.name).toBe('山田');      // 部分送信でも既存値が残る
+    expect(stored.customer.evil).toBeUndefined();   // 検証していないキーは通さない
+    expect(stored.payment.status).toBe('paid');
+    expect(stored.payment.amount).toBeUndefined();
+
+    const logs = await db.collection('reservations').doc(id).collection('audit_log').get();
+    expect(logs.docs.some(d => d.data().action === 'update')).toBe(true);
   });
 });

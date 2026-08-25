@@ -140,6 +140,35 @@
     return activeCount(marks) + marks.out;
   }
 
+  /**
+   * その日に実際に埋まっている「施設の数」。
+   *
+   * ★キャンプ場のように複数施設を1行へ集約している行では、予約の「件数」と
+   *   埋まった「区画数」が一致しない。1組が8区画すべてを貸切った日は件数1なので、
+   *   件数で色を決めると満室の日が薄い色（空きあり）に見える。
+   *   2026-08-25 に区画上限を 3→8 へ広げた（要望③）ことで実際に起こりうるようになった。
+   *
+   * OUT（その日の朝に出るだけ）は数えない＝ledgerCellLevel の従来の考え方（チェックアウト日は
+   * 新しい宿泊を受けられる）をそのまま踏襲する。
+   * roomIds を持たない旧データは 1 施設として数える（0件にして空きに見せない）。
+   */
+  function ledgerActiveUnits(reservations, date) {
+    var seen = {};
+    var count = 0;
+    var list = Array.isArray(reservations) ? reservations : [];
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (reservationRoleOnDate(r, date) === 'out') continue;
+      var rooms = (r && Array.isArray(r.roomIds)) ? r.roomIds : [];
+      if (rooms.length === 0) { count += 1; continue; }
+      for (var j = 0; j < rooms.length; j++) {
+        var key = String(rooms[j]);
+        if (!seen[key]) { seen[key] = true; count += 1; }
+      }
+    }
+    return count;
+  }
+
   // ─────────────────────────────────────────
   // 表示する行（上から時系列：朝に出る → 日中 → 泊まる）
   // ─────────────────────────────────────────
@@ -184,7 +213,13 @@
   //   キャンプ場は8区画あるので4件で赤「満」になり、半分空いているのに運営が
   //   予約を断りかねない（2026-08-17 のレビュー指摘）。埋まった区画の数を
   //   区画数と比べて決める：全部埋まって初めて「満」、半分を超えたら「多め」。
-  function ledgerCellLevel(marks, capacity) {
+  //
+  // activeUnits … 実際に埋まっている施設の数（ledgerActiveUnits の返り値）。
+  //   capacity > 1 の行でだけ使う。省略時は従来どおり「予約件数」で判定する
+  //   （呼び出し元を一度に直さなくても壊れないため）。
+  //   ★1予約が複数区画を取るキャンプ場では、件数と埋まった区画数が一致しない。
+  //     ここを件数のままにすると、1組が8区画を貸切った日が「空きあり」に見える。
+  function ledgerCellLevel(marks, capacity, activeUnits) {
     var active = activeCount(marks);
     if (active === 0) return marks.out > 0 ? 'out-only' : 'empty';
     var cap = (typeof capacity === 'number' && capacity > 1) ? capacity : 0;
@@ -193,8 +228,9 @@
       if (active <= 3) return 'many';
       return 'full';
     }
-    if (active >= cap) return 'full';
-    if (active * 2 >= cap) return 'many';
+    var filled = (typeof activeUnits === 'number' && activeUnits > 0) ? activeUnits : active;
+    if (filled >= cap) return 'full';
+    if (filled * 2 >= cap) return 'many';
     return 'some';
   }
 
@@ -207,6 +243,7 @@
     ledgerCellMarks: ledgerCellMarks,
     ledgerCellLines: ledgerCellLines,
     ledgerCellLevel: ledgerCellLevel,
+    ledgerActiveUnits: ledgerActiveUnits,
     activeCount: activeCount,
     totalCount: totalCount,
   };

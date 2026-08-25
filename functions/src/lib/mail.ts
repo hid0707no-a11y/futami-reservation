@@ -5,7 +5,8 @@
 // 旧 index.ts:64-194 + 1297-1318 を移植。
 
 import * as nodemailer from 'nodemailer';
-import { STAFF_EMAIL, resolveStaffRecipients } from './notifyRecipients';
+import { STAFF_EMAIL, resolveStaffRecipients, isSaunaReservation } from './notifyRecipients';
+import { PARK_TEL, PARK_EMAIL, CANCEL_POLICY_URL, cancelGuideText } from './contact';
 
 const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
@@ -98,6 +99,8 @@ function logSmtpNotConfigured(kind: string, reservationId: string): void {
 export interface MailData {
   planName: string;
   roomName: string;
+  /** 予約者フリガナ（2026-08-25 要望⑩）。未入力なら行ごと出さない。 */
+  customerKana?: string;
   /** 宛先解決用の生の予約種別（表示には使わない）。resolveStaffRecipients が参照する。 */
   planId?: string;
   /** 同上。roomIds に 'sauna' / 'sauna_share' が入るとサウナ通知先が追加される。 */
@@ -151,11 +154,12 @@ export async function sendConfirmationEmail(data: MailData): Promise<void> {
 日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.partyText ? '\n' + data.partyText : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
 ━━━━━━━━━━━━━━━━━━
 
+${cancelGuideText(isSaunaReservation(data))}
+
 ※このメールは自動送信です。
-※ご不明な点がございましたら、お電話にてお問い合わせください。
 
 ふたみ潮風ふれあい公園
-TEL: 089-986-1559
+TEL: ${PARK_TEL}
 `;
     await transporter.sendMail({
       from: `"ふたみふれあい公園" <${SMTP_USER}>`,
@@ -184,7 +188,7 @@ export async function sendStaffNotification(data: MailData, type: 'new' | 'cance
     const body = `${prefix}
 
 予約番号：${data.reservationId}
-予約者：${data.customerName}
+予約者：${data.customerName}${data.customerKana ? '\nフリガナ：' + data.customerKana : ''}
 電話：${data.customerPhone}
 メール：${data.customerEmail || 'なし'}
 ご住所：${data.customerAddress || 'なし'}
@@ -227,8 +231,12 @@ export async function sendCancellationEmail(data: MailData): Promise<void> {
 
 またのご利用をお待ちしております。
 
+キャンセル料については利用規約をご覧ください。
+${CANCEL_POLICY_URL}
+
 ふたみ潮風ふれあい公園
-TEL: 089-986-1559
+TEL: ${PARK_TEL}
+MAIL: ${PARK_EMAIL}
 `;
     await transporter.sendMail({
       from: `"ふたみふれあい公園" <${SMTP_USER}>`,

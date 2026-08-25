@@ -17,7 +17,10 @@
 //    性質。isResident と同じ信頼モデル）。ただし金額はその事実からサーバが計算する。
 //  - 一部プランは料金に効く選択事実がペイロードに素で載っていない：
 //      * midori 各プランの「学生区分(isStudent)」
-//      * lodge_stay の「シーツ枚数」
+//      （lodge_stay の「シーツ枚数」も同じ扱いだったが、2026-08-25 要望②でシーツの貸出自体が
+//        廃止されたため snap ロジックごと撤去した。復元を残すと、旧キャッシュ画面や API 直叩きが
+//        申告した 340×n を今後も「正当価格」として受理し、提供しないサービスの代金が
+//        伊予市向け台帳の「合計金額」列に載り続ける）
 //    これらはフロント改修を避けるため、サーバが列挙する **正当価格の有限集合** に対して
 //    クライアント申告 total をスナップして復元する（下記 snap ロジック）。保存される total は
 //    常にサーバが算出した正当価格集合の要素になり、任意の改ざん値（1円等）は既定値へ収束する。
@@ -66,12 +69,10 @@ interface CampPricing {
   type: 'camp';
   basePrice: number;
 }
-/** ロッジ宿泊（棟×泊数＋シーツ）。 */
+/** ロッジ宿泊（棟×泊数）。2026-08-25 要望②でシーツ(340円/1組)は廃止。 */
 interface LodgeStayPricing {
   type: 'lodge_stay';
   basePrice: number;
-  sheetPrice: number;
-  sheetMax: number;
 }
 /** 時間単価（ロッジ日帰り）。金額は選択時間数×単価。 */
 interface HourlyFlatPricing {
@@ -147,7 +148,7 @@ export const SERVER_PLAN_PRICING: Readonly<Record<string, PlanPricing>> = {
 
   // ── アウトドア ──
   camp_stay: { type: 'camp', basePrice: 790 },
-  lodge_stay: { type: 'lodge_stay', basePrice: 4720, sheetPrice: 340, sheetMax: 10 },
+  lodge_stay: { type: 'lodge_stay', basePrice: 4720 },
   lodge_day: { type: 'hourly_flat', basePrice: 330 },
 
   // ── テニス ──
@@ -421,15 +422,10 @@ export function computeServerPricing(
     // ロッジ日帰り：単価 × 選択時間数（canonical.slots は roomId|date|hour の整数時）。
     pricing = emptyPricing(table.basePrice * canonical.slots.length);
   } else if (table.type === 'lodge_stay') {
-    // シーツ枚数はペイロードに素で載らない選択事実。正当価格集合 {base + 340×s | s∈[0,10]} に
-    // 申告 total をスナップして枚数を復元（改ざん値は s=0=base に収束）。
-    const base = table.basePrice * Math.max(1, canonical.nights);
-    let sheets = 0;
-    if (declaredTotal != null) {
-      sheets = Math.max(0, Math.min(table.sheetMax, Math.round((declaredTotal - base) / table.sheetPrice)));
-    }
-    const optionFee = table.sheetPrice * sheets;
-    pricing = { ...emptyPricing(base + optionFee, optionFee) };
+    // 棟単価 × 泊数のみ。2026-08-25 要望②でシーツ(340円/1組)を廃止したため、
+    // 申告 total からのシーツ枚数復元は撤去した。旧画面が 340×n 込みの total を送っても
+    // ここで base に落ち、差は pricingMismatch として WARNING ログに残る。
+    pricing = emptyPricing(table.basePrice * Math.max(1, canonical.nights));
   } else if (table.type === 'tennis') {
     const courtCount = canonical.roomIds.length;
     const hourKeys = tennisHourKeysFromSlots(canonical.slots, canonical.roomIds);

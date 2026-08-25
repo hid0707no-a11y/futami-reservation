@@ -120,8 +120,10 @@ function alternateSaunaKeys(slots: string[], targetRoomId: 'sauna' | 'sauna_shar
 }
 
 // 薄いラッパ：db を束ねる（互換維持）
-function validateAndRespond(body: any, res: any): boolean {
-  const result = validateReservationBody(body, { validRoomIds: VALID_ROOM_IDS });
+// isStaff=true のときだけ「予約受付期間（宿泊365日/その他90日）」を免除する（2026-08-25 要望④）。
+// 過去日の拒否（booking_in_past）は職員でも維持する＝日付の打ち間違いを静かに通さないため。
+function validateAndRespond(body: any, res: any, isStaff: boolean): boolean {
+  const result = validateReservationBody(body, { validRoomIds: VALID_ROOM_IDS, isStaff });
   if (!result.ok) {
     const payload: any = { error: result.error };
     if (result.detail) payload.detail = result.detail;
@@ -156,7 +158,16 @@ export const createReservation = onRequest(
       } = body;
 
       if (!checkOrigin(req, res)) return;
-      if (!validateAndRespond(body, res)) return;
+
+      // createdBy はクライアント申告を信用せず、任意Bearerの実検証結果から決める。
+      // ★2026-08-25 要望④：職員だけ予約受付期間を免除するため、この判定を
+      //   validateAndRespond より前に移した。副作用は無い＝Bearer の検証だけを行う
+      //   純粋な読取で、Firestore への書込みも res への送信もしない。
+      //   （レート制限・CORS・Origin チェックはこれより前のまま。冪等性チェックと
+      //     canonicalize の順序も従来どおり「検証 → 冪等 → canonical」を維持する）
+      const createdBy = await isVerifiedStaffRequest(req) ? 'staff' : 'web';
+
+      if (!validateAndRespond(body, res, createdBy === 'staff')) return;
       // 旧payloadで既に成立した予約の応答再取得を、canonical移行後も先に通す。
       if (!(await checkIdempotency(req, res))) return;
 
@@ -176,9 +187,6 @@ export const createReservation = onRequest(
       startDate = canonical.startDate;
       endDate = canonical.endDate;
       nights = canonical.nights;
-
-      // createdBy はクライアント申告を信用せず、任意Bearerの実検証結果から決める。
-      const createdBy = await isVerifiedStaffRequest(req) ? 'staff' : 'web';
 
       // サウナはメール必須（2026-08-16 運営要望③）。職員入力（電話受付）は対象外。
       // 判定は canonical 化後の planId/roomIds で行う（クライアント申告の planId では
@@ -292,7 +300,7 @@ export const createReservation = onRequest(
           const mailData: MailData = {
             planName: planLabel(planId), roomName: roomLabels(roomIds), startDate, endDate,
             planId, roomIds,
-            customerName: customer.name, customerPhone: customer.phone,
+            customerName: customer.name, customerKana: customer.kana || '', customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: tennisResult.displayId, isTennis: true,
             timeText: formatTennisTimeRanges(slots) || undefined,
@@ -418,7 +426,7 @@ export const createReservation = onRequest(
           const mailData: MailData = {
             planName: planLabel(planId), roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
             planId, roomIds: ['sauna_share'],
-            customerName: customer.name, customerPhone: customer.phone,
+            customerName: customer.name, customerKana: customer.kana || '', customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
             note: note || '', reservationId: result.displayId, guestCount: seats, isFutamiDay: true,
             partyText: formatPartyText({
@@ -531,7 +539,7 @@ export const createReservation = onRequest(
       const mailData: MailData = {
         planName: planLabel(planId), roomName: roomNameForMail, startDate, endDate,
         planId, roomIds,
-        customerName: customer.name, customerPhone: customer.phone,
+        customerName: customer.name, customerKana: customer.kana || '', customerPhone: customer.phone,
         customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
         note: note || '', reservationId: result.displayId,
         ...(isCamp ? { isCamp: true, guestCount: roomIds.length } : {}),

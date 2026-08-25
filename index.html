@@ -719,6 +719,33 @@ body {
   margin-bottom: 24px;
 }
 
+/* ========== キャンセル案内（2026-08-25 運営要望⑨） ==========
+   ★埋め込みモードでは .info-section（住所・TEL）を非表示にしているため、
+     連絡先はこのブロックにしか出ない。html.embed でも消さないこと。 */
+.cancel-guide {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--bg-warm, #F8F4ED);
+  border: 1px solid var(--border, #e5e0d8);
+  border-radius: 12px;
+}
+.cancel-guide-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text, #464442);
+  margin-bottom: 6px;
+}
+.cancel-guide-body {
+  font-size: 0.85rem;
+  line-height: 1.9;
+  color: var(--text-light, #6b6864);
+  word-break: break-all;
+}
+.cancel-guide-body a {
+  color: var(--main, #EA9B24);
+  font-weight: 600;
+}
+
 /* ========== AVAILABILITY BADGE ========== */
 .avail-badge {
   display: inline-block;
@@ -1065,6 +1092,11 @@ html.embed .info-section { display: none !important; }
         <label class="form-label" for="confirm-name">お名前 *</label>
         <input type="text" class="form-input" id="confirm-name" placeholder="山田 太郎" maxlength="50">
       </div>
+      <!-- フリガナ（2026-08-25 運営要望⑩）。任意入力＝未入力で予約が取れなくならないようにする -->
+      <div class="form-group">
+        <label class="form-label" for="confirm-kana">フリガナ</label>
+        <input type="text" class="form-input" id="confirm-kana" placeholder="ヤマダ タロウ" maxlength="50">
+      </div>
       <div class="form-group">
         <label class="form-label" for="confirm-phone">電話番号 *</label>
         <input type="tel" class="form-input" id="confirm-phone" placeholder="090-1234-5678" maxlength="20">
@@ -1110,9 +1142,8 @@ html.embed .info-section { display: none !important; }
       <button class="btn" style="flex:1;background:#f3f4f6;color:#374151;" onclick="navigate('screen-confirm')">戻って修正</button>
       <button class="btn btn-primary" style="flex:2;" id="confirm-submit-btn" onclick="submitBooking()">この内容で予約を確定する</button>
     </div>
-    <div class="text-center text-muted mt-16">
-      ※ 確定後の変更は電話にてご連絡ください。
-    </div>
+    <!-- 2026-08-25 要望⑨：電話だけの案内をメール・キャンセル料の掲載先込みに差し替え -->
+    <div id="review-cancel-guide"></div>
   </div>
 
   <!-- ========== DONE SCREEN ========== -->
@@ -1123,6 +1154,15 @@ html.embed .info-section { display: none !important; }
     <div class="done-id" id="done-booking-id"></div>
 
     <div class="summary-card" id="done-summary"></div>
+
+    <!-- 2026-08-25 要望①：同じお客様が続けて別の施設を取るときに入力を繰り返させない -->
+    <button class="btn btn-primary mt-24" onclick="startNextBooking()">続けて別の施設を予約する</button>
+    <div class="text-center text-muted" style="margin-top:8px;font-size:0.8rem">
+      お名前・ご連絡先はそのまま引き継ぎます（備考は引き継ぎません）
+    </div>
+
+    <!-- 2026-08-25 要望⑨：キャンセルの連絡先とキャンセル料の掲載先 -->
+    <div id="done-cancel-guide"></div>
 
     <button class="btn btn-secondary mt-24" onclick="navigate('screen-top')">トップに戻る</button>
   </div>
@@ -1140,6 +1180,8 @@ html.embed .info-section { display: none !important; }
 <script src="assets/js/pricing.js?v=20260802"></script>
 <!-- 空き状況レベル判定 純粋関数ライブラリ（2026-08-01 抽出・Jest テスト対象） -->
 <script src="assets/js/availability.js?v=20260802"></script>
+<!-- 連絡先・キャンセル案内の正本（サーバ側は functions/src/lib/contact.ts・値を必ず揃える） -->
+<script src="assets/js/contact.js?v=20260825"></script>
 <script>
 // ===== pricing.js からの再 export（SSOT一本化・2026-05-13）=====
 // 旧 index.html 内 inline 定義から assets/js/pricing.js へ抽出済み。
@@ -1168,7 +1210,9 @@ const ROOMS = [
   { id: 'room_train', name: '研修室', fullName: '1階 研修室', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 30 },
   { id: 'room_kitchen', name: '厨房・食堂', fullName: '1階 厨房・食堂', building: 'ふれあいの館', icon: '\u{1F3E0}', capacity: 20 },
   // キャンプ場：8区画個別管理（2026-04-28〜）
-  // 各区画は独立した予約単位。複数選択時は同期間で最大3区画まで（plan.maxSites）。
+  // 各区画は独立した予約単位。複数選択時は同期間で最大8区画まで（plan.maxSites・2026-08-25 要望③）。
+  // ★区画数×泊数×23時間 が Firestore トランザクションの 499 slot を超えられないため、
+  //   区画を増やすと getMaxNights() が泊数を自動で下げる（8区画=2泊 / 7区画=3泊）。
   { id: 'camp_1', name: 'キャンプ区画①', fullName: 'キャンプ場 区画①', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
   { id: 'camp_2', name: 'キャンプ区画②', fullName: 'キャンプ場 区画②', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
   { id: 'camp_3', name: 'キャンプ区画③', fullName: 'キャンプ場 区画③', building: 'アウトドア', icon: '\u26FA', capacity: 8 },
@@ -1348,8 +1392,8 @@ const PLANS = [
   // ===== キャンプ =====
   { id: 'camp_stay', name: 'キャンプ泊', planType: 'camp', category: 'outdoor',
     rooms: ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8'],
-    maxSites: 3,    // 一度に予約できる区画数の上限（それ以上は分けて予約）
-    maxNights: 3,   // 連泊上限（4泊以上は分けて予約）
+    maxSites: 8,    // 区画数の上限＝全8区画（2026-08-25 要望③で3から解放）
+    maxNights: 3,   // 連泊上限。区画数によっては getMaxNights() が自動で下げる
     slots: [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12],
     checkin: '14:00', checkout: '翌13:00',
     requireAddress: true,
@@ -1418,7 +1462,7 @@ const PLANS = [
   // ===== みどりの広場 =====
   { id: 'midori_am', name: 'みどりの広場 午前', planType: 'day_slot', category: 'sport',
     rooms: ['midori'],
-    slots: [8,9,10,11], timeRange: '8:30-12:00',
+    slots: [8,9,10,11], timeRange: '8:30〜12:00',
     basePrice: 1890, nonResidentPrice: 2200, studentPrice: 1050, studentNonResidentPrice: 1260,
     priceDisplay: '市民1,890円/市外2,200円',
     guestEstimateMax: 150,
@@ -1426,14 +1470,14 @@ const PLANS = [
     note: '専用利用の場合は予約金額の半額' },
   { id: 'midori_pm', name: 'みどりの広場 午後', planType: 'day_slot', category: 'sport',
     rooms: ['midori'],
-    slots: [12,13,14,15,16], timeRange: '12:00-17:00',
+    slots: [12,13,14,15,16], timeRange: '12:00〜17:00',
     basePrice: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890,
     priceDisplay: '市民2,730円/市外3,250円',
     guestEstimateMax: 150,
     badge: '午後', badgeColor: '#f59e0b' },
   { id: 'midori_day', name: 'みどりの広場 日中', planType: 'day_slot', category: 'sport',
     rooms: ['midori'],
-    slots: [8,9,10,11,12,13,14,15,16], timeRange: '8:30-17:00',
+    slots: [8,9,10,11,12,13,14,15,16], timeRange: '8:30〜17:00',
     basePrice: 4620, nonResidentPrice: 5450, studentPrice: 2630, studentNonResidentPrice: 3150,
     priceDisplay: '市民4,620円/市外5,450円',
     guestEstimateMax: 150,
@@ -1441,7 +1485,7 @@ const PLANS = [
     note: '午前+午後の通しプラン（午前のみ・午後のみは別途）' },
   { id: 'midori_eve', name: 'みどりの広場 夜間', planType: 'day_slot', category: 'sport',
     rooms: ['midori'],
-    slots: [17,18,19,20,21], timeRange: '17:00-22:00',
+    slots: [17,18,19,20,21], timeRange: '17:00〜22:00',
     basePrice: 2730, nonResidentPrice: 3250, studentPrice: 1580, studentNonResidentPrice: 1890,
     priceDisplay: '市民2,730円/市外3,250円',
     lightingPrice: 1890, lightingLabel: '夜間照明（1時間 1,890円）', lightingHours: 5,
@@ -1539,10 +1583,13 @@ const state = {
   guests: 2,
   // キャンプ
   // selectedCampSites: 利用者が選択した区画ID配列（例: ['camp_1','camp_3']）
-  // 空配列＝未選択。最大3区画まで（plan.maxSites で制限）
+  // 空配列＝未選択。最大8区画まで（plan.maxSites で制限）
   selectedCampSites: [],
   // 2026-05-13 要望#10: キャンプ「テント追加(50円/1張)」を完全廃止。state.campTents 削除済。
   // 2026-08-25 要望②: ロッジ「シーツ(340円/1組)」を完全廃止。state.lodgeSheets 削除済。
+  // 2026-08-25 要望①: 直前に確定した予約のお客様情報。「続けて別の施設を予約」で復元する。
+  //   null＝引き継ぐものが無い。備考・人数・オプションは施設ごとに違うので持たない。
+  carryCustomer: null,
   // サウナオプション
   saunaTowels: 0,
   saunaTarpTent: 0,
@@ -2101,6 +2148,11 @@ function renderSearchResults() {
       const planName = isFutami ? item.plan.name + '（ふたみの日）' : item.plan.name;
       const priceDisp = isFutami ? '2,300円/人' : item.plan.priceDisplay;
       html += '    <div class="facility-name">' + planName + '</div>';
+      // 2026-08-25 要望⑤：時間帯（みどりの広場・日帰り各室）が検索結果からは読めなかった。
+      // プラン一覧カードは renderPlanCard が timeRange を出しているが、この経路には無かった。
+      if (item.plan.timeRange) {
+        html += '    <div class="facility-meta">' + item.plan.timeRange + '</div>';
+      }
       if (!item.plan.id.startsWith('tennis')) {
         html += '    <div class="facility-meta">定員' + item.maxCap + '名</div>';
       }
@@ -2751,14 +2803,16 @@ function showRoomBooking() {
 
   } else if (pt === 'camp') {
     html += '<div class="form-group">';
-    html += '<label class="form-label">泊数（最大' + (plan.maxNights || 3) + '泊）</label>';
+    html += '<label class="form-label">泊数（最大' + getMaxNights() + '泊）</label>';
     html += '<div class="stepper">';
     html += '<button class="stepper-btn" onclick="stepNights(-1)">-</button>';
     html += '<span class="stepper-value" id="nights-count">' + state.selectedNights + '</span>';
     html += '<span class="stepper-unit">泊</span>';
     html += '<button class="stepper-btn" onclick="stepNights(1)">+</button>';
     html += '</div>';
-    html += '<div class="text-muted" style="font-size:11px;margin-top:4px">※ ' + (plan.maxNights || 3) + '泊を超える場合は分けてご予約ください</div>';
+    // ★区画をたくさん取るほど、1回の予約で押さえられる泊数が短くなる（システム上の上限）。
+    //   運営合意＝8区画なら2泊まで／7区画なら3泊まで（2026-08-25 要望③）。
+    html += '<div class="text-muted" style="font-size:11px;margin-top:4px">※ 区画数が多いほど一度に予約できる泊数は短くなります（8区画なら2泊まで／7区画なら3泊まで）。超える場合は分けてご予約ください</div>';
     html += '</div>';
 
     html += '<div class="text-muted">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
@@ -3155,6 +3209,10 @@ function toggleCampSite(roomId) {
   }
   // 互換性: 単一選択APIを使う既存処理向けに先頭IDを残す
   state.selectedRoomId = state.selectedCampSites[0] || null;
+  // ★2026-08-25 要望③：区画上限を8へ広げたので、区画を増やすと連泊できる上限が下がる
+  //   （区画数×泊数×23時間 ≦ 499 slot）。ここで取り直さないと「3泊のまま8区画」を選べてしまい、
+  //   最後の送信でサーバに弾かれる（画面上はどこにも理由が出ない）。
+  checkNightsAvailability();
   showRoomBooking();
   updateBookingPriceSummary();
 }
@@ -3742,9 +3800,10 @@ function proceedToConfirm() {
       alert('ご利用になる区画を1つ以上選択してください');
       return;
     }
-    const maxN = plan.maxNights || 3;
+    // ★プラン上限(maxNights)ではなく、区画数を織り込んだ実効上限で見る（2026-08-25 要望③）。
+    const maxN = getMaxNights();
     if (state.selectedNights > maxN) {
-      alert(maxN + '泊までです。これ以上は分けてご予約ください。');
+      alert(maxN + '泊までです。区画数を減らすか、日程を分けてご予約ください。');
       return;
     }
   }
@@ -3982,8 +4041,55 @@ async function lookupAddress() {
   }
 }
 
+/**
+ * 続けて別の施設を予約する（2026-08-25 運営要望①）。
+ *
+ * 直前の予約のお客様情報だけを入力欄へ戻し、施設一覧から選び直してもらう。
+ * ★プラン・部屋・日付・人数・オプションは復元しない＝selectPlan() / selectPlanFromSearch() が
+ *   毎回初期化しているので、ここで触るとむしろ二重管理になる。
+ * ★冪等キー（state.idempotencyKey）は必ず null にする。前の予約のキーが残ったまま
+ *   2件目を送ると、サーバは「同じ予約の再送」とみなして1件目の応答を返し、
+ *   2件目が作られないまま成功したように見える。
+ */
+function startNextBooking() {
+  const c = state.carryCustomer;
+  state.idempotencyKey = null;
+  if (c) {
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    setVal('confirm-name', c.name);
+    setVal('confirm-kana', c.kana);
+    setVal('confirm-phone', c.phone);
+    setVal('confirm-email', c.email);
+    setVal('confirm-email2', c.email);
+    setVal('confirm-zip', c.zip);
+    setVal('confirm-address1', c.address1);
+    setVal('confirm-address2', c.address2);
+  }
+  // 備考は引き継がない（前の施設向けの要望が次の施設へ混ざるのを防ぐ）
+  const noteEl = document.getElementById('confirm-note');
+  if (noteEl) noteEl.value = '';
+  showFacilityList();
+}
+
+/**
+ * キャンセル・変更のご案内を指定要素へ描く（2026-08-25 運営要望⑨）。
+ * ★assets/js/contact.js が読めていない場合（キャッシュ違い等）は何も描かない＝
+ *   例外で確認画面や完了画面そのものが描画不能になるのを避ける。案内が1回出ないだけで済む。
+ */
+function renderCancelGuide(elementId, plan) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  if (typeof NisshoContact === 'undefined' || typeof NisshoContact.cancelGuideHtml !== 'function') {
+    el.innerHTML = '';
+    return;
+  }
+  const isSauna = !!(plan && plan.planType === 'sauna');
+  el.innerHTML = NisshoContact.cancelGuideHtml(isSauna);
+}
+
 function showReview() {
   const name = document.getElementById('confirm-name').value.trim();
+  const kana = document.getElementById('confirm-kana').value.trim();
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
   const email2 = document.getElementById('confirm-email2').value.trim();
@@ -4026,6 +4132,8 @@ function showReview() {
   var html = document.getElementById('booking-summary').innerHTML;
   html += '<div style="border-top:2px solid #e5e7eb;margin:12px 0;padding-top:12px;">';
   html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + esc(name) + '</span></div>';
+  // フリガナは未入力なら行ごと出さない（空欄の行を並べない・2026-08-25 要望⑩）
+  if (kana) html += '<div class="summary-row"><span class="summary-label">フリガナ</span><span class="summary-value">' + esc(kana) + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + esc(phone) + '</span></div>';
   if (email) html += '<div class="summary-row"><span class="summary-label">メール</span><span class="summary-value">' + esc(email) + '</span></div>';
   if (address1 || address2 || zip) {
@@ -4035,6 +4143,7 @@ function showReview() {
   if (note) html += '<div class="summary-row"><span class="summary-label">備考</span><span class="summary-value">' + esc(note) + '</span></div>';
   html += '</div>';
   document.getElementById('review-summary').innerHTML = html;
+  renderCancelGuide('review-cancel-guide', state.selectedPlan);
   navigate('screen-review');
 }
 
@@ -4055,6 +4164,7 @@ async function submitBooking() {
 
 async function _submitBookingInner() {
   const name = document.getElementById('confirm-name').value.trim();
+  const kana = document.getElementById('confirm-kana').value.trim();
   const phone = document.getElementById('confirm-phone').value.trim();
   const email = document.getElementById('confirm-email').value.trim();
   const userNote = document.getElementById('confirm-note').value.trim();
@@ -4190,7 +4300,7 @@ async function _submitBookingInner() {
         startDate,
         endDate,
         nights: payloadNights,
-        customer: { name, phone, email, zip, address1, address2, isMember: !!state.isResident },
+        customer: { name, kana, phone, email, zip, address1, address2, isMember: !!state.isResident },
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
         pricing: {
           basePrice: 0, personFee: 0,
@@ -4242,6 +4352,7 @@ async function _submitBookingInner() {
           invalid_guest_count: 'ご利用人数が条件に合いません（ふたみの日サウナは2〜8名）。人数をご確認ください。',
           not_futami_day: '選択された日はふたみの日（サウナ貸切日）ではありません。日付をご確認ください。',
           invalid_customer_name: 'お名前の入力をご確認ください（50文字以内）。',
+          invalid_customer_kana: 'フリガナの入力をご確認ください（50文字以内）。',
           invalid_customer_phone: '電話番号の入力をご確認ください（20文字以内）。',
           invalid_customer_email: 'メールアドレスの入力をご確認ください（100文字以内）。',
           email_required_for_sauna: '貸切サウナのご予約にはメールアドレスが必要です。ご入力のうえ、もう一度お試しください。',
@@ -4310,6 +4421,7 @@ async function _submitBookingInner() {
     total: state.totalPrice,
     timeStr: state.timeStr,
     name: name,
+    kana: kana,
     phone: phone,
     email: email,
     note: note,
@@ -4321,6 +4433,7 @@ async function _submitBookingInner() {
   localStorage.setItem('futami_bookings', JSON.stringify(bookings));
 
   document.getElementById('done-booking-id').textContent = '予約番号: ' + bookingId;
+  renderCancelGuide('done-cancel-guide', plan);
 
   // 引用符も含む5文字エスケープ（2026-07-19 自己レビュー #5：属性文脈へ流用しても安全に）
   function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -4330,6 +4443,7 @@ async function _submitBookingInner() {
   html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + esc(booking.roomName) + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + esc(booking.timeStr) + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">お名前</span><span class="summary-value">' + esc(booking.name) + '</span></div>';
+  if (booking.kana) html += '<div class="summary-row"><span class="summary-label">フリガナ</span><span class="summary-value">' + esc(booking.kana) + '</span></div>';
   html += '<div class="summary-row"><span class="summary-label">電話番号</span><span class="summary-value">' + esc(booking.phone) + '</span></div>';
   if (booking.email) {
     html += '<div class="summary-row"><span class="summary-label">メール</span><span class="summary-value">' + esc(booking.email) + '</span></div>';
@@ -4337,7 +4451,15 @@ async function _submitBookingInner() {
   html += '<div class="summary-total"><span>合計金額</span><span class="summary-total-price">' + booking.total.toLocaleString() + '円</span></div>';
   doneSummary.innerHTML = html;
 
+  // ★2026-08-25 要望①：続けて別の施設を予約するときに、お客様情報を入れ直させない。
+  //   ふれあいの宿泊＋研修室＋厨房、ふれあい宿泊＋ロッジ のように、1組が複数施設を
+  //   取る受付が実在する（運営の実入力での実感）。入力欄は従来どおり空にしたうえで、
+  //   引き継ぐ値だけを state に退避する（「トップに戻る」時の見え方は変えない）。
+  //   ★備考(note)は引き継がない＝施設ごとに内容が違い、前の予約の要望が混ざると事故になる。
+  state.carryCustomer = { name: name, kana: kana, phone: phone, email: email, zip: zip, address1: address1, address2: address2 };
+
   document.getElementById('confirm-name').value = '';
+  document.getElementById('confirm-kana').value = '';
   document.getElementById('confirm-phone').value = '';
   document.getElementById('confirm-email').value = '';
   document.getElementById('confirm-email2').value = '';

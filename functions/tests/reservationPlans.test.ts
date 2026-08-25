@@ -138,13 +138,36 @@ describe('canonicalizeReservation', () => {
     }
   });
 
-  it('キャンプ4区画または4泊を拒否する', () => {
-    expect(canonicalizeReservation({
+  // 2026-08-25 要望③：区画上限を 3 → 8（全区画）へ解放。4区画は通るようになった。
+  it('キャンプは8区画まで受理し、9区画目と4泊を拒否する', () => {
+    const eight = ['camp_1','camp_2','camp_3','camp_4','camp_5','camp_6','camp_7','camp_8'];
+    const ok8 = canonicalizeReservation({
+      planId: 'camp_stay',
+      roomIds: eight,
+      slots: overnightSlots(eight, '2026-08-05', 1, CAMP_HOURS),
+      startDate: '2026-08-05', endDate: '2026-08-06', nights: 1,
+    });
+    expect(ok8.ok).toBe(true);
+    if (ok8.ok) expect(ok8.value.roomIds).toHaveLength(8);
+
+    // 4区画（旧上限の外側）も通る＝要望③の主眼
+    const ok4 = canonicalizeReservation({
       planId: 'camp_stay',
       roomIds: ['camp_1','camp_2','camp_3','camp_4'],
+      slots: overnightSlots(['camp_1','camp_2','camp_3','camp_4'], '2026-08-05', 1, CAMP_HOURS),
+      startDate: '2026-08-05', endDate: '2026-08-06', nights: 1,
+    });
+    expect(ok4.ok).toBe(true);
+
+    // 9件目は存在しない区画なので plan_room_mismatch（maxRooms=8 かつホワイトリスト外）
+    expect(canonicalizeReservation({
+      planId: 'camp_stay',
+      roomIds: [...eight, 'camp_9'],
       slots: ['camp_1|2026-08-05|14'],
       startDate: '2026-08-05', endDate: '2026-08-06', nights: 1,
     })).toEqual({ ok: false, error: 'plan_room_mismatch' });
+
+    // 連泊上限（3泊）は据え置き
     expect(canonicalizeReservation({
       planId: 'camp_stay', roomIds: ['camp_1'],
       slots: overnightSlots(['camp_1'], '2026-08-05', 4, CAMP_HOURS),
@@ -174,32 +197,63 @@ describe('canonicalizeReservation', () => {
     });
     expect(current.ok).toBe(true);
 
+    // ★8時台の整数時は 2026-08-25 要望⑦（8:00枠廃止）で受理されなくなったので 9 で検証する
     const legacy = canonicalizeReservation({
-      planId: 'tennis', roomIds: ['court_1'], slots: ['court_1|2026-08-05|8'],
+      planId: 'tennis', roomIds: ['court_1'], slots: ['court_1|2026-08-05|9'],
       startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
     });
     expect(legacy.ok).toBe(true);
     if (legacy.ok) {
       expect(legacy.value.planId).toBe('tennis_full');
       expect(legacy.value.slots).toEqual([
-        'court_1|2026-08-05|0800',
-        'court_1|2026-08-05|0830',
+        'court_1|2026-08-05|0900',
+        'court_1|2026-08-05|0930',
       ]);
     }
+  });
+
+  // 2026-08-25 要望⑦：8:00〜9:00 の廃止。画面だけでなく在庫の正本でも弾く。
+  it('テニスは8:30より前の開始を拒否し、8:30始まりは受理する', () => {
+    expect(canonicalizeReservation({
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|2026-08-05|0800', 'court_1|2026-08-05|0830'],
+      startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
+    })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
+
+    // 旧 staff 経路（整数時 8）も同じく弾かれる
+    expect(canonicalizeReservation({
+      planId: 'tennis', roomIds: ['court_1'], slots: ['court_1|2026-08-05|8'],
+      startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
+    })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
+
+    // 半面コートも同じ下限
+    expect(canonicalizeReservation({
+      planId: 'tennis_half', roomIds: ['court_wall'],
+      slots: ['court_wall|2026-08-05|0800', 'court_wall|2026-08-05|0830'],
+      startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
+    })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
+
+    const first = canonicalizeReservation({
+      planId: 'tennis_full', roomIds: ['court_1'],
+      slots: ['court_1|2026-08-05|0830', 'court_1|2026-08-05|0900'],
+      startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
+    });
+    expect(first.ok).toBe(true);
   });
 
   it('複数テニスコートで時間集合が違う場合と未ペアslotを拒否する', () => {
     expect(canonicalizeReservation({
       planId: 'tennis_full', roomIds: ['court_1','court_2'],
       slots: [
-        'court_1|2026-08-05|0800', 'court_1|2026-08-05|0830',
-        'court_2|2026-08-05|0900', 'court_2|2026-08-05|0930',
+        'court_1|2026-08-05|0830', 'court_1|2026-08-05|0900',
+        'court_2|2026-08-05|1000', 'court_2|2026-08-05|1030',
       ],
       startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
     })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
     expect(canonicalizeReservation({
       planId: 'tennis_full', roomIds: ['court_1'],
-      slots: ['court_1|2026-08-05|0800'],
+      // 未ペア（30分1コマだけ）の検証。0800 は要望⑦で別理由(時間外)でも落ちるため 0830 で確かめる
+      slots: ['court_1|2026-08-05|0830'],
       startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
     })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
   });

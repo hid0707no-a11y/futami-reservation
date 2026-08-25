@@ -10,11 +10,11 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <!-- 認証共通化 2026-05-05 Phase B-2：staff/staff2/staff_tennis.html で重複していたコードを集約 -->
-<script src="assets/js/auth-bootstrap.js" data-load-fn="loadData"></script>
+<script src="assets/js/auth-bootstrap.js?v=20260825" data-load-fn="loadData"></script>
 <!-- 月俯瞰のセル表記（IN/泊/OUT・日）純粋関数。2026-08-16 運営要望①②。
      ★HTMLとJSは別々にキャッシュされるので ?v= を必ず上げる（2026-08-02 の教訓）。
      読めていない場合は render() が従来の数字表示へフォールバックする。 -->
-<script src="assets/js/ledger.js?v=20260817"></script>
+<script src="assets/js/ledger.js?v=20260825"></script>
 <style>
 :root {
   --navy: #1e3a8a;
@@ -832,7 +832,16 @@ function buildCellContent(room, reservations, ds) {
   const lines = NisshoLedger.ledgerCellLines(marks);
   // ★色は「その行が代表している施設の数」と比べて決める。キャンプ場は8区画で1行なので、
   //   1部屋1行のしきい値のままだと4区画で赤「満」になり、半分空いているのに断りかねない。
-  const level = NisshoLedger.ledgerCellLevel(marks, ROW_FACILITY_COUNT[room.id] || 1);
+  // ★複数施設を1行に集約した行（キャンプ場8区画）は、色を「予約件数」でなく
+  //   「埋まった区画数」で決める。2026-08-25 に区画上限を 3→8 へ広げた（要望③）ため、
+  //   1組が全区画を貸切る日が実際に起こりうる。件数で判定すると満室の日が薄色になる。
+  const level = NisshoLedger.ledgerCellLevel(
+    marks,
+    ROW_FACILITY_COUNT[room.id] || 1,
+    typeof NisshoLedger.ledgerActiveUnits === 'function'
+      ? NisshoLedger.ledgerActiveUnits(reservations, ds)
+      : undefined
+  );
   const label = lines.length === 0 ? ''
     : '<span class="cell-marks' + (lines.length >= 3 ? ' tight' : '') + '">'
       + lines.map(l => '<span class="mark mark-' + l.kind + '">' + escapeHtml(l.text) + '</span>').join('')

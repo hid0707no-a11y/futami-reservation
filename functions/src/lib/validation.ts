@@ -50,6 +50,13 @@ export interface ValidationOptions {
   validRoomIds: ReadonlySet<string>;
   /** 「今日」の起点（デフォルトは現在時刻。テスト時に固定可能）。 */
   now?: Date;
+  /**
+   * 職員（staff.html / 検証済み Bearer）からの予約か。
+   * true のとき「予約受付期間（宿泊365日・その他90日）」だけを免除する（2026-08-25 要望④）。
+   * ★過去日の拒否（booking_in_past）は職員でも免除しない＝年の打ち間違いを静かに通さないため。
+   * ★呼出元は必ず isVerifiedStaffRequest() の実検証結果を渡すこと（body の createdBy 申告は不可）。
+   */
+  isStaff?: boolean;
 }
 
 export function validateReservationBody(body: any, opts: ValidationOptions): ValidationResult {
@@ -120,13 +127,16 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   const maxDays = isStayCategory ? 365 : 90;
   const now = opts.now ?? new Date();
   const todayJst = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // 過去日は職員でも拒否する（下の booking_too_far だけが職員免除の対象）。
   if (startDate < todayJst) {
     return { ok: false, error: 'booking_in_past' };
   }
   const maxDate = new Date(todayJst + 'T00:00:00Z');
   maxDate.setUTCDate(maxDate.getUTCDate() + maxDays);
   const bookingDate = new Date(startDate + 'T00:00:00');
-  if (bookingDate > maxDate) {
+  // ★職員は期間の上限なし（2026-08-25 要望④）。宿泊予約者特権でテニスを3ヶ月前に押さえる等、
+  //   公開画面の受付期間の外で受ける運用が実在するため。endDate の30日ガード（下）は職員にも効く。
+  if (!opts.isStaff && bookingDate > maxDate) {
     return { ok: false, error: 'booking_too_far', detail: `${maxDays}日先まで予約可能です` };
   }
 
@@ -152,6 +162,14 @@ export function validateReservationBody(body: any, opts: ValidationOptions): Val
   if (!customer?.name || typeof customer.name !== 'string' || customer.name.length > 50
       || HEADER_CONTROL_RE.test(customer.name)) {
     return { ok: false, error: 'invalid_customer_name' };
+  }
+  // フリガナ（2026-08-25 要望⑩）。任意フィールド＝電話受付の職員入力や、
+  // 未入力のまま届く旧キャッシュ画面の予約を新たに弾かない（サウナ人数・メール必須と同じ判断）。
+  // 文字種は縛らない＝ひらがな入力・姓名の間の空白・長音記号など現場の書き方を弾かないため。
+  if (customer.kana !== undefined && customer.kana !== null && customer.kana !== ''
+      && (typeof customer.kana !== 'string' || customer.kana.length > 50
+          || HEADER_CONTROL_RE.test(customer.kana))) {
+    return { ok: false, error: 'invalid_customer_kana' };
   }
   if (!customer?.phone || typeof customer.phone !== 'string' || customer.phone.length > 20) {
     return { ok: false, error: 'invalid_customer_phone' };
@@ -254,12 +272,26 @@ export function validateUpdateFields(body: any): UpdateValidationResult {
       return { ok: false, error: 'invalid_customer' };
     }
     if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 50 || HEADER_CONTROL_RE.test(c.name))) return { ok: false, error: 'invalid_customer_name' };
+    // フリガナ（2026-08-25 要望⑩）。新規予約側と同じ規則＝任意・50文字以内・改行不可。
+    if (c.kana !== undefined && c.kana !== null && c.kana !== ''
+        && (typeof c.kana !== 'string' || c.kana.length > 50 || HEADER_CONTROL_RE.test(c.kana))) return { ok: false, error: 'invalid_customer_kana' };
     if (c.phone !== undefined && (typeof c.phone !== 'string' || c.phone.length > 20)) return { ok: false, error: 'invalid_customer_phone' };
     if (c.email !== undefined && c.email !== '' && (typeof c.email !== 'string' || c.email.length > 100 || !EMAIL_RE.test(c.email))) return { ok: false, error: 'invalid_customer_email' };
     if (c.zip !== undefined && (typeof c.zip !== 'string' || c.zip.length > 10)) return { ok: false, error: 'invalid_customer_zip' };
     if (c.address1 !== undefined && (typeof c.address1 !== 'string' || c.address1.length > 100)) return { ok: false, error: 'invalid_customer_address1' };
     if (c.address2 !== undefined && (typeof c.address2 !== 'string' || c.address2.length > 100)) return { ok: false, error: 'invalid_customer_address2' };
-    updates.customer = c;
+    if (c.isMember !== undefined && typeof c.isMember !== 'boolean') return { ok: false, error: 'invalid_customer_isMember' };
+    // ★★4「allowedFields をそのまま透過させるパターン禁止」＝検証したキーだけを詰め替える。
+    //   従来は c をそのまま updates.customer に入れていたため、検証していない任意のキーが
+    //   customer マップへ保存できた（updateReservation は staff 認証必須なので実害は限定的だが、
+    //   2026-08-25 要望⑧で職員画面から日常的に叩く経路になるので塞ぐ）。
+    const allowedCustomerKeys = ['name', 'kana', 'phone', 'email', 'zip', 'address1', 'address2', 'isMember'] as const;
+    const cleanCustomer: Record<string, any> = {};
+    for (const key of allowedCustomerKeys) {
+      if (c[key] !== undefined) cleanCustomer[key] = c[key];
+    }
+    if (Object.keys(cleanCustomer).length === 0) return { ok: false, error: 'invalid_customer' };
+    updates.customer = cleanCustomer;
   }
   if (body?.payment !== undefined) {
     const p = body.payment;
@@ -268,7 +300,12 @@ export function validateUpdateFields(body: any): UpdateValidationResult {
     }
     if (p.method !== undefined && (typeof p.method !== 'string' || p.method.length > 50)) return { ok: false, error: 'invalid_payment_method' };
     if (p.status !== undefined && (typeof p.status !== 'string' || p.status.length > 50)) return { ok: false, error: 'invalid_payment_status' };
-    updates.payment = p;
+    // customer と同じ理由でキーを詰め替える（未検証キーの素通しを防ぐ）。
+    const cleanPayment: Record<string, any> = {};
+    if (p.method !== undefined) cleanPayment.method = p.method;
+    if (p.status !== undefined) cleanPayment.status = p.status;
+    if (Object.keys(cleanPayment).length === 0) return { ok: false, error: 'invalid_payment' };
+    updates.payment = cleanPayment;
   }
   if (Object.keys(updates).length === 0) {
     return { ok: false, error: 'no_updatable_fields' };

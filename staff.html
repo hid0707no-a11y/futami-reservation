@@ -14,7 +14,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <!-- 認証共通化 2026-05-05 Phase B-2：staff/staff2/staff_tennis.html で重複していたコードを集約 -->
-<script src="assets/js/auth-bootstrap.js" data-load-fn="loadGcalData"></script>
+<script src="assets/js/auth-bootstrap.js?v=20260825" data-load-fn="loadGcalData"></script>
 <!-- 施設×日付（＋時）の休止判定 isFacilitySlotClosed を index.html と共有（2026-08-02）。
      ?v= はブラウザキャッシュ対策。読めなかった場合に備えて呼び出し側で typeof 判定する。 -->
 <script src="assets/js/availability.js?v=20260802"></script>
@@ -717,6 +717,11 @@ td.block-start-td + td.block-mid { border-left: none; }
     <label>お名前</label>
     <input type="text" id="addName" placeholder="予約者名">
   </div>
+  <!-- フリガナ（2026-08-25 運営要望⑩）。電話受付では聞けないことがあるため任意 -->
+  <div class="form-group">
+    <label>フリガナ</label>
+    <input type="text" id="addKana" placeholder="ヤマダ タロウ" maxlength="50">
+  </div>
   <div class="form-group">
     <label>電話番号</label>
     <input type="tel" id="addPhone" placeholder="090-xxxx-xxxx">
@@ -750,6 +755,16 @@ td.block-start-td + td.block-mid { border-left: none; }
 <div class="modal" id="campChangeSheet">
   <div class="handle"></div>
   <div id="campChangeContent"></div>
+</div>
+
+<!-- 予約内容の修正モーダル（2026-08-25 運営要望⑧）
+     ★日時・プラン・部屋は変更できない（在庫の取り直しが要る）。
+       変えられるのは 備考／お客様情報／入金ステータス の3つ。日程変更は
+       「キャンセル → 新規予約」で対応する（従来どおり）。 -->
+<div class="modal-overlay" id="editOverlay" onclick="closeEditModal()"></div>
+<div class="modal" id="editSheet">
+  <div class="handle"></div>
+  <div id="editContent"></div>
 </div>
 
 <!-- FAB -->
@@ -876,13 +891,15 @@ const PLANS = [
     slots: 'hourly', allowedHours: [9,10,11,12,13,14,15,16,17,18,19,20,21],
     price: '市民240円/市外280円/枠(1時間)', badge: '\uD83C\uDFBE', color: '#0284c7' },
   // みどりの広場（3コマ制）
-  { id: 'midori_am', name: 'みどりの広場 午前', rooms: ['midori'],
+  // ★プラン名に時間帯を併記する（2026-08-25 運営要望⑤）。職員画面には timeRange の表示欄が無く、
+  //   「午前」だけでは何時から何時までか読めなかった。表記は labels.ts の PLAN_LABELS と揃える。
+  { id: 'midori_am', name: 'みどりの広場 午前（8:30〜12:00）', rooms: ['midori'],
     slots: [8,9,10,11], price: '市民1,890円/市外2,200円', badge: '\uD83C\uDF05 午前', color: '#f97316' },
-  { id: 'midori_pm', name: 'みどりの広場 午後', rooms: ['midori'],
+  { id: 'midori_pm', name: 'みどりの広場 午後（12:00〜17:00）', rooms: ['midori'],
     slots: [12,13,14,15,16], price: '市民2,730円/市外3,250円', badge: '\u2600\uFE0F 午後', color: '#f59e0b' },
-  { id: 'midori_day', name: 'みどりの広場 日中', rooms: ['midori'],
+  { id: 'midori_day', name: 'みどりの広場 日中（8:30〜17:00）', rooms: ['midori'],
     slots: [8,9,10,11,12,13,14,15,16], price: '市民4,620円/市外5,450円', badge: '\u2600\uFE0F 日中通し', color: '#fb923c' },
-  { id: 'midori_eve', name: 'みどりの広場 夜間', rooms: ['midori'],
+  { id: 'midori_eve', name: 'みどりの広場 夜間（17:00〜22:00）', rooms: ['midori'],
     slots: [17,18,19,20,21], price: '市民2,730円/市外3,250円', badge: '\uD83C\uDF19 夜間', color: '#8b5cf6' },
   // サウナ（120分枠）
   { id: 'sauna_1', name: 'A 10:00-12:00', rooms: ['sauna'], slots: [10,11], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
@@ -1064,6 +1081,7 @@ function convertApiReservation(r) {
       roomId,
       planId: normalizedPlanId,
       name: (r.customer && r.customer.name) || '',
+      kana: (r.customer && r.customer.kana) || '', // 2026-08-25 要望⑩
       phone: (r.customer && r.customer.phone) || '',
       email: (r.customer && r.customer.email) || '',
       zip: (r.customer && r.customer.zip) || '',
@@ -1076,6 +1094,9 @@ function convertApiReservation(r) {
       isFutamiDay: !!r.isFutamiDay,
       guestCount: safeGuestCount,
       pricingTotal: (r.pricing && typeof r.pricing.total === 'number') ? r.pricing.total : null,
+      // 入金ステータス（2026-08-25 要望⑧）。createReservation は {method:'onsite', status:'unpaid'} を書く。
+      paymentStatus: (r.payment && r.payment.status) || '',
+      paymentMethod: (r.payment && r.payment.method) || '',
       isCamp: !!r.isCamp,
       campRoomIds: Array.isArray(r.roomIds) ? r.roomIds.filter(x => typeof x === 'string' && x.startsWith('camp_')) : [],
       // slots（API由来・slot key配列 'camp_N|YYYY-MM-DD|HH'）
@@ -1573,6 +1594,7 @@ function showDetail(resId) {
   let html = `
     <div class="detail-row" style="background:#f0f9ff;margin:4px -16px;padding:8px 16px;border-radius:8px"><span class="label" style="color:#0369a1">\u4E88\u7D04\u756A\u53F7</span><span class="value" style="font-family:monospace;font-weight:700;color:#0c4a6e">${escapeHtml(displayId)}</span></div>
     <div class="detail-row"><span class="label">\u4E88\u7D04\u8005</span><span class="value">${escapeHtml(res.name)}</span></div>
+    ${res.kana ? `<div class="detail-row"><span class="label">\u30D5\u30EA\u30AC\u30CA</span><span class="value">${escapeHtml(res.kana)}</span></div>` : ''}
     <div class="detail-row"><span class="label">\u96FB\u8A71\u756A\u53F7</span><span class="value"><a href="tel:${escapeHtml(res.phone)}" style="color:var(--navy)">${escapeHtml(res.phone)}</a></span></div>
     <div class="detail-row"><span class="label">\u4F4F\u6240</span><span class="value">${addrFull ? escapeHtml(addrFull) : '\u2014'}</span></div>
     <div class="detail-row"><span class="label">\u30E1\u30FC\u30EB</span><span class="value">${res.email ? escapeHtml(res.email) : '\u2014'}</span></div>
@@ -1588,6 +1610,7 @@ function showDetail(resId) {
     <div class="detail-row" style="background:#fff8e1;margin:4px -16px;padding:12px 16px;border-radius:8px"><span class="label" style="color:#b45309;font-weight:700">\u3054\u8acb\u6c42\u91d1\u984d</span><span class="value" style="color:#dc2626;font-weight:800;font-size:1.15rem">${typeof res.pricingTotal === 'number' ? res.pricingTotal.toLocaleString() + '\u5186' : '\u2014'}</span></div>
     <div class="detail-row"><span class="label">\u6599\u91D1\u4F53\u7CFB</span><span class="value" style="font-size:0.85rem;color:#666">${plan ? plan.price : '-'}</span></div>
     <div class="detail-row"><span class="label">\u5099\u8003</span><span class="value">${escapeHtml(res.note) || '---'}</span></div>
+    <div class="detail-row"><span class="label">\u5165\u91D1</span><span class="value">${paymentStatusLabel(res.paymentStatus)}</span></div>
   `;
 
   if (res.checkedIn) {
@@ -1595,6 +1618,10 @@ function showDetail(resId) {
   } else {
     html += `<button class="checkin-btn do-checkin" onclick="toggleCheckin('${res.id}')">\u30C1\u30A7\u30C3\u30AF\u30A4\u30F3\u3059\u308B</button>`;
   }
+
+  // === 予約内容の修正ボタン（2026-08-25 運営要望⑧） ===
+  const _editId = res._origId || res.id;
+  html += `<button class="checkin-btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;margin-top:8px" onclick="openEditModal('${_editId}')">\u5185\u5BB9\u3092\u4FEE\u6B63\uFF08\u5099\u8003\u30FB\u304A\u5BA2\u69D8\u60C5\u5831\u30FB\u5165\u91D1\uFF09</button>`;
 
   // === キャンプ区画変更ボタン（キャンプ予約のみ） ===
   const _origCampId = res._origId || res.id;
@@ -1649,6 +1676,145 @@ async function cancelReservationApi(resId, name) {
   } catch (e) {
     console.error('cancel error', e);
     showToast('\u901A\u4FE1\u30A8\u30E9\u30FC');
+  }
+}
+
+// ===== 予約内容の修正（2026-08-25 運営要望⑧） =====
+//
+// サーバ側の POST/PATCH /updateReservation は 2026-05-05 から存在し、備考・お客様情報・
+// 入金ステータスの部分更新と audit_log 記録に対応していた。にもかかわらず、どの画面からも
+// 一度も呼ばれておらず（運営は「管理画面から直せない」と認識していた）、ここで初めて配線する。
+//
+// ★変えられないもの：日時・プラン・部屋・区画。在庫（slots）の取り直しが必要で、
+//   updateReservation はスロットを触らない。日程変更は「キャンセル→新規予約」で行う。
+//   キャンプの区画だけは専用の changeCampSites があるので従来どおりそちらを使う。
+// ★保存後は localStorage のスナップショットを捨てる。チェックイン操作が全件を
+//   localStorage へ書くため、残っていると loadReservations() が古い値を先に返し、
+//   保存したはずの備考が画面に反映されない。
+const PAYMENT_STATUS_OPTIONS = [
+  { value: '', label: '（未設定）' },
+  { value: 'unpaid', label: '未入金' },
+  { value: 'paid', label: '入金済み' },
+  { value: 'refunded', label: '返金済み' },
+];
+
+function paymentStatusLabel(value) {
+  const found = PAYMENT_STATUS_OPTIONS.find(o => o.value === (value || ''));
+  return found ? escapeHtml(found.label) : escapeHtml(String(value));
+}
+
+let _editContext = null;
+
+function openEditModal(resId) {
+  const list = loadReservations();
+  const res = list.find(r => (r._origId || r.id) === resId) || list.find(r => r.id === resId);
+  if (!res) { showToast('予約が見つかりません'); return; }
+  _editContext = {
+    id: resId,
+    before: {
+      name: res.name || '', kana: res.kana || '', phone: res.phone || '', email: res.email || '',
+      zip: res.zip || '', address1: res.address1 || '', address2: res.address2 || '',
+      note: res.note || '', paymentStatus: res.paymentStatus || '',
+    },
+  };
+  const b = _editContext.before;
+  const opts = PAYMENT_STATUS_OPTIONS
+    .map(o => `<option value="${escapeHtml(o.value)}"${o.value === b.paymentStatus ? ' selected' : ''}>${escapeHtml(o.label)}</option>`)
+    .join('');
+  let html = '<div class="modal-title">予約内容の修正</div>';
+  html += '<div style="font-size:0.8rem;color:#666;margin-bottom:12px;line-height:1.6">'
+    + '日時・プラン・部屋はここでは変更できません。'
+    + '日程を変える場合はキャンセルしてから取り直してください。'
+    + '</div>';
+  html += '<div class="form-group"><label>お名前</label><input type="text" id="editName" maxlength="50" value="' + escapeHtml(b.name) + '"></div>';
+  html += '<div class="form-group"><label>フリガナ</label><input type="text" id="editKana" maxlength="50" value="' + escapeHtml(b.kana) + '"></div>';
+  html += '<div class="form-group"><label>電話番号</label><input type="tel" id="editPhone" maxlength="20" value="' + escapeHtml(b.phone) + '"></div>';
+  html += '<div class="form-group"><label>メール</label><input type="email" id="editEmail" maxlength="100" value="' + escapeHtml(b.email) + '"></div>';
+  html += '<div class="form-group"><label>郵便番号</label><input type="text" id="editZip" maxlength="10" value="' + escapeHtml(b.zip) + '"></div>';
+  html += '<div class="form-group"><label>住所</label><input type="text" id="editAddress1" maxlength="100" value="' + escapeHtml(b.address1) + '"></div>';
+  html += '<div class="form-group"><label>番地・建物名</label><input type="text" id="editAddress2" maxlength="100" value="' + escapeHtml(b.address2) + '"></div>';
+  html += '<div class="form-group"><label>入金ステータス</label><select id="editPaymentStatus">' + opts + '</select></div>';
+  html += '<div class="form-group"><label>備考</label><textarea id="editNote" rows="4" maxlength="500">' + escapeHtml(b.note) + '</textarea></div>';
+  html += '<div style="display:flex;gap:8px;margin-top:12px">';
+  html += '<button class="btn-submit" style="flex:1;background:#f3f4f6;color:#374151" onclick="closeEditModal()">キャンセル</button>';
+  html += '<button class="btn-submit" style="flex:2" onclick="saveEdit()">保存する</button>';
+  html += '</div>';
+  document.getElementById('editContent').innerHTML = html;
+  document.getElementById('editOverlay').classList.add('show');
+  document.getElementById('editSheet').classList.add('show');
+}
+
+function closeEditModal() {
+  document.getElementById('editOverlay').classList.remove('show');
+  document.getElementById('editSheet').classList.remove('show');
+  _editContext = null;
+}
+
+// 更新エラーコード → 職員向けの日本語
+const EDIT_ERROR_MESSAGES = {
+  invalid_customer_name: 'お名前は50文字以内で入力してください',
+  invalid_customer_kana: 'フリガナは50文字以内で入力してください',
+  invalid_customer_phone: '電話番号は20文字以内で入力してください',
+  invalid_customer_email: 'メールアドレスの形式を確認してください',
+  invalid_customer_zip: '郵便番号は10文字以内で入力してください',
+  invalid_customer_address1: '住所は100文字以内で入力してください',
+  invalid_customer_address2: '番地・建物名は100文字以内で入力してください',
+  invalid_note: '備考は500文字以内で入力してください',
+  no_updatable_fields: '変更された項目がありません',
+  not_found: 'この予約は見つかりませんでした（既に削除済みの可能性）',
+};
+
+async function saveEdit() {
+  const ctx = _editContext;
+  if (!ctx) return;
+  const val = id => (document.getElementById(id) ? document.getElementById(id).value.trim() : '');
+  const after = {
+    name: val('editName'), kana: val('editKana'), phone: val('editPhone'), email: val('editEmail'),
+    zip: val('editZip'), address1: val('editAddress1'), address2: val('editAddress2'),
+    note: val('editNote'),
+    paymentStatus: document.getElementById('editPaymentStatus') ? document.getElementById('editPaymentStatus').value : '',
+  };
+  if (!after.name) { showToast('お名前は必須です'); return; }
+
+  // 変わった項目だけ送る（部分送信でも既存値はサーバ側でマージされる）
+  const customerKeys = ['name', 'kana', 'phone', 'email', 'zip', 'address1', 'address2'];
+  const customer = {};
+  for (const k of customerKeys) {
+    if (after[k] !== ctx.before[k]) customer[k] = after[k];
+  }
+  const body = { id: ctx.id };
+  if (Object.keys(customer).length > 0) body.customer = customer;
+  if (after.note !== ctx.before.note) body.note = after.note;
+  if (after.paymentStatus !== ctx.before.paymentStatus) body.payment = { status: after.paymentStatus };
+
+  if (!body.customer && body.note === undefined && !body.payment) {
+    showToast('変更がありません');
+    closeEditModal();
+    return;
+  }
+
+  try {
+    const res = await fetch(API_BASE + '/updateReservation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = EDIT_ERROR_MESSAGES[data.error] || ('保存失敗: ' + (data.error || res.status));
+      showToast(msg, 6000);
+      return;
+    }
+    // ★保存後にローカルのスナップショットを捨てる。残っていると loadReservations() が
+    //   古い値を先に返し、直したはずの内容が画面に出ない（チェックイン操作が書いた分）。
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    closeEditModal();
+    closeDetail();
+    await loadGcalData();
+    showToast('保存しました');
+  } catch (e) {
+    console.error('update error', e);
+    showToast('通信エラー');
   }
 }
 
@@ -1895,6 +2061,7 @@ function openAddForm() {
   document.getElementById('addDate').value = dateStr(currentDate);
   document.getElementById('addDate').onchange = onRoomChange;
   document.getElementById('addName').value = '';
+  document.getElementById('addKana').value = '';
   document.getElementById('addPhone').value = '';
   document.getElementById('addZip').value = '';
   document.getElementById('addAddress1').value = '';
@@ -2149,6 +2316,7 @@ async function submitReservation() {
   const roomIdFromSelect = document.getElementById('addRoom').value;
   const ds = document.getElementById('addDate').value;
   const name = document.getElementById('addName').value.trim();
+  const kana = document.getElementById('addKana').value.trim();
   const phone = document.getElementById('addPhone').value.trim();
   const zip = document.getElementById('addZip').value.trim();
   const address1 = document.getElementById('addAddress1').value.trim();
@@ -2244,7 +2412,7 @@ async function submitReservation() {
     startDate,
     endDate,
     nights: isStay ? 1 : 0,
-    customer: { name, phone, zip, address1, address2, isMember: false },
+    customer: { name, kana, phone, zip, address1, address2, isMember: false },
     guests: { adult: guests, elementary: 0, child: 0 },
     guestCount: isFutamiSauna ? guests : undefined,
     pricing: null,

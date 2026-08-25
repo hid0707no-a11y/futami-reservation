@@ -10,6 +10,7 @@ interface Res {
   planId?: string;
   startDate?: string;
   endDate?: string;
+  roomIds?: string[];
 }
 
 const stay = (planId: string, startDate: string, endDate: string): Res =>
@@ -185,6 +186,57 @@ describe('複数施設をまとめた行の色（capacity・2026-08-17 レビュ
   it('capacity を渡してもチェックアウトだけの日は out-only のまま', () => {
     const leaving = stay('camp_stay', '2026-08-09', '2026-08-10');
     expect(Ledger.ledgerCellLevel(marks([leaving], '2026-08-10'), 8)).toBe('out-only');
+  });
+});
+
+// 2026-08-25 要望③：キャンプの区画上限を 3→8 へ解放したことで、
+// 「1予約が複数区画を取る」形が日常的に起こる。件数で色を決めると満室が空きに見える。
+describe('複数区画を1予約で取る日の色（要望③・2026-08-25）', () => {
+  const campWith = (rooms: string[], date: string): Res =>
+    ({ planId: 'camp_stay', startDate: date, endDate: '2026-08-11', roomIds: rooms });
+  const allEight = ['camp_1', 'camp_2', 'camp_3', 'camp_4', 'camp_5', 'camp_6', 'camp_7', 'camp_8'];
+
+  it('1組が8区画すべてを取った日は「満」（件数1でも空きに見せない）', () => {
+    const list = [campWith(allEight, '2026-08-10')];
+    const m = marks(list, '2026-08-10');
+    // 従来どおり件数で判定すると「一部予約」に見えてしまう＝これが直した問題
+    expect(Ledger.ledgerCellLevel(m, 8)).toBe('some');
+    // 埋まった区画数を渡せば「満」
+    const units = Ledger.ledgerActiveUnits(list, '2026-08-10');
+    expect(units).toBe(8);
+    expect(Ledger.ledgerCellLevel(m, 8, units)).toBe('full');
+  });
+
+  it('2組で 5区画 + 3区画 なら満（重複なし）', () => {
+    const list = [
+      campWith(['camp_1', 'camp_2', 'camp_3', 'camp_4', 'camp_5'], '2026-08-10'),
+      campWith(['camp_6', 'camp_7', 'camp_8'], '2026-08-10'),
+    ];
+    expect(Ledger.ledgerActiveUnits(list, '2026-08-10')).toBe(8);
+    expect(Ledger.ledgerCellLevel(marks(list, '2026-08-10'), 8, Ledger.ledgerActiveUnits(list, '2026-08-10'))).toBe('full');
+  });
+
+  it('4区画なら「多め」、3区画なら「一部予約」', () => {
+    const four = [campWith(['camp_1', 'camp_2', 'camp_3', 'camp_4'], '2026-08-10')];
+    expect(Ledger.ledgerCellLevel(marks(four, '2026-08-10'), 8, Ledger.ledgerActiveUnits(four, '2026-08-10'))).toBe('many');
+    const three = [campWith(['camp_1', 'camp_2', 'camp_3'], '2026-08-10')];
+    expect(Ledger.ledgerCellLevel(marks(three, '2026-08-10'), 8, Ledger.ledgerActiveUnits(three, '2026-08-10'))).toBe('some');
+  });
+
+  it('チェックアウトだけの区画は埋まっていないものとして数える', () => {
+    const leaving: Res = { planId: 'camp_stay', startDate: '2026-08-09', endDate: '2026-08-10', roomIds: allEight };
+    expect(Ledger.ledgerActiveUnits([leaving], '2026-08-10')).toBe(0);
+    expect(Ledger.ledgerCellLevel(marks([leaving], '2026-08-10'), 8, 0)).toBe('out-only');
+  });
+
+  it('roomIds を持たない旧データは1件として数える（0件にして空きに見せない）', () => {
+    const legacy = stay('camp_stay', '2026-08-10', '2026-08-11');
+    expect(Ledger.ledgerActiveUnits([legacy], '2026-08-10')).toBe(1);
+  });
+
+  it('1部屋1行（capacity=1）は activeUnits を渡しても従来どおり', () => {
+    const one: Res = { planId: 'stay_6', startDate: '2026-08-10', endDate: '2026-08-11', roomIds: ['room_6_1'] };
+    expect(Ledger.ledgerCellLevel(marks([one], '2026-08-10'), 1, 1)).toBe('some');
   });
 });
 

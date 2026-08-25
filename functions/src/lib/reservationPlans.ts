@@ -64,7 +64,12 @@ export const RESERVATION_PLAN_RULES: Readonly<Record<string, PlanRule>> = {
   day_train_all: rule('fixed_day', ['room_train'], [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]),
   day_kitchen: rule('fixed_day', ['room_kitchen'], [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]),
 
-  camp_stay: rule('overnight', CAMP_ROOMS, CAMP_HOURS, 3, { maxNights: 3 }),
+  // ★区画上限は 8（＝全区画。2026-08-25 運営要望③で 3 から解放）。
+  //   泊数は maxNights:3 のままだが、1区画1泊が23slotなので 8区画×3泊=552slot となり
+  //   validation.ts の slots 上限(499)と Firestore トランザクションの 500 writes を超える。
+  //   実運用の上限は「8区画なら2泊 / 7区画なら3泊」（運営合意済み）で、
+  //   公開画面は index.html の getMaxNights() が transactionCap から自動で泊数を下げる。
+  camp_stay: rule('overnight', CAMP_ROOMS, CAMP_HOURS, 8, { maxNights: 3 }),
   lodge_stay: rule('overnight', LODGE_ROOMS, STAY_HOURS, 1, { maxNights: 14 }),
   lodge_day: rule('hourly_day', LODGE_ROOMS, [10, 11, 12, 13, 14, 15]),
   tennis_full: rule('tennis', COURT_ROOMS, undefined, COURT_ROOMS.length),
@@ -181,12 +186,22 @@ function validateHourlyDaySlots(
   return normalized.length > 0 && new Set(normalized).size === normalized.length ? normalized : null;
 }
 
+// テニス枠として受理する 30分刻みの時刻。
+// ★下限は 8:30（2026-08-25 運営要望⑦）。公園の開場が8:30なので 8:00〜9:00 の枠を廃止した。
+//   画面（index.html の hourlyRange.startMin / staff.html の allowedHours）だけを直しても
+//   API直叩きと旧キャッシュ画面から 0800 が通るため、在庫の正本であるここでも弾く。
+//   ★既存の 0800 予約データは壊れない＝canonicalize は createReservation でしか走らず、
+//     保存済み予約の再検証・スプシ同期・キャンセルはこの関数を通らない。
+const TENNIS_FIRST_START_MIN = 8 * 60 + 30; // 08:30
+const TENNIS_LAST_START_MIN = 21 * 60 + 30; // 21:30（終了22:00）
+
 function tennisMinutes(time: string): number | null {
   if (!/^\d{4}$/.test(time)) return null;
   const hour = Number(time.slice(0, 2));
   const minute = Number(time.slice(2, 4));
   const total = hour * 60 + minute;
-  return (minute === 0 || minute === 30) && total >= 8 * 60 && total <= 21 * 60 + 30 ? total : null;
+  return (minute === 0 || minute === 30)
+    && total >= TENNIS_FIRST_START_MIN && total <= TENNIS_LAST_START_MIN ? total : null;
 }
 
 function hhmm(totalMinutes: number): string {

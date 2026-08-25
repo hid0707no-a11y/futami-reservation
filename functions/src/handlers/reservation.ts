@@ -21,6 +21,14 @@ import {
 } from '../lib/businessDays';
 import { RESERVATION_STATUS } from '../constants';
 
+/**
+ * changeCampSites で一度に書ける slot の上限。
+ * Firestore のトランザクションは 500 writes までで、予約doc の update 1件を使うので 499。
+ * 1区画1泊 = 23 slot（CAMP_HOURS）なので、8区画なら2泊(368)まで／7区画なら3泊(483)まで。
+ * 2026-08-25 要望③で区画上限を 3→8 に広げた際に追加。
+ */
+const CAMP_SITE_CHANGE_SLOT_CAP = 499;
+
 /** GET /listReservations?date=&status=&from=&to= — スタッフ用予約一覧 */
 export const listReservations = onRequest(
   { region: 'asia-northeast1', cors: false },
@@ -158,8 +166,12 @@ export const changeCampSites = onRequest(
     const id = (req.body?.id || '').toString();
     const newCampSites: string[] = Array.isArray(req.body?.newCampSites) ? req.body.newCampSites : [];
     if (!id) { res.status(400).json({ error: 'id_required' }); return; }
-    if (newCampSites.length === 0 || newCampSites.length > 3) {
-      res.status(400).json({ error: 'invalid_camp_sites_count', detail: '1〜3区画' });
+    // ★上限は 8 区画（2026-08-25 運営要望③で 3 から解放）。
+    //   ただし「区画数 × 泊数 × 23時間」が Firestore トランザクションの 500 writes を
+    //   超えられないため、実際に書ける組み合わせは下の CAMP_SITE_CHANGE_SLOT_CAP で弾く
+    //   （8区画なら2泊まで / 7区画なら3泊まで）。
+    if (newCampSites.length === 0 || newCampSites.length > 8) {
+      res.status(400).json({ error: 'invalid_camp_sites_count', detail: '1〜8区画' });
       return;
     }
     const validCamp = /^camp_[1-8]$/;
@@ -206,6 +218,18 @@ export const changeCampSites = onRequest(
           for (const { date, hour } of dateHourPairs) {
             newSlots.push(`${cid}|${date}|${hour}`);
           }
+        }
+
+        // ★区画上限を8へ広げた（2026-08-25 要望③）ことで、区画数×泊数によっては
+        //   slot 書込みが Firestore トランザクションの 500 writes を超える。
+        //   超えた場合、Firestore は途中まで書いた状態にはならず全体が失敗するが、
+        //   職員には原因不明の 500 に見えるので、ここで理由の分かる 400 にして返す。
+        //   （予約doc の update 1件ぶんを引いて 499 を上限にする）
+        if (newSlots.length > CAMP_SITE_CHANGE_SLOT_CAP) {
+          throw {
+            code: 'camp_sites_too_many_slots',
+            detail: `${newCampSites.length}区画×この予約の泊数は一度に変更できません（8区画なら2泊まで／7区画なら3泊まで）`,
+          };
         }
 
         // 停止中のキャンプ区画へ付け替えられないようにする（createReservation と同じ判定）。
@@ -273,6 +297,10 @@ export const changeCampSites = onRequest(
     } catch (e: any) {
       if (e?.code === 'not_found') { res.status(404).json({ error: 'not_found' }); return; }
       if (e?.code === 'invalid_status') { res.status(400).json({ error: 'invalid_status', detail: e.detail }); return; }
+      if (e?.code === 'camp_sites_too_many_slots') {
+        res.status(400).json({ error: 'camp_sites_too_many_slots', detail: e.detail });
+        return;
+      }
       if (e?.code === 'not_camp_reservation') { res.status(400).json({ error: 'not_camp_reservation' }); return; }
       if (e?.code === 'no_slots') { res.status(400).json({ error: 'no_slots' }); return; }
       // createReservation と同じ error コード・同じ 400 で返す（画面側の分岐を増やさない）
@@ -381,7 +409,7 @@ export const cancelReservation = onRequest(
           planId: cancelledData.planId || '', roomIds: cancelledData.roomIds || [],
           timeText: cancelledData.isTennis ? (formatTennisTimeRanges(cancelledData.slots) || undefined) : undefined,
           startDate: cancelledData.startDate || '', endDate: cancelledData.endDate || '',
-          customerName: cancelledData.customer.name || '', customerPhone: cancelledData.customer.phone || '',
+          customerName: cancelledData.customer.name || '', customerKana: cancelledData.customer.kana || '', customerPhone: cancelledData.customer.phone || '',
           customerEmail: cancelledData.customer.email || '',
           customerAddress: formatCustomerAddress(cancelledData.customer),
           note: cancelledData.note || '',
