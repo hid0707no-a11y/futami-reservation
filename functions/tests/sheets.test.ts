@@ -2,10 +2,33 @@
 // 2026-05-05 新設（/gfu Phase A-2）
 
 import { rowToArray, reservationToRow, SHEET_HEADERS, ReservationRow } from '../src/lib/sheets';
+import { SHEET_LAST_COLUMN } from '../src/constants';
+
+/** 列数 → スプシの列記号（1→A, 26→Z, 27→AA）。 */
+function columnLetter(n: number): string {
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
 
 describe('SHEET_HEADERS', () => {
-  it('26列（A:Z）に固定されている（変更時は SYNC_CLEAR_RANGE_* も同期更新が必要）', () => {
-    expect(SHEET_HEADERS).toHaveLength(26);
+  it('27列（A:AA）に固定されている', () => {
+    expect(SHEET_HEADERS).toHaveLength(27);
+  });
+
+  // ★列を足したのに SHEET_LAST_COLUMN を直し忘れると、増やした列がスプシに
+  //   書かれないまま静かに落ちる（clear/update の範囲がこの定数だけで決まるため）。
+  //   ★5 の作業手順にある SYNC_CLEAR_RANGE_* は参照0件の死に定数なので当てにしない。
+  it('SHEET_LAST_COLUMN が列数と一致している（直し忘れを止める）', () => {
+    expect(SHEET_LAST_COLUMN).toBe(columnLetter(SHEET_HEADERS.length));
+  });
+
+  it('列名に重複が無い', () => {
+    expect(new Set(SHEET_HEADERS).size).toBe(SHEET_HEADERS.length);
   });
 
   it('最初の5列はメタ情報', () => {
@@ -18,8 +41,15 @@ describe('SHEET_HEADERS', () => {
     expect(SHEET_HEADERS[emailIdx + 2]).toBe('住所');
   });
 
-  it('予約番号は2026-05-13追加で末尾（Z列）に並ぶ', () => {
-    expect(SHEET_HEADERS[SHEET_HEADERS.length - 1]).toBe('予約番号');
+  it('予約番号は2026-05-13追加でZ列（26列目）に並ぶ', () => {
+    expect(SHEET_HEADERS[25]).toBe('予約番号');
+  });
+
+  // ★2026-08-25 要望⑩。「お名前」の直後ではなく末尾に置いたのは、途中に挿すと
+  //   L列以降を参照している外部の集計・ピボットが静かにずれるため。
+  it('フリガナは2026-08-25追加で末尾（AA列・27列目）に並ぶ', () => {
+    expect(SHEET_HEADERS[SHEET_HEADERS.length - 1]).toBe('フリガナ');
+    expect(SHEET_HEADERS[26]).toBe('フリガナ');
   });
 });
 
@@ -52,13 +82,38 @@ describe('rowToArray', () => {
       saunaOptions: '',
       note: '備考テスト',
       displayId: 'F-ABC123',
+      customerKana: 'ヤマダタロウ',
     };
     const arr = rowToArray(row);
-    expect(arr).toHaveLength(26);
+    expect(arr).toHaveLength(27);
+    expect(arr).toHaveLength(SHEET_HEADERS.length); // ヘッダと列数がずれない
     expect(arr[0]).toBe('abc123');
     expect(arr[2]).toBe('confirmed');
-    expect(arr[arr.length - 1]).toBe('F-ABC123'); // 末尾は displayId
-    expect(arr[arr.length - 2]).toBe('備考テスト'); // 備考は末尾-1
+    expect(arr[arr.length - 1]).toBe('ヤマダタロウ'); // 末尾は フリガナ（AA列）
+    expect(arr[arr.length - 2]).toBe('F-ABC123');    // その手前が 予約番号（Z列）
+    expect(arr[arr.length - 3]).toBe('備考テスト');
+  });
+
+  it('フリガナ未入力（旧予約）は空文字で埋まり、列がずれない', () => {
+    const row = reservationToRow('id-old', {
+      status: 'confirmed', planId: 'stay_6', roomIds: ['room_6_1'],
+      startDate: '2026-05-10', endDate: '2026-05-11',
+      customer: { name: '山田', phone: '090-0000-0000' },
+    });
+    expect(row.customerKana).toBe('');
+    const arr = rowToArray(row);
+    expect(arr).toHaveLength(SHEET_HEADERS.length);
+    expect(arr[arr.length - 1]).toBe('');
+  });
+
+  it('フリガナは customer.kana から拾う', () => {
+    const row = reservationToRow('id-new', {
+      status: 'confirmed', planId: 'stay_6', roomIds: ['room_6_1'],
+      startDate: '2026-05-10', endDate: '2026-05-11',
+      customer: { name: '山田 太郎', kana: 'ヤマダ タロウ', phone: '090-0000-0000' },
+    });
+    expect(row.customerKana).toBe('ヤマダ タロウ');
+    expect(rowToArray(row)[SHEET_HEADERS.indexOf('フリガナ')]).toBe('ヤマダ タロウ');
   });
 });
 

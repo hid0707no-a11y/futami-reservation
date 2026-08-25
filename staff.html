@@ -1610,7 +1610,7 @@ function showDetail(resId) {
     <div class="detail-row" style="background:#fff8e1;margin:4px -16px;padding:12px 16px;border-radius:8px"><span class="label" style="color:#b45309;font-weight:700">\u3054\u8acb\u6c42\u91d1\u984d</span><span class="value" style="color:#dc2626;font-weight:800;font-size:1.15rem">${typeof res.pricingTotal === 'number' ? res.pricingTotal.toLocaleString() + '\u5186' : '\u2014'}</span></div>
     <div class="detail-row"><span class="label">\u6599\u91D1\u4F53\u7CFB</span><span class="value" style="font-size:0.85rem;color:#666">${plan ? plan.price : '-'}</span></div>
     <div class="detail-row"><span class="label">\u5099\u8003</span><span class="value">${escapeHtml(res.note) || '---'}</span></div>
-    <div class="detail-row"><span class="label">\u5165\u91D1</span><span class="value">${paymentStatusLabel(res.paymentStatus)}</span></div>
+    <div class="detail-row"><span class="label">\u304A\u652F\u6255\u3044</span><span class="value">${paymentStatusLabel(res.paymentStatus)}</span></div>
   `;
 
   if (res.checkedIn) {
@@ -1621,7 +1621,7 @@ function showDetail(resId) {
 
   // === 予約内容の修正ボタン（2026-08-25 運営要望⑧） ===
   const _editId = res._origId || res.id;
-  html += `<button class="checkin-btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;margin-top:8px" onclick="openEditModal('${_editId}')">\u5185\u5BB9\u3092\u4FEE\u6B63\uFF08\u5099\u8003\u30FB\u304A\u5BA2\u69D8\u60C5\u5831\u30FB\u5165\u91D1\uFF09</button>`;
+  html += `<button class="checkin-btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;margin-top:8px" onclick="openEditModal('${_editId}')">\u5185\u5BB9\u3092\u4FEE\u6B63\uFF08\u5099\u8003\u30FB\u304A\u5BA2\u69D8\u60C5\u5831\uFF09</button>`;
 
   // === キャンプ区画変更ボタン（キャンプ予約のみ） ===
   const _origCampId = res._origId || res.id;
@@ -1691,11 +1691,15 @@ async function cancelReservationApi(resId, name) {
 // ★保存後は localStorage のスナップショットを捨てる。チェックイン操作が全件を
 //   localStorage へ書くため、残っていると loadReservations() が古い値を先に返し、
 //   保存したはずの備考が画面に反映されない。
+// お支払いの状況を職員が記録するための欄（2026-08-25 要望⑧で初めて画面に出した）。
+// ★システムは新規予約に必ず「現地でのお支払い・未入金」を記録しているが、これまで
+//   どの画面にも出しておらず、実際に払われたかどうかは誰も更新していなかった。
+//   使わない運用でも支障はない（「記録しない」のままで従来と同じ）。
 const PAYMENT_STATUS_OPTIONS = [
-  { value: '', label: '（未設定）' },
-  { value: 'unpaid', label: '未入金' },
-  { value: 'paid', label: '入金済み' },
-  { value: 'refunded', label: '返金済み' },
+  { value: '', label: '記録しない' },
+  { value: 'unpaid', label: 'まだお支払いいただいていない' },
+  { value: 'paid', label: 'お支払い済み' },
+  { value: 'refunded', label: '返金した' },
 ];
 
 function paymentStatusLabel(value) {
@@ -1733,7 +1737,8 @@ function openEditModal(resId) {
   html += '<div class="form-group"><label>郵便番号</label><input type="text" id="editZip" maxlength="10" value="' + escapeHtml(b.zip) + '"></div>';
   html += '<div class="form-group"><label>住所</label><input type="text" id="editAddress1" maxlength="100" value="' + escapeHtml(b.address1) + '"></div>';
   html += '<div class="form-group"><label>番地・建物名</label><input type="text" id="editAddress2" maxlength="100" value="' + escapeHtml(b.address2) + '"></div>';
-  html += '<div class="form-group"><label>入金ステータス</label><select id="editPaymentStatus">' + opts + '</select></div>';
+  html += '<div class="form-group"><label>お支払いの状況</label><select id="editPaymentStatus">' + opts + '</select>';
+  html += '<div style="font-size:0.75rem;color:#888;margin-top:4px">料金を受け取ったかどうかの記録です。使わない場合は「記録しない」のままで構いません（予約者一覧には出ません）。</div></div>';
   html += '<div class="form-group"><label>備考</label><textarea id="editNote" rows="4" maxlength="500">' + escapeHtml(b.note) + '</textarea></div>';
   html += '<div style="display:flex;gap:8px;margin-top:12px">';
   html += '<button class="btn-submit" style="flex:1;background:#f3f4f6;color:#374151" onclick="closeEditModal()">キャンセル</button>';

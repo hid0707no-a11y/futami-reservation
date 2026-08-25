@@ -33,6 +33,7 @@ export interface ReservationRow {
   saunaOptions: string;
   note: string;
   displayId: string; // 2026-05-13 追加（要望#8 関連・運営が「F-XXXXXX」で検索できるよう Sheets にも列追加）
+  customerKana: string; // 2026-08-25 追加（運営要望⑩・AA列）
 }
 
 // SHEET_HEADERS と rowToArray は同じ列順を維持しなければならない。
@@ -48,6 +49,12 @@ export interface ReservationRow {
 // 直近の変更履歴：
 //  - 2026-05-13: 「予約番号」を末尾に追加（26列目・Z列）。要望#8 関連で displayId を
 //    Sheets でも検索可能にするため。既存の A:Y 範囲を参照する外部ピボットには影響なし。
+//  - 2026-08-25: 「フリガナ」を末尾に追加（27列目・AA列）。運営要望⑩。
+//    ★「お名前」の直後(K列)ではなく末尾にしたのは、途中に挿すと L列以降を参照している
+//      外部の集計・ピボットが静かにずれるため。運営に確認したところ有無を把握できていなかったので、
+//      壊れようがない末尾を選んだ（2026-05-13 の予約番号追加と同じ判断）。
+//    ★追加前に Sheets API で reservations / cancelled / meta の3タブとも
+//      columnCount=26（AA以降はグリッドごと存在しない＝運営メモ0件）であることを実測済み。
 export const SHEET_HEADERS: string[] = [
   '予約ID', '登録日時', 'ステータス', 'プランID', '部屋ID',
   '利用開始日', '利用終了日', '泊数', '時間帯',
@@ -56,6 +63,7 @@ export const SHEET_HEADERS: string[] = [
   '合計金額', '照明料金', '平日割適用枠数',
   '市民区分', '予約経路', 'サウナオプション', '備考',
   '予約番号', // 2026-05-13 追加（Z列・displayId）
+  'フリガナ', // 2026-08-25 追加（AA列・運営要望⑩）
 ];
 
 /** ReservationRow → スプシ書込み用配列（列順は SHEET_HEADERS と一致）。 */
@@ -68,6 +76,7 @@ export function rowToArray(r: ReservationRow): (string | number)[] {
     r.pricingTotal, r.pricingLightingFee, r.weekdayDiscountHours,
     r.isResident, r.createdBy, r.saunaOptions, r.note,
     r.displayId,
+    r.customerKana,
   ];
 }
 
@@ -116,5 +125,6 @@ export function reservationToRow(id: string, data: any): ReservationRow {
     // displayId は Firestore に保存されていればそれを使用、未設定の旧予約は doc.id から fallback 生成。
     // backfill スクリプト実行後は基本的にすべて保存済み（fallback は念のための保険）。
     displayId: data?.displayId || generateDisplayId(id),
+    customerKana: customer.kana || '', // 2026-08-25 運営要望⑩（未入力・旧予約は空欄）
   };
 }

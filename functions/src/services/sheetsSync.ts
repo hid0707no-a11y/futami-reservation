@@ -7,8 +7,12 @@
 //   reservations タブ（A:<SHEET_LAST_COLUMN>） … confirmed 全件
 //   cancelled タブ（A:<SHEET_LAST_COLUMN>）   … cancelled 全件
 //   meta タブ（A:B）                          … 最終同期時刻 + 件数
-//   ※ A:Z 限定で clear するので運営の AA列以降のメモは温存される
+//   ※ clear は A:<SHEET_LAST_COLUMN> に限定するので、その右側に運営が書いたメモは温存される
 //   ※ 2026-05-05: A:Y で限定運用開始（Z以降をメモ列として温存）
+//   ※ 2026-05-13: 予約番号を Z列へ追加（clear範囲 A:Z・メモ列は AA以降）
+//   ※ 2026-08-25: フリガナを AA列へ追加（clear範囲 A:AA・**メモ列は AB以降**）。
+//      追加前に Sheets API で3タブとも columnCount=26 を実測し、AA以降にメモが
+//      1件も無いことを確認してから広げている（運営のメモを消していない）。
 //   ※ 2026-05-13: 「予約番号」列を Z に追加 → A:Z 拡張。運営は AA 列以降にメモを退避。
 //   ※ 2026-05-13: SYNC_CLEAR_RANGE_* を constants.ts SSOT から import するよう統一（ドリフト防止）
 

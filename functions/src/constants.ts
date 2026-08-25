@@ -70,10 +70,14 @@ export const VALID_ROOM_IDS = new Set<string>([
 //  - 2026-05-13: SSOT を lib/sheets.ts に一本化（本ファイルは re-export のみ）
 export { SHEET_HEADERS } from './lib/sheets';
 
-// SHEET_HEADERS の長さに対応するスプシ列レンジ（26列なら A:Z）。
-// 列を増やす時は SHEET_HEADERS 拡張＋このレンジを A:AA 等に同期更新する。
+// SHEET_HEADERS の長さに対応するスプシ列レンジ（27列なら A:AA）。
+// 列を増やす時は SHEET_HEADERS 拡張＋このレンジを同期更新する。
 // services/sheetsSync.ts のハードコード値もこの定数を import するよう統一済（2026-05-13）。
-export const SHEET_LAST_COLUMN = 'Z';
+// ★実際に clear/update の範囲を決めているのはこの定数だけ。下の SYNC_CLEAR_RANGE_* は
+//   定義だけで参照されていない（sheetsSync.ts は SHEET_LAST_COLUMN を引数で受け取る）。
+//   ここを直し忘れると、増やした列がスプシに書かれないまま静かに落ちる。
+// 2026-08-25: フリガナ列の追加で 'Z'(26列) → 'AA'(27列)。
+export const SHEET_LAST_COLUMN = 'AA';
 export const SYNC_CLEAR_RANGE_RESERVATIONS = `reservations!A:${SHEET_LAST_COLUMN}`;
 export const SYNC_CLEAR_RANGE_CANCELLED = `cancelled!A:${SHEET_LAST_COLUMN}`;
 export const SYNC_CLEAR_RANGE_META = 'meta!A:B';

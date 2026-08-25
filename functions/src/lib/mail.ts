@@ -149,6 +149,7 @@ export async function sendConfirmationEmail(data: MailData): Promise<void> {
 
 ━━━━━━━━━━━━━━━━━━
 予約番号：${data.reservationId}
+お名前：${data.customerName}${data.customerKana ? '（' + data.customerKana + '）' : ''}
 プラン：${data.planName}
 施設：${data.roomName}
 日程：${data.startDate}${data.startDate !== data.endDate ? ' ～ ' + data.endDate : ''}${data.timeText ? '\n時間：' + data.timeText : ''}${data.partyText ? '\n' + data.partyText : ''}${data.customerAddress ? '\nご住所：' + data.customerAddress : ''}${data.saunaOptionsText ? '\nオプション：' + data.saunaOptionsText : ''}${data.note ? '\n備考：' + data.note : ''}
