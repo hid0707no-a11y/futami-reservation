@@ -1365,7 +1365,8 @@ const PLANS = [
     requireAddress: true,
     basePrice: 4720, priceDisplay: '4,720円/棟/泊',
     badge: '宿泊', badgeColor: '#6366f1',
-    extras: [{ id: 'sheet', name: 'シーツ', price: 340, unit: '1組' }] },
+    // 2026-08-25 運営要望②: シーツ(340円/1組)の貸出を完全廃止（再開予定なし）。extras を空に。
+    extras: [] },
   { id: 'lodge_day', name: 'ロッジ日帰り', planType: 'hourly', category: 'outdoor',
     rooms: ['lodge_a','lodge_b'],
     slots: [10,11,12,13,14,15],
@@ -1380,7 +1381,8 @@ const PLANS = [
     rooms: ['court_1','court_2','court_3','court_4','court_5'],
     allowMultiSelect: true, // 複数コートを同時予約可能
     slots: 'hourly',
-    hourlyRange: { start: 8, end: 22 },
+    // startMin=30 ＝ 最初の枠を 8:30〜9:30 にする（8:30開場・2026-08-25 運営要望⑦で 8:00〜9:00 を廃止）
+    hourlyRange: { start: 8, startMin: 30, end: 22 },
     basePrice: 630,
     residentPrice: 630, nonResidentPrice: 760,
     priceUnit: '面/時',
@@ -1399,7 +1401,8 @@ const PLANS = [
   { id: 'tennis_half', name: '半面コート（壁打ち練習用）', planType: 'hourly', category: 'sport',
     rooms: ['court_wall'],
     slots: 'hourly',
-    hourlyRange: { start: 8, end: 22 },
+    // 全面と同じく 8:30 始まり（2026-08-25 運営要望⑦）
+    hourlyRange: { start: 8, startMin: 30, end: 22 },
     basePrice: 240,
     residentPrice: 240, nonResidentPrice: 280,
     priceUnit: '半面/時',
@@ -1539,8 +1542,7 @@ const state = {
   // 空配列＝未選択。最大3区画まで（plan.maxSites で制限）
   selectedCampSites: [],
   // 2026-05-13 要望#10: キャンプ「テント追加(50円/1張)」を完全廃止。state.campTents 削除済。
-  // ロッジシーツ
-  lodgeSheets: 0,
+  // 2026-08-25 要望②: ロッジ「シーツ(340円/1組)」を完全廃止。state.lodgeSheets 削除済。
   // サウナオプション
   saunaTowels: 0,
   saunaTarpTent: 0,
@@ -2125,7 +2127,6 @@ function selectPlanFromSearch(planId) {
   state.guestsChild = 0;
   state.guestsInfant = 0;
   state.selectedCampSites = [];
-  state.lodgeSheets = 0;
   state.saunaTowels = 0;
   state.saunaTarpTent = 0;
   state.saunaIce = 0;
@@ -2495,7 +2496,6 @@ function selectPlan(planId) {
   state.guestsInfant = 0;
   state.guests = 2;
   state.selectedCampSites = [];
-  state.lodgeSheets = 0;
   state.saunaTowels = 0;
   state.saunaTarpTent = 0;
   state.saunaIce = 0;
@@ -3183,7 +3183,7 @@ function renderSiteMap(context) {
 
 function getExtraCount(extraId) {
   // 2026-05-13 要望#10: 'tent' は廃止済（state.campTents 削除）
-  if (extraId === 'sheet') return state.lodgeSheets;
+  // 2026-08-25 要望②: 'sheet' も廃止済（state.lodgeSheets 削除）
   if (extraId === 'towel') return state.saunaTowels;
   if (extraId === 'tarp_tent') return state.saunaTarpTent;
   if (extraId === 'ice') return state.saunaIce;
@@ -3192,11 +3192,7 @@ function getExtraCount(extraId) {
 
 function stepExtra(extraId, delta) {
   // 2026-05-13 要望#10: 'tent' 分岐は廃止済（state.campTents 削除）
-  if (extraId === 'sheet') {
-    state.lodgeSheets = Math.max(0, Math.min(10, state.lodgeSheets + delta));
-    const el = document.getElementById('extra-sheet-count');
-    if (el) el.textContent = state.lodgeSheets;
-  }
+  // 2026-08-25 要望②: 'sheet' 分岐も廃止済（state.lodgeSheets 削除）
   if (extraId === 'towel') {
     state.saunaTowels = Math.max(0, Math.min(8, state.saunaTowels + delta));
     const el = document.getElementById('extra-towel-count');
@@ -3458,8 +3454,9 @@ function renderHourlyGrid() {
         occupiedByMe.add(addMinutes(sk, 30));
       }
     }
-    // 30分刻みで1時間枠を生成: 8:00-9:00, 8:30-9:30, ..., 21:00-22:00
-    for (let totalMin = range.start * 60; totalMin + 60 <= range.end * 60; totalMin += 30) {
+    // 30分刻みで1時間枠を生成: 8:30-9:30, 9:00-10:00, ..., 21:00-22:00
+    // ★range.startMin は最初の枠の開始分（テニスは 30 ＝ 8:30 始まり。8:30開場のため 8:00 枠は出さない）
+    for (let totalMin = range.start * 60 + (range.startMin || 0); totalMin + 60 <= range.end * 60; totalMin += 30) {
       const sH = Math.floor(totalMin / 60);
       const sM = totalMin % 60;
       const eMin = totalMin + 60;
@@ -4197,7 +4194,7 @@ async function _submitBookingInner() {
         guests: { adult: state.guestsAdult || 0, elementary: state.guestsChild || 0, child: state.guestsInfant || 0 },
         pricing: {
           basePrice: 0, personFee: 0,
-          optionFee: (state.saunaTowels * 550) + (state.saunaTarpTent * 1100) + (state.saunaIce * 4400) + (state.lodgeSheets * 340),
+          optionFee: (state.saunaTowels * 550) + (state.saunaTarpTent * 1100) + (state.saunaIce * 4400),
           total: state.totalPrice || 0,
           tennis: tennisPricingInfo, midori: midoriPricingInfo, sportGuestEstimate,
           saunaOptions: plan.planType === 'sauna' ? { towels: state.saunaTowels, tarpTent: state.saunaTarpTent, ice20kg: state.saunaIce } : undefined,
@@ -4303,7 +4300,6 @@ async function _submitBookingInner() {
     guests: state.guests,
     campSites: state.selectedCampSites.length,
     selectedCampSites: state.selectedCampSites.slice(),
-    lodgeSheets: state.lodgeSheets,
     saunaTowels: state.saunaTowels,
     saunaTarpTent: state.saunaTarpTent,
     saunaIce: state.saunaIce,

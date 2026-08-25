@@ -865,11 +865,16 @@ const PLANS = [
     price: '330円/時', badge: '\u2600\uFE0F 日帰り', color: '#f59e0b' },
 
   // テニス（時間を都度選ぶ）
+  // ★allowedHours は 9時始まり（2026-08-25 運営要望⑦で 8:00〜9:00 を廃止）。
+  //   職員入力は1時間単位なので 8:30 始まりを表現できず、サーバ下限(8:30)を割る 8:00 を出すと
+  //   plan_slot_mismatch で 400 になる。8:00〜9:00 の受付が要る場合は公開画面から取る。
   { id: 'tennis_full', name: 'テニスコート', rooms: ['court_1','court_2','court_3','court_4','court_5'],
-    slots: 'hourly', price: '市民630円/市外760円/面/時', badge: '\uD83C\uDFBE', color: '#0ea5e9' },
+    slots: 'hourly', allowedHours: [9,10,11,12,13,14,15,16,17,18,19,20,21],
+    price: '市民630円/市外760円/面/時', badge: '\uD83C\uDFBE', color: '#0ea5e9' },
   // 半面（壁打ち練習用・court_wall 専用）。1枠(1時間)定額＝2026-07-21運営確認
   { id: 'tennis_half', name: '半面コート（壁打ち練習用）', rooms: ['court_wall'],
-    slots: 'hourly', price: '市民240円/市外280円/枠(1時間)', badge: '\uD83C\uDFBE', color: '#0284c7' },
+    slots: 'hourly', allowedHours: [9,10,11,12,13,14,15,16,17,18,19,20,21],
+    price: '市民240円/市外280円/枠(1時間)', badge: '\uD83C\uDFBE', color: '#0284c7' },
   // みどりの広場（3コマ制）
   { id: 'midori_am', name: 'みどりの広場 午前', rooms: ['midori'],
     slots: [8,9,10,11], price: '市民1,890円/市外2,200円', badge: '\uD83C\uDF05 午前', color: '#f97316' },
