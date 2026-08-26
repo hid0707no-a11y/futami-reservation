@@ -314,10 +314,14 @@ const COURTS = [
   { id: 'court_wall', label: '半面' },  // 壁打ち練習用の半面コート（2026-07-21 上村さん回答①の呼称）
 ];
 
-// 30分単位の時刻スロット ("0800", "0830", "0900", ..., "2130")
+// 30分単位の時刻スロット ("0830", "0900", ..., "2130")
+// ★2026-08-25 運営要望⑦で 8:00〜9:00 を廃止（8:30開場）。サーバ（reservationPlans.ts の
+//   TENNIS_FIRST_START_MIN）も公開画面も 8:30 始まりなので、ここに 08:00 の列を出すと
+//   「空いている」ように見えて誰も入れられない枠になる（2026-08-26 レビュー指摘）。
+//   過去の 0800 予約は normalizeStoredTennisTimes が読めるが列が無いので描かれない（過去分のみ）。
 const TIME_SLOTS = [];
 for (let h = 8; h <= 21; h++) {
-  TIME_SLOTS.push(`${String(h).padStart(2,'0')}00`);
+  if (h > 8) TIME_SLOTS.push(`${String(h).padStart(2,'0')}00`);
   TIME_SLOTS.push(`${String(h).padStart(2,'0')}30`);
 }
 function timeLabel(t) { return `${t.slice(0,2)}:${t.slice(2)}`; }
