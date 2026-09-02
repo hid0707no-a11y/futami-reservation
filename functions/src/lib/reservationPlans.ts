@@ -115,6 +115,57 @@ function addDaysUtc(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// ===== ロッジの相互占有（2026-09-02 追加・二重予約バグの修正）=====
+//
+// STAY_HOURS は [16..23, 0..9] なので、連泊の「中日」には 10〜15時の slot が作られない。
+// lodge_day の時間帯 [10..15] はその空白と1時間もずれずに一致するため、slot キーが
+// 1つも重ならず 409 にならない。＝**宿泊客が滞在中のロッジを日帰り客に売れてしまう**。
+// （館の日帰りプランは 8/9時 か 16時 を含むので偶然この穴に落ちない。lodge_day だけ）
+//
+// 中日の見分け方：その日の **朝9時と夕16時が両方** 埋まっている＝宿泊客が日中も居る。
+//   - チェックアウト日は 0〜9時だけ（9時に発つ）→ 日帰り利用は成立する
+//   - チェックイン日は 16〜23時だけ（16時に来る）→ 日帰り利用は成立する
+//   - 中日は 0〜9 と 16〜23 の両方 → 日中も滞在＝日帰り利用は不可
+// サウナの alternateSaunaKeys（どれか1つでも在れば競合＝OR）と違い、
+// こちらは **全部揃って初めて競合**（AND）なので、グループの配列として返す。
+const LODGE_STAY_MORNING_HOUR = 9;   // 宿泊の最終時間帯（チェックアウト 9:00）
+const LODGE_STAY_EVENING_HOUR = 16;  // 宿泊の開始時間帯（チェックイン 16:00）
+const LODGE_DAY_FIRST_HOUR = 10;     // lodge_day の先頭時間帯
+
+/**
+ * ロッジの二重予約を検出するための「全部揃ったら競合」グループを返す。
+ * 戻り値の各配列は、**その全キーが slots に実在したときだけ**競合とみなす。
+ * ロッジ以外のプランでは空配列（＝追加チェック無し）。
+ */
+export function lodgeConflictGroups(
+  planId: string,
+  roomIds: readonly string[],
+  startDate: string,
+  endDate: string,
+): string[][] {
+  const rooms = roomIds.filter(r => (LODGE_ROOMS as readonly string[]).includes(r));
+  if (rooms.length === 0) return [];
+
+  if (planId === 'lodge_day') {
+    // 日帰り：その日が誰かの連泊の中日なら不可
+    return rooms.map(r => [
+      `${r}|${startDate}|${LODGE_STAY_MORNING_HOUR}`,
+      `${r}|${startDate}|${LODGE_STAY_EVENING_HOUR}`,
+    ]);
+  }
+
+  if (planId === 'lodge_stay') {
+    // 宿泊：自分の中日（開始の翌日〜チェックアウト前日）に既存の日帰りがあれば不可
+    const groups: string[][] = [];
+    for (let d = addDaysUtc(startDate, 1); d < endDate; d = addDaysUtc(d, 1)) {
+      for (const r of rooms) groups.push([`${r}|${d}|${LODGE_DAY_FIRST_HOUR}`]);
+    }
+    return groups;
+  }
+
+  return [];
+}
+
 function isRealIsoDate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const d = new Date(value + 'T00:00:00Z');

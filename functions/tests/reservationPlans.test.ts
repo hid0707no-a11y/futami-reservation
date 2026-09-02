@@ -1,4 +1,4 @@
-import { canonicalizeReservation } from '../src/lib/reservationPlans';
+import { canonicalizeReservation, lodgeConflictGroups } from '../src/lib/reservationPlans';
 
 const STAY_HOURS = [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9];
 const CAMP_HOURS = [14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12];
@@ -270,6 +270,73 @@ describe('canonicalizeReservation', () => {
       slots: fixedSlots(['sauna_share'], '2026-08-05', [11,12]),
       startDate: '2026-08-05', endDate: '2026-08-05', nights: 0,
     })).toEqual({ ok: false, error: 'plan_slot_mismatch' });
+  });
+});
+
+// ===== ロッジの相互占有（2026-09-02 の二重予約バグ修正）=====
+//
+// STAY_HOURS は [16..23,0..9] なので連泊の「中日」に 10-15時 の slot が作られず、
+// lodge_day の [10..15] と1つも重ならない＝slot キーの排他をすり抜けて
+// 宿泊中のロッジを日帰り客に売れてしまう。lodgeConflictGroups がその穴を塞ぐ。
+describe('lodgeConflictGroups：ロッジの二重予約を防ぐ', () => {
+  // まず穴の存在そのものを固定する（この前提が変わったら設計を見直す）
+  it('前提：連泊の中日には 10-15時 の slot が生成されない', () => {
+    const r = canonicalizeReservation({
+      planId: 'lodge_stay', roomIds: ['lodge_a'],
+      slots: [
+        ...[16,17,18,19,20,21,22,23].map(h => `lodge_a|2026-09-10|${h}`),
+        ...[0,1,2,3,4,5,6,7,8,9].map(h => `lodge_a|2026-09-11|${h}`),
+        ...[16,17,18,19,20,21,22,23].map(h => `lodge_a|2026-09-11|${h}`),
+        ...[0,1,2,3,4,5,6,7,8,9].map(h => `lodge_a|2026-09-12|${h}`),
+      ],
+      startDate: '2026-09-10', endDate: '2026-09-12', nights: 2,
+    });
+    expect(r.ok).toBe(true);
+    const midday = (r as any).value.slots.filter((s: string) =>
+      s.startsWith('lodge_a|2026-09-11|') && [10,11,12,13,14,15].includes(Number(s.split('|')[2])));
+    expect(midday).toEqual([]); // ← ここが空だから穴が開く
+  });
+
+  it('lodge_day：その日の朝9時と夕16時の両方が埋まっていれば競合（＝連泊の中日）', () => {
+    const groups = lodgeConflictGroups('lodge_day', ['lodge_a'], '2026-09-11', '2026-09-11');
+    expect(groups).toEqual([['lodge_a|2026-09-11|9', 'lodge_a|2026-09-11|16']]);
+  });
+
+  it('lodge_day：チェックアウト日（朝だけ）・チェックイン日（夕だけ）は競合にしない', () => {
+    // グループは AND 判定なので、片方しか存在しない日は every() が false になり通る。
+    const [group] = lodgeConflictGroups('lodge_day', ['lodge_a'], '2026-09-12', '2026-09-12');
+    const onlyMorning = new Set(['lodge_a|2026-09-12|9']);              // チェックアウト日
+    const onlyEvening = new Set(['lodge_a|2026-09-12|16']);             // チェックイン日
+    const bothMidday = new Set(['lodge_a|2026-09-12|9', 'lodge_a|2026-09-12|16']); // 中日
+    expect(group.every(k => onlyMorning.has(k))).toBe(false);
+    expect(group.every(k => onlyEvening.has(k))).toBe(false);
+    expect(group.every(k => bothMidday.has(k))).toBe(true);
+  });
+
+  it('lodge_stay：自分の中日に既存の日帰りがあれば競合（逆方向も塞ぐ）', () => {
+    // 2026-09-10 から2泊 → 中日は 09-11 のみ（09-12 はチェックアウト日なので対象外）
+    const groups = lodgeConflictGroups('lodge_stay', ['lodge_a'], '2026-09-10', '2026-09-12');
+    expect(groups).toEqual([['lodge_a|2026-09-11|10']]);
+  });
+
+  it('lodge_stay：1泊は中日が無いので追加チェック無し', () => {
+    expect(lodgeConflictGroups('lodge_stay', ['lodge_a'], '2026-09-10', '2026-09-11')).toEqual([]);
+  });
+
+  it('lodge_stay：3泊なら中日2日ぶん', () => {
+    const groups = lodgeConflictGroups('lodge_stay', ['lodge_b'], '2026-09-10', '2026-09-13');
+    expect(groups).toEqual([['lodge_b|2026-09-11|10'], ['lodge_b|2026-09-12|10']]);
+  });
+
+  it('ロッジ以外のプラン・部屋では追加チェックを出さない', () => {
+    expect(lodgeConflictGroups('stay_6', ['room_6_1'], '2026-09-10', '2026-09-12')).toEqual([]);
+    expect(lodgeConflictGroups('camp_stay', ['camp_1'], '2026-09-10', '2026-09-12')).toEqual([]);
+    expect(lodgeConflictGroups('lodge_day', ['court_1'], '2026-09-11', '2026-09-11')).toEqual([]);
+  });
+
+  it('月をまたぐ連泊でも中日を正しく数える', () => {
+    const groups = lodgeConflictGroups('lodge_stay', ['lodge_a'], '2026-09-29', '2026-10-02');
+    expect(groups).toEqual([['lodge_a|2026-09-30|10'], ['lodge_a|2026-10-01|10']]);
   });
 });
 
