@@ -1707,14 +1707,16 @@ async function loadFutamiDays() {
   FUTAMI_DAYS_LOADED = true;
 }
 
-// #27 古い data.json フォールバック使用中である事を画面上部で告知するバナー
+// #27 最新の空き状況・営業日情報を取得できていない事を画面上部で告知するバナー
+// 2026-09-02: 旧 data.json フォールバックは廃止（下記 loadAvailabilityData の catch 参照）。
+// 取得できない時は空き状況を「確認中」のまま出す＝古い在庫を現在の空きとして見せない。
 function showStaleDataBanner() {
   let b = document.getElementById('stale-data-banner');
   if (!b) {
     b = document.createElement('div');
     b.id = 'stale-data-banner';
     b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;padding:8px 12px;font-size:13px;line-height:1.5;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.25)';
-    b.textContent = '⚠️ 最新の空き状況・営業日・特別日情報の一部を取得できていません。表示は参考値です（時間をおいて再読込してください）。';
+    b.textContent = '⚠️ 最新の空き状況・営業日・特別日情報を取得できていません。空き状況が「確認中」と表示される場合があります。時間をおいてページを再読み込みしてください。';
     document.body.appendChild(b);
   }
   b.style.display = 'block';
@@ -1784,20 +1786,15 @@ async function loadAvailabilityData() {
     // 読み込み中に開かれた画面の「確認中」を最新状態へ更新。
     refreshAvailabilityView();
   } catch (e) {
-    console.warn('[api] load failed, falling back to data.json:', e);
-    showStaleDataBanner(); // #27 フォールバック中は参考値である旨を告知
-    try {
-      const res2 = await fetch('data.json?t=' + Date.now());
-      if (res2.ok) {
-        const data2 = await res2.json();
-        if (!data2 || !Array.isArray(data2.occupiedSlots)) throw new Error('data.json returned malformed data');
-        data2.occupiedSlots.forEach(s => OCCUPIED_SLOTS.add(s));
-        DATA_LOADED = true;
-        refreshAvailabilityView();
-      }
-    } catch (e2) {
-      console.warn('[data] fallback also failed:', e2);
-    }
+    // 2026-09-02: 静的 data.json へのフォールバックを廃止した。
+    // 旧実装は 2026-04-07 時点の在庫を OCCUPIED_SLOTS へ加算して DATA_LOADED=true にしていたため、
+    // 5ヶ月前の空き状況が現在の空きとして画面に出ていた（予約自体は FRESH_AVAILABILITY_LOADED が
+    // 止めるので成立しないが、客には「空きあり」と見えていた）。
+    // DATA_LOADED を false のままにすると getAvailabilityLevel / getDayAvailability が 'unknown'
+    // ＝「確認中」を返す。取得できていない事実をそのまま出すのが正しい。
+    console.warn('[api] availability load failed:', e);
+    showStaleDataBanner();
+    refreshAvailabilityView();
   }
 }
 

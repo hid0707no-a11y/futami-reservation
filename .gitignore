@@ -29,3 +29,14 @@ build/
 # ===== docs subfolder =====
 # events_raw.json はカレンダー生データで再生成可能。commitしない。
 docs/events_raw.json
+
+# ===== 予約・顧客データ（2026-09-02 追加）=====
+# ★このリポジトリは public。予約データを commit すると GitHub Pages で即公開される。
+# 2026-04-07〜2026-09-02 の148日間、data.json に実顧客の氏名・電話・メールが公開されていた。
+# 在庫の正本は /availability API。静的な予約データをリポジトリに置かない。
+/data.json
+*_raw.json
+events_*.json
+occupied*.json
+bookings*.json
+*.bundle
