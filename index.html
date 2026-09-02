@@ -1184,7 +1184,7 @@ html.embed .info-section { display: none !important; }
 -->
 <script src="assets/js/pricing.js?v=20260802"></script>
 <!-- 空き状況レベル判定 純粋関数ライブラリ（2026-08-01 抽出・Jest テスト対象） -->
-<script src="assets/js/availability.js?v=20260802"></script>
+<script src="assets/js/availability.js?v=20260902"></script>
 <!-- 連絡先・キャンセル案内の正本（サーバ側は functions/src/lib/contact.ts・値を必ず揃える） -->
 <script src="assets/js/contact.js?v=20260825"></script>
 <script>
@@ -1856,6 +1856,17 @@ function facilitySlotClosed(roomId, date, hour) {
   return NisshoAvailability.isFacilitySlotClosed(BUSINESS_CALENDAR.facilityClosed, roomId, date, hour);
 }
 
+// サウナの予約締切（2026-09-02 運営要望）：開始の4時間前で締め切る。
+// ★判定の中身は assets/js/availability.js（Jest テスト対象）が正本。
+// ★古いキャッシュで関数が無い時は「締め切っていない」に倒す＝サーバ（createReservation）が
+//   必ず booking_too_soon で弾くので、画面だけが理由不明に閉じることは起きない（2026-08-02 の教訓）。
+function saunaLeadTimeClosed(plan, date) {
+  if (!plan || plan.planType !== 'sauna' || !date) return false;
+  if (typeof NisshoAvailability === 'undefined' || !NisshoAvailability) return false;
+  if (typeof NisshoAvailability.isSaunaLeadTimeClosed !== 'function') return false;
+  return NisshoAvailability.isSaunaLeadTimeClosed(plan.slots, date, new Date());
+}
+
 // プランを構成する時間のいずれかが停止していれば true（ふたみの日サウナ等）
 function planFacilityClosed(roomId, date, hours) {
   if (typeof NisshoAvailability === 'undefined' || !NisshoAvailability) return false;
@@ -1881,6 +1892,8 @@ function isSlotFree(roomId, date, hour) {
 // nights省略時は1泊のみ。連泊（キャンプ含む）は呼び出し側でnightsを渡す。
 function isPlanAvailableForRoom(plan, roomId, date, nights) {
   if (!date) return true;
+  // サウナは開始4時間前で締切（2026-09-02 運営要望）
+  if (saunaLeadTimeClosed(plan, date)) return false;
   const slots = Array.isArray(plan.slots) ? plan.slots : [];
   if (slots.length === 0) return true;
   const n = (typeof nights === 'number' && nights > 0) ? nights : 1;
@@ -1910,6 +1923,11 @@ function getAvailabilityLevel(plan, date) {
   // 特別日設定を取得できない間は通常/特別サウナを判別できないためサウナだけ停止。
   if (plan.planType === 'sauna' && !FUTAMI_DAYS_LOADED) return 'unknown';
 
+  // サウナは開始4時間前で締切（2026-09-02 運営要望）。
+  // ★ふたみの日の分岐より必ず前に置く＝下の分岐は getAvailableRooms を通らずに return するため、
+  //   isPlanAvailableForRoom 側だけに入れるとふたみの日が素通りする。
+  if (saunaLeadTimeClosed(plan, date)) return 'too_soon';
+
   // ふたみの日サウナは1予約で完売（occupied_slotsで判定）
   // ★この経路だけは isSlotFree を通らない（部屋が sauna_share に切り替わり、在庫判定も別）ため、
   //   施設ごとの停止はここで見る。sauna 指定も sauna_share に効く（availability.js の連動ルール）。
@@ -1933,8 +1951,11 @@ function getAvailabilityLevel(plan, date) {
 }
 
 function availBadge(level) {
-  const labels = { ok: '空きあり', few: '残りわずか', none: '満室', closed: '定休日', unknown: '確認中' };
-  return '<span class="avail-badge ' + level + '">' + (labels[level] || '確認中') + '</span>';
+  const labels = { ok: '空きあり', few: '残りわずか', none: '満室', closed: '定休日', unknown: '確認中',
+                   too_soon: '受付終了' };
+  // too_soon は満室と同じ見た目にする（新しい CSS クラスを増やさない）
+  const cls = (level === 'too_soon') ? 'none' : level;
+  return '<span class="avail-badge ' + cls + '">' + (labels[level] || '確認中') + '</span>';
 }
 
 /* ================================================================
@@ -2139,7 +2160,7 @@ function renderSearchResults() {
     }
     groups[catKey].forEach(item => {
       const room = ROOMS.find(r => r.id === item.plan.rooms[0]);
-      const isFull = item.level === 'none' || item.level === 'closed' || item.level === 'unknown';
+      const isFull = item.level === 'none' || item.level === 'closed' || item.level === 'unknown' || item.level === 'too_soon';
       const clickAttr = isFull ? '' : ' onclick="selectPlanFromSearch(\'' + item.plan.id + '\')"';
       const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
       html += '<div class="facility-card"' + fullStyle + clickAttr + '>';
@@ -2502,7 +2523,7 @@ function renderFutamiDayAppeal(dateStr, category) {
 
 function renderPlanCard(plan, dateStr) {
   const level = dateStr ? getAvailabilityLevel(plan, dateStr) : 'ok';
-  const isFull = level === 'none' || level === 'closed' || level === 'unknown';
+  const isFull = level === 'none' || level === 'closed' || level === 'unknown' || level === 'too_soon';
   const clickAttr = isFull ? '' : ' onclick="selectPlan(\'' + plan.id + '\')"';
   const fullStyle = isFull ? ' style="opacity:0.5;cursor:not-allowed"' : '';
   let html = '<div class="plan-card"' + fullStyle + clickAttr + '>';
@@ -4385,6 +4406,7 @@ async function _submitBookingInner() {
           duplicate_roomId: '同じ施設が重複して選択されています。選び直してください。',
           invalid_date_format: '日付の指定が正しくありません。選び直してください。',
           booking_in_past: '過去の日付は予約できません。日付を選び直してください。',
+          booking_too_soon: 'サウナは開始の4時間前までのご予約となります。別の枠か別の日をお選びください。',
           futami_day_requires_shared_sauna: 'この日は「ふたみの日」です。ページを再読み込みして専用プランから予約してください。',
           client_update_required: '予約画面が更新されています。ページを再読み込みして、もう一度お選びください。',
         }[code];

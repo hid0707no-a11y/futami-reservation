@@ -970,3 +970,120 @@ describe('changeCampSites：区画の総入れ替えでトランザクション�
     expect(c.body.status).toBe('cancelled');
   });
 });
+
+// ============================================================================
+// サウナは開始の4時間前で締め切る（2026-09-02 運営要望・西田さん）
+//
+// 「今14:58です。15:00予約可能になってる状況に気付きました。
+//   各枠予約は4時間前まで予約可能の設定にしていただけたらと思います。」
+//
+// ★時刻に依存する仕様なので Date だけを固定する。タイマー（setTimeout 等）は本物のまま＝
+//   Firestore クライアントの再試行を壊さない。
+// ★2026-09-09 は水曜（既定定休の火曜ではない）。
+// ============================================================================
+describe('サウナの予約締切（開始4時間前）', () => {
+  const FIXED_WEDNESDAY = '2026-09-09';
+  const FAKE_TIMER_OPTS = {
+    doNotFake: [
+      'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
+      'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask',
+      'performance', 'hrtime',
+    ] as any,
+  };
+
+  const freezeJst = (hhmm: string) => {
+    jest.useFakeTimers(FAKE_TIMER_OPTS);
+    jest.setSystemTime(new Date(`${FIXED_WEDNESDAY}T${hhmm}:00+09:00`));
+  };
+
+  // ★auth モジュールは jest.mock 済み＝Authorization ヘッダを付けても職員にはならない。
+  //   免除の検証は必ずこのモックを true にして行う（実際にこれで一度落ちた）。
+  const authMockCutoff = jest.requireMock('../../src/lib/auth') as
+    { isVerifiedStaffRequest: jest.Mock };
+  const asStaffCutoff = () => authMockCutoff.isVerifiedStaffRequest.mockImplementation(async () => true);
+
+  afterEach(() => {
+    jest.useRealTimers();
+    authMockCutoff.isVerifiedStaffRequest.mockImplementation(async () => false);
+  });
+
+  // C 枠 15:00-17:00（slots 15,16）。締切は 11:00。
+  const saunaC = (over: any = {}) => ({
+    method: 'POST', query: {}, headers: {},
+    body: {
+      planId: 'sauna_3', roomIds: ['sauna'],
+      slots: fixedSlots('sauna', FIXED_WEDNESDAY, [15, 16]),
+      startDate: FIXED_WEDNESDAY, endDate: FIXED_WEDNESDAY, nights: 0,
+      customer: { name: 'サウナ 太郎', phone: '090-1111-2222', email: 'sauna@test.example' },
+      ...over,
+    },
+  });
+
+  it('★14:58 に 15:00 の枠 → 400 booking_too_soon（在庫も予約も作らない）', async () => {
+    freezeJst('14:58');
+    const r = await invoke(createReservation, saunaC());
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('booking_too_soon');
+    expect((await db.collection('slots').get()).size).toBe(0);
+    expect((await db.collection('reservations').get()).size).toBe(0);
+  });
+
+  it('ちょうど4時間前（11:00）はまだ 201 で成立する', async () => {
+    freezeJst('11:00');
+    const r = await invoke(createReservation, saunaC());
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('1分でも過ぎたら（11:01）400', async () => {
+    freezeJst('11:01');
+    const r = await invoke(createReservation, saunaC());
+    expect(r.body.error).toBe('booking_too_soon');
+  });
+
+  it('★職員（検証済み Bearer）は締切の対象外＝電話受付を止めない', async () => {
+    freezeJst('14:58');
+    asStaffCutoff();
+    const req: any = saunaC();
+    req.headers = { authorization: 'Bearer staff' };
+    const r = await invoke(createReservation, req);
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('★createdBy 申告だけでは免除されない（Bearer の実検証が必要）', async () => {
+    freezeJst('14:58');
+    const r = await invoke(createReservation, saunaC({ createdBy: 'staff' }));
+    expect(r.statusCode).toBe(400);
+    expect(r.body.error).toBe('booking_too_soon');
+  });
+
+  it('★D 枠は 17:30 開始＝13:30 まで可（slots の先頭 17 を開始と誤読していないこと）', async () => {
+    freezeJst('13:30');
+    const r = await invoke(createReservation, saunaC({
+      planId: 'sauna_4', slots: fixedSlots('sauna', FIXED_WEDNESDAY, [17, 18, 19]),
+    }));
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('サウナ以外（27畳日帰り 8:00-12:00）は締切の対象外＝当日でも従来どおり通る', async () => {
+    freezeJst('09:00');
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'day_27_am', roomIds: ['room_27'],
+        slots: fixedSlots('room_27', FIXED_WEDNESDAY, [8, 9, 10, 11]),
+        startDate: FIXED_WEDNESDAY, endDate: FIXED_WEDNESDAY, nights: 0,
+        customer: { name: '山田', phone: '090-0000-0000' },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+  });
+
+  it('翌日の枠は当日の遅い時刻でも予約できる', async () => {
+    freezeJst('23:30');
+    const next = addDays(FIXED_WEDNESDAY, 1);
+    const r = await invoke(createReservation, saunaC({
+      slots: fixedSlots('sauna', next, [15, 16]), startDate: next, endDate: next,
+    }));
+    expect(r.statusCode).toBe(201);
+  });
+});

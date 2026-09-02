@@ -167,11 +167,58 @@
     return LEVEL_LABELS[level] || LEVEL_LABELS.unknown;
   }
 
+
+  /* ================================================================
+     サウナの予約締切（2026-09-02 運営要望・西田さん）
+     「各枠予約は4時間前まで予約可能の設定にしていただけたら」
+     ── 14:58 に 15:00 開始の C 枠が予約可能だった、という報告から。
+
+     ★枠の開始時刻は slots の先頭「時」と一致しない。
+       A 10:00-12:00 → slots [10,11]     開始 10:00
+       B 12:30-14:30 → slots [12,13,14]  開始 12:30 ← 先頭の時は 12
+       C 15:00-17:00 → slots [15,16]     開始 15:00
+       D 17:30-19:30 → slots [17,18,19]  開始 17:30 ← 先頭の時は 17
+     先頭の時をそのまま開始時刻に使うと B と D が 30 分早く締まる。
+     ★ふたみの日（plan_sauna_futami / sauna_share）も同じ4枠の時間帯なので同じ表で当たる。
+     ================================================================ */
+
+  // 開始の何分前で締め切るか。運営要望は4時間。
+  var SAUNA_LEAD_MINUTES = 240;
+
+  // slots の先頭の「時」→ その枠が実際に始まる「0時からの分」
+  var SAUNA_SLOT_START_MIN = { 10: 600, 12: 750, 15: 900, 17: 1050 };
+
+  // 枠の開始（0時からの分）。表に無ければ先頭の時ちょうどとみなす。
+  function saunaStartMinutes(slots) {
+    if (!slots || !slots.length) return null;
+    var h = slots[0];
+    return Object.prototype.hasOwnProperty.call(SAUNA_SLOT_START_MIN, h)
+      ? SAUNA_SLOT_START_MIN[h] : h * 60;
+  }
+
+  // 締切を過ぎているか。date='YYYY-MM-DD'、now=Date（ブラウザのローカル時刻＝JST）。
+  // 「4時間前まで予約可能」なので、ちょうど4時間前は可・1分でも過ぎたら不可。
+  function isSaunaLeadTimeClosed(slots, date, now, leadMinutes) {
+    if (!date || typeof date !== 'string') return false;
+    var startMin = saunaStartMinutes(slots);
+    if (startMin === null) return false;
+    var lead = (typeof leadMinutes === 'number') ? leadMinutes : SAUNA_LEAD_MINUTES;
+    var p = date.split('-');
+    if (p.length !== 3) return false;
+    var startAt = new Date(+p[0], +p[1] - 1, +p[2], 0, 0, 0, 0);
+    startAt.setMinutes(startMin);
+    return (now || new Date()).getTime() > startAt.getTime() - lead * 60000;
+  }
+
   return {
     dayAvailabilityLevel: dayAvailabilityLevel,
     levelLabel: levelLabel,
     LEVEL_LABELS: LEVEL_LABELS,
     isFacilitySlotClosed: isFacilitySlotClosed,
     isPlanFacilityClosed: isPlanFacilityClosed,
+    SAUNA_LEAD_MINUTES: SAUNA_LEAD_MINUTES,
+    SAUNA_SLOT_START_MIN: SAUNA_SLOT_START_MIN,
+    saunaStartMinutes: saunaStartMinutes,
+    isSaunaLeadTimeClosed: isSaunaLeadTimeClosed,
   };
 });
