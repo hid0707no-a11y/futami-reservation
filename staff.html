@@ -902,10 +902,14 @@ const PLANS = [
   { id: 'midori_eve', name: 'みどりの広場 夜間（17:00〜22:00）', rooms: ['midori'],
     slots: [17,18,19,20,21], price: '市民2,730円/市外3,250円', badge: '\uD83C\uDF19 夜間', color: '#8b5cf6' },
   // サウナ（120分枠）
-  { id: 'sauna_1', name: 'A 10:00-12:00', rooms: ['sauna'], slots: [10,11], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
-  { id: 'sauna_2', name: 'B 12:30-14:30', rooms: ['sauna'], slots: [12,13,14], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
-  { id: 'sauna_3', name: 'C 15:00-17:00', rooms: ['sauna'], slots: [15,16], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
-  { id: 'sauna_4', name: 'D 17:30-19:30', rooms: ['sauna'], slots: [17,18,19], price: '12,000円', badge: '\uD83E\uDDD6', color: '#ec4899' },
+  // ★2026-09-02 修正：ここだけ 12,000円（税別）のまま残っており、サーバ・公開画面・公示料金表
+  //   （docs/pricing.json）の 13,200円（税込）と食い違っていた。12,000×1.1=13,200。
+  //   電話受付の職員がこの表を見て案内すると1件あたり1,200円の取りこぼしになる。
+  //   ★この行は scripts/verify_pricing.js が docs/pricing.json と突合する（再発を止める）。
+  { id: 'sauna_1', name: 'A 10:00-12:00', rooms: ['sauna'], slots: [10,11], price: '13,200円', badge: '\uD83E\uDDD6', color: '#ec4899' },
+  { id: 'sauna_2', name: 'B 12:30-14:30', rooms: ['sauna'], slots: [12,13,14], price: '13,200円', badge: '\uD83E\uDDD6', color: '#ec4899' },
+  { id: 'sauna_3', name: 'C 15:00-17:00', rooms: ['sauna'], slots: [15,16], price: '13,200円', badge: '\uD83E\uDDD6', color: '#ec4899' },
+  { id: 'sauna_4', name: 'D 17:30-19:30', rooms: ['sauna'], slots: [17,18,19], price: '13,200円', badge: '\uD83E\uDDD6', color: '#ec4899' },
   // Googleカレンダー由来の予約（slotsOverrideで時間帯を渡す）
   { id: '__gcal__', name: 'Googleカレンダー', rooms: [], slots: [], price: '-', badge: '\uD83D\uDCC5 GCal', color: '#64748b' },
 ];

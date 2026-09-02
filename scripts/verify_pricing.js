@@ -273,6 +273,38 @@ run('sauna (サウナ料金・オプション)', () => {
   return [ok1, ok2, ok3, ok4].every(Boolean);
 });
 
+// === 職員画面のサウナ料金（2026-09-02 追加）===
+// ★staff.html は長らくこの照合の対象外で、4枠すべてが 12,000円（税別）のまま
+//   サーバ・公開画面・公示料金表の 13,200円（税込）と食い違っていた。
+//   電話受付の職員がこの表を見て案内すると1件あたり1,200円の取りこぼしになる。
+//   「index.html だけ見ていれば料金は揃う」が成り立たないので、ここで staff.html も見る。
+run('staff.html のサウナ料金（職員画面）', () => {
+  const staffPath = path.join(ROOT, 'staff.html');
+  if (!fs.existsSync(staffPath)) {
+    console.error('  ❌ staff.html が見つからない');
+    return false;
+  }
+  const staffHtml = fs.readFileSync(staffPath, 'utf8');
+  const expected = pricing.sauna && pricing.sauna.base && pricing.sauna.base.price;
+  if (typeof expected !== 'number') {
+    console.error('  ❌ docs/pricing.json からサウナの正価を読めない');
+    return false;
+  }
+  const expectedText = expected.toLocaleString('en-US') + '円';
+  let ok = true;
+  for (const id of ['sauna_1', 'sauna_2', 'sauna_3', 'sauna_4']) {
+    const m = staffHtml.match(new RegExp(`id:\\s*'${id}'[^}]*price:\\s*'([^']+)'`));
+    const actual = m ? m[1] : null;
+    if (actual !== expectedText) {
+      console.error(`  ❌ staff.html ${id}: 期待 ${expectedText} / 実際 ${actual}`);
+      ok = false;
+    } else {
+      console.log(`  ✓ staff.html ${id}: ${actual}`);
+    }
+  }
+  return ok;
+});
+
 console.log(`\n========================================`);
 console.log(`結果: ${pass} passed, ${fail} failed`);
 if (fail > 0) {
