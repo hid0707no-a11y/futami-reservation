@@ -28,6 +28,8 @@ import {
   getBusinessCalendarFresh,
 } from '../lib/businessDays';
 import { canonicalizeReservation } from '../lib/reservationPlans';
+import { isSaunaLeadTimeClosed, slotHoursOnDate } from '../lib/bookingCutoff';
+import { isSaunaReservation } from '../lib/notifyRecipients';
 import { planLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
 import { computeServerPricing } from '../lib/pricingServer';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
@@ -194,6 +196,23 @@ export const createReservation = onRequest(
       if (isCustomerEmailRequired({ planId, roomIds }, createdBy) && !customer?.email) {
         res.status(400).json({ error: 'email_required_for_sauna' });
         return;
+      }
+
+      // サウナは開始の4時間前で締め切る（2026-09-02 運営要望・西田さん）。
+      // ★これまでサーバに時刻の締切は無く、同日中の「もう始まっている枠」を弾いていたのは
+      //   index.html の1行だけだった＝画面を経由しなければ素通りしていた。ここが正本。
+      // ★職員（検証済み Bearer）は対象外＝電話で受けた当日分を代理入力できなくなるため。
+      // ★判定は canonical 化後の planId/roomIds/slots で行う（ふたみの日は roomIds が
+      //   sauna_share に切り替わり、クライアント申告の planId は sauna_1〜4 のまま届く）。
+      if (createdBy !== 'staff' && isSaunaReservation({ planId, roomIds })) {
+        const startHours = slotHoursOnDate(slots, startDate);
+        if (isSaunaLeadTimeClosed(startHours, startDate, new Date())) {
+          res.status(400).json({
+            error: 'booking_too_soon',
+            detail: 'サウナは開始の4時間前までのご予約となります',
+          });
+          return;
+        }
       }
 
       // #17 料金はサーバが canonical plan/slots と選択事実（市民区分・照明・オプション）から
