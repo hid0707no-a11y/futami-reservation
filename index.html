@@ -4082,10 +4082,13 @@ async function lookupAddress() {
  * ★冪等キー（state.idempotencyKey）は必ず null にする。前の予約のキーが残ったまま
  *   2件目を送ると、サーバは「同じ予約の再送」とみなして1件目の応答を返し、
  *   2件目が作られないまま成功したように見える。
+ * ★2026-09-02：同じ事故はネットワーク断のあと戻って内容を変えた時にも起きる。
+ *   送信直前に予約の中身の指紋（state.idempotencyFingerprint）と突合して捨てる。
  */
 function startNextBooking() {
   const c = state.carryCustomer;
   state.idempotencyKey = null;
+  state.idempotencyFingerprint = null;
   if (c) {
     const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
     setVal('confirm-name', c.name);
@@ -4352,6 +4355,18 @@ async function _submitBookingInner() {
       // guests.adult は入力欄の無いプランでも初期値1が入るので人数として使えない。
       else if (plan.planType === 'sauna') payload.guestCount = state.guests;
       if (isCamp) payload.guestCount = state.selectedCampSites.length;
+      // ★冪等キーは「同じ予約の再送」にだけ効かせる（2026-09-02 修正）。
+      //   ネットワーク断のときはキーを意図的に残す（#19・二重予約を防ぐ）。だがその後に
+      //   お客様が戻ってプラン・日付・部屋・時間を変えて送ると、サーバは同じキーを見て
+      //   「再送」とみなし1件目の応答を返す＝**選び直した予約が作られないまま成功画面が出る**。
+      //   よって予約の中身が変わったらキーを捨てる。中身が同じ再試行では従来どおり残る。
+      const idemFingerprint = JSON.stringify([
+        payload.planId, payload.roomIds, payload.slots, payload.startDate, payload.endDate,
+      ]);
+      if (state.idempotencyFingerprint !== idemFingerprint) {
+        state.idempotencyKey = null;
+        state.idempotencyFingerprint = idemFingerprint;
+      }
       state.idempotencyKey = state.idempotencyKey || generateIdempotencyKey();
       const apiResult = await submitReservation(payload, state.idempotencyKey);
       apiResId = apiResult.reservationId;
