@@ -27,7 +27,7 @@ import {
   findClosedFacilitySlot,
   getBusinessCalendarFresh,
 } from '../lib/businessDays';
-import { canonicalizeReservation } from '../lib/reservationPlans';
+import { canonicalizeReservation, lodgeConflictGroups } from '../lib/reservationPlans';
 import { isSaunaLeadTimeClosed, slotHoursOnDate } from '../lib/bookingCutoff';
 import { isSaunaReservation } from '../lib/notifyRecipients';
 import { planLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
@@ -516,13 +516,27 @@ export const createReservation = onRequest(
         const slotRefs = slots.map((key: string) => db.collection('slots').doc(key));
         const alternateKeys = isRegularSauna ? alternateSaunaKeys(slots, 'sauna_share') : [];
         const alternateRefs = alternateKeys.map(key => db.collection('slots').doc(key));
-        const [slotDocs, alternateDocs] = await Promise.all([
+        // ロッジの相互占有（連泊の中日 10-15時 に slot が無く lodge_day と重ならない穴）。
+        // サウナの alternateKeys が OR（どれか在れば競合）なのに対し、こちらは
+        // グループ内の全キーが揃って初めて競合（AND）＝lib/reservationPlans.ts に理由を記載。
+        const lodgeGroups = lodgeConflictGroups(planId, roomIds, startDate, endDate);
+        const lodgeKeys = Array.from(new Set(lodgeGroups.flat()));
+        const lodgeRefs = lodgeKeys.map(key => db.collection('slots').doc(key));
+        const [slotDocs, alternateDocs, lodgeDocs] = await Promise.all([
           Promise.all(slotRefs.map((ref: any) => tx.get(ref))),
           Promise.all(alternateRefs.map((ref: any) => tx.get(ref))),
+          Promise.all(lodgeRefs.map((ref: any) => tx.get(ref))),
         ]);
+        const lodgeExists = new Map<string, boolean>(
+          lodgeKeys.map((key, i) => [key, (lodgeDocs[i] as any).exists]),
+        );
+        const lodgeConflicts = lodgeGroups
+          .filter(group => group.length > 0 && group.every(key => lodgeExists.get(key)))
+          .flat();
         const conflicts = [
           ...slotDocs.map((d: any, i: number) => (d.exists ? slots[i] : null)),
           ...alternateDocs.map((d: any, i: number) => (d.exists ? alternateKeys[i] : null)),
+          ...lodgeConflicts,
         ].filter((x: any) => x !== null);
         if (conflicts.length > 0) throw { code: 'slot_conflict', conflicts };
 

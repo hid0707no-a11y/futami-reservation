@@ -362,6 +362,70 @@ describe('createReservation セキュリティバッチ（2026-07-19・real-path
     expect(stored.slots).toEqual(lodge.slots);
   });
 
+  // ===== ロッジの二重予約（2026-09-02 修正）=====
+  // STAY_HOURS=[16..23,0..9] なので連泊の中日に 10-15時 の slot が無く、lodge_day の
+  // [10..15] と1つも重ならない＝slot キーの排他をすり抜けて同じロッジが二重に売れていた。
+  it('連泊の中日に lodge_day を入れると 409（宿泊中のロッジを日帰りで売らない）', async () => {
+    // lodge_a を OPEN_WEDNESDAY から2泊（中日 = 翌日）
+    const stay = await invoke(createReservation, base({
+      planId: 'lodge_stay', roomIds: ['lodge_a'],
+      slots: overnightSlots(['lodge_a'], OPEN_WEDNESDAY, 2, [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9]),
+      startDate: OPEN_WEDNESDAY, endDate: addDays(OPEN_WEDNESDAY, 2), nights: 2,
+    }));
+    expect(stay.statusCode).toBe(201);
+
+    const midDay = addDays(OPEN_WEDNESDAY, 1);
+    // 中日の 10-15時 は宿泊の slot が1つも無いことを確認（穴の前提）
+    const storedStay = (await db.collection('reservations').doc(stay.body.internalId).get()).data() as any;
+    expect(storedStay.slots.filter((s: string) => s.startsWith('lodge_a|' + midDay + '|')
+      && [10,11,12,13,14,15].includes(Number(s.split('|')[2])))).toEqual([]);
+
+    const day = await invoke(createReservation, base({
+      planId: 'lodge_day', roomIds: ['lodge_a'], inventoryVersion: 2,
+      slots: fixedSlots('lodge_a', midDay, [10,11,12]),
+      startDate: midDay, endDate: midDay, nights: 0,
+    }));
+    expect(day.statusCode).toBe(409);
+    expect(day.body.error).toBe('slot_conflict');
+    expect((await db.collection('reservations').get()).size).toBe(1);
+  });
+
+  it('チェックアウト日の lodge_day は成立する（9時に発つので日中は空く）', async () => {
+    const stay = await invoke(createReservation, base({
+      planId: 'lodge_stay', roomIds: ['lodge_a'],
+      slots: overnightSlots(['lodge_a'], OPEN_WEDNESDAY, 1, [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9]),
+      startDate: OPEN_WEDNESDAY, endDate: addDays(OPEN_WEDNESDAY, 1), nights: 1,
+    }));
+    expect(stay.statusCode).toBe(201);
+
+    const checkoutDay = addDays(OPEN_WEDNESDAY, 1);
+    const day = await invoke(createReservation, base({
+      planId: 'lodge_day', roomIds: ['lodge_a'], inventoryVersion: 2,
+      slots: fixedSlots('lodge_a', checkoutDay, [10,11,12]),
+      startDate: checkoutDay, endDate: checkoutDay, nights: 0,
+    }));
+    expect(day.statusCode).toBe(201);
+  });
+
+  it('逆方向：既存の日帰りを跨ぐ連泊も 409（中日に日帰りがある）', async () => {
+    const midDay = addDays(OPEN_WEDNESDAY, 1);
+    const day = await invoke(createReservation, base({
+      planId: 'lodge_day', roomIds: ['lodge_b'], inventoryVersion: 2,
+      slots: fixedSlots('lodge_b', midDay, [10,11,12]),
+      startDate: midDay, endDate: midDay, nights: 0,
+    }));
+    expect(day.statusCode).toBe(201);
+
+    const stay = await invoke(createReservation, base({
+      planId: 'lodge_stay', roomIds: ['lodge_b'],
+      slots: overnightSlots(['lodge_b'], OPEN_WEDNESDAY, 2, [16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8,9]),
+      startDate: OPEN_WEDNESDAY, endDate: addDays(OPEN_WEDNESDAY, 2), nights: 2,
+    }));
+    expect(stay.statusCode).toBe(409);
+    expect(stay.body.error).toBe('slot_conflict');
+    expect((await db.collection('reservations').get()).size).toBe(1);
+  });
+
   it('通常サウナはふたみの日に通常inventoryで予約できない', async () => {
     await db.doc('config/special_days').set({ sauna_capacity_days: [OPEN_WEDNESDAY] });
     const r = await invoke(createReservation, base({
