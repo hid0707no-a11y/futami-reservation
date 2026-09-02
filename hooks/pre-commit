@@ -4,6 +4,7 @@
 # 2. HTML 内 inline script の JS syntax チェック
 # 3. 料金表 SSOT 照合テスト（scripts/verify_pricing.js）
 # 4. 平文 credential の簡易検出（STAFF_API_KEY 等）
+# 4b. 個人情報（メール・電話）の検出（2026-09-02 追加・hooks/pii_allowlist.txt）
 # 5. SHEET_HEADERS 変更タグ強制（2026-05-05 Phase B-3 追加）
 #
 # Bypass: `git commit --no-verify` (非推奨・PR レビュー必須)
@@ -102,6 +103,60 @@ if [ -n "$STAGED" ]; then
     esac
   done
   rm -f /tmp/_pc_leak.txt
+fi
+
+# ===== 4b. 個人情報（メール・電話）の検出 =====（2026-09-02 追加）
+# 経緯: data.json に Google カレンダー由来の実顧客の氏名・電話・メールが入ったまま
+#       commit され、public リポジトリ＋GitHub Pages 直下配信で 148 日間公開されていた。
+#       §4 の credential スキャンは資格情報8パターンしか見ておらず素通りした。
+# 方針: 許可リスト（hooks/pii_allowlist.txt）に無いメール・電話が staged 差分の
+#       追加行にあれば止める。値は表示せず、行番号と種別だけ出す。
+ALLOW="$(git rev-parse --show-toplevel)/hooks/pii_allowlist.txt"
+if [ -n "$STAGED" ] && [ -f "$ALLOW" ]; then
+  for f in $STAGED; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      functions/lib/*|*/node_modules/*|*package-lock.json|hooks/pii_allowlist.txt) continue ;;
+      *.html|*.js|*.ts|*.md|*.json|*.csv|*.txt|*.py|*.sh|*.yaml|*.yml) ;;
+      *) continue ;;
+    esac
+    # 追加行だけを見る（既存行の棚卸しは CI 側で全ツリーを見る）
+    git diff --cached -U0 -- "$f" 2>/dev/null | grep '^+' | grep -v '^+++' > /tmp/_pc_pii_add.txt 2>/dev/null || true
+    [ -s /tmp/_pc_pii_add.txt ] || continue
+    grep -ohE \
+      -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
+      -e '0[0-9]{1,4}-[0-9]{1,4}-[0-9]{4}' \
+      -e '0[5789]0[0-9]{8}' \
+      /tmp/_pc_pii_add.txt 2>/dev/null | sort -u > /tmp/_pc_pii_hits.txt || true
+    if [ -s /tmp/_pc_pii_hits.txt ]; then
+      # ★許可リストはコメント行と空行を必ず落とす。空行を -f に渡すと全行に一致し、
+      #   grep -v の出力が空になって「合致ゼロ」と誤判定する（set -e で hook ごと死ぬ）。
+      grep -vE '^[[:space:]]*(#|$)' "$ALLOW" > /tmp/_pc_pii_allow.txt || true
+      if [ -s /tmp/_pc_pii_allow.txt ]; then
+        grep -vE -f /tmp/_pc_pii_allow.txt /tmp/_pc_pii_hits.txt > /tmp/_pc_pii_bad.txt 2>/dev/null || true
+      else
+        cp /tmp/_pc_pii_hits.txt /tmp/_pc_pii_bad.txt
+      fi
+      rm -f /tmp/_pc_pii_allow.txt
+      if [ -s /tmp/_pc_pii_bad.txt ]; then
+        echo "⚠️  個人情報らしき文字列（許可リストに無い）: $f"
+        # 値は出さない。先頭数文字だけ出して特定できるようにする。
+        while IFS= read -r hit; do
+          case "$hit" in
+            *@*) echo "   メール形式: $(printf '%s' "$hit" | cut -c1-2)…@$(printf '%s' "$hit" | sed 's/.*@//')" ;;
+            *)   echo "   電話形式: $(printf '%s' "$hit" | cut -c1-6)****" ;;
+          esac
+        done < /tmp/_pc_pii_bad.txt
+        echo "   → このリポジトリは public。commit すると GitHub Pages で公開されます。"
+        echo "   → 実在の連絡先なら .env / Secret Manager へ。ダミーなら hooks/pii_allowlist.txt に"
+        echo "      理由コメント付きで追加し、コミットに [pii-allow] を付けてください。"
+        FAIL=1
+      fi
+      rm -f /tmp/_pc_pii_bad.txt
+    fi
+    rm -f /tmp/_pc_pii_hits.txt
+  done
+  rm -f /tmp/_pc_pii_add.txt
 fi
 
 # ===== 5. SHEET_HEADERS 変更検知マーカー =====

@@ -22,7 +22,6 @@ futami-reservation/
 ├── staff.html             # スタッフ画面（詳細管理）
 ├── staff2.html            # 月俯瞰
 ├── staff_tennis.html      # テニス専用
-├── data.json              # 静的イベントデータ（fallback）
 ├── firebase.json          # Firebase プロジェクト設定
 ├── firestore.rules        # Firestore セキュリティルール
 ├── .firebaserc            # プロジェクトエイリアス

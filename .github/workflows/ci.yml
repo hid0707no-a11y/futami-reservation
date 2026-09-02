@@ -114,6 +114,46 @@ jobs:
           fi
           echo "✅ No credential leak patterns detected"
 
+      - name: PII scan (email / phone)
+        # pre-commit hook §4b と同等。こちらは差分でなく **ツリー全体** を見る。
+        # 経緯（2026-09-02）: data.json に Google カレンダー由来の実顧客の氏名・電話・メールが
+        # 入ったまま commit され、public リポ＋GitHub Pages 直下配信で 148 日間公開されていた。
+        # 上の credential scan は資格情報8パターンしか見ておらず素通りした。
+        # 許可リスト = hooks/pii_allowlist.txt（コメント行と空行は必ず落とす。空行を -f に
+        # 渡すと全行に一致して「合致ゼロ」と誤判定する）。
+        # ★走査対象は git 追跡ファイルのみ（git ls-files）。
+        #   grep -r . だと node_modules の長い数字列が 11 桁の携帯番号として誤検知され、
+        #   それを許可リストに足すと本物の番号まで素通りする穴になる（2026-09-02 に実際に踏んだ）。
+        #   未追跡・.gitignore 済みのファイルは公開されないので走査しない。
+        run: |
+          set +e
+          ALLOW=hooks/pii_allowlist.txt
+          grep -vE '^[[:space:]]*(#|$)' "$ALLOW" > /tmp/pii_allow.txt
+          FILES=$(git ls-files | grep -v 'package-lock.json' | grep -v 'hooks/pii_allowlist.txt')
+          HITS=$(grep -ohE \
+            -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
+            -e '0[0-9]{1,4}-[0-9]{1,4}-[0-9]{4}' \
+            -e '0[5789]0[0-9]{8}' \
+            $FILES \
+            2>/dev/null | sort -u | grep -vE -f /tmp/pii_allow.txt)
+          if [ -n "$HITS" ]; then
+            echo "❌ 個人情報らしき文字列（hooks/pii_allowlist.txt に無い）が見つかりました。"
+            echo "   このリポジトリは public です。値はログに出しません。件数と所在のみ:"
+            echo "$HITS" | wc -l | xargs echo "   件数:"
+            for h in $HITS; do
+              case "$h" in
+                *@*) echo "   メール形式 @${h##*@} を含むファイル:" ;;
+                *)   echo "   電話形式 $(echo "$h" | cut -c1-6)**** を含むファイル:" ;;
+              esac
+              grep -rl -F "$h" --exclude-dir=node_modules --exclude-dir=lib \
+                --exclude-dir=.git --exclude=pii_allowlist.txt . 2>/dev/null | sed 's/^/     /'
+            done
+            echo "   → 実在の連絡先なら .env / Secret Manager へ。ダミーなら hooks/pii_allowlist.txt に"
+            echo "      理由コメント付きで追加し、コミットに [pii-allow] を付けてください。"
+            exit 1
+          fi
+          echo "✅ No PII patterns detected outside the allowlist"
+
       - name: SHEET_HEADERS change requires [sheet-schema] commit tag
         # pre-commit hook §5 と同等。SHEET_HEADERS/SYNC_CLEAR_RANGE/SHEET_LAST_COLUMN を
         # 変更しているのに **対象範囲内のいずれかの commit** に [sheet-schema] タグがない場合は fail。

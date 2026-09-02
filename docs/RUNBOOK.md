@@ -226,6 +226,28 @@ TTL Policy を**初めて**有効化すると、過去に書き込まれたド�
 | 2026-04-08 | Googleカレンダー→Firestore 移行データで6畳全4部屋占有エラー | 該当 slots を手動削除 |
 | 2026-04-27 | スプシ Z列以降のメモ温存対応で clear range A:Y 限定運用開始 | 設定変更で対応 |
 | 2026-05-13 | SHEET_HEADERS A:Y → A:Z 拡張（要望#8 displayId 列追加）| Z列退避スクリプトで事前対応 |
+| 2026-09-02 | **`data.json` に実顧客の氏名・電話・メールが入ったまま public リポで148日間公開**（§14） | 削除・fallback 廃止・PII スキャン新設・履歴書換え |
+
+## 14. data.json の個人情報公開（2026-09-02）
+
+**何が起きたか**：`data.json`（240KB）に Google カレンダー由来の予約データが入ったまま commit `4d5bb82`（2026-04-07）でリポジトリに入り、public リポジトリ＋GitHub Pages 直下配信のため
+`https://hid0707no-a11y.github.io/futami-reservation/data.json` で誰でも取得できる状態が148日続いた。
+中身は予約164件（氏名38件・メール8種・電話8種）と職員入力217件（氏名217件・電話9件）。
+
+**なぜ気付かなかったか**：CI と `hooks/pre-commit` の漏洩スキャンは資格情報8パターン（`sk-` `ghp_` `Bearer` 等）しか見ておらず、
+氏名・メール・電話の規則が1つも無かった。`.gitignore` は素材の `docs/events_raw.json` を除外していたが、そこから生成した `data.json` は素通しだった。
+
+**処置**：
+1. `data.json` を削除（`main` へ直接 push）。Pages が404を返すことを確認。
+2. `index.html` の API 障害時 fallback を廃止。取得できない時は `DATA_LOADED=false` のまま＝空き状況は「確認中」を表示する。
+   ★**空の `{occupiedSlots: []}` を置くのは危険**＝`Array.isArray` を通って `DATA_LOADED=true` になり、全枠が「空きあり」に見える。404 で fail-closed が正しい。
+3. `hooks/pre-commit` §4b と CI の `PII scan` を新設（許可リスト＝`hooks/pii_allowlist.txt`）。
+4. git 履歴からの完全除去（`git filter-repo` ＋ `--mirror` push）。★**force push は通常禁止だが、この1回だけ社長承認のうえ例外**とする。目的は個人情報の消去に限る。
+
+**再発防止の要点**：
+- このリポジトリは **public**。commit した瞬間に Pages で公開される。予約・顧客データを含む JSON/CSV を置かない。
+- 在庫の正本は `/availability` API のみ。静的なフォールバックを復活させない。
+- 許可リストへの追加は理由コメント必須・コミットに `[pii-allow]` タグ。**ハイフン無し11桁は載せない**（node_modules 等の長い数字列を誤検知して本物を素通りさせる穴になるため、走査対象は `git ls-files` に限定している）。
 
 ## 13. 既知の残余リスク（2026-07-19 セキュリティバッチ後）
 
