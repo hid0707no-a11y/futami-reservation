@@ -7,6 +7,8 @@
 //
 // 表示名の正本は index.html の PLANS / ROOMS 配列。列挙を変えたらここも追随すること。
 
+import { RESERVATION_PLAN_RULES } from './reservationPlans';
+
 export const PLAN_LABELS: Readonly<Record<string, string>> = {
   stay_6: '宿泊（6畳）',
   stay_27: '宿泊（27畳）',
@@ -80,6 +82,31 @@ export const ROOM_LABELS: Readonly<Record<string, string>> = {
 
 export function planLabel(planId: unknown): string {
   return (typeof planId === 'string' && PLAN_LABELS[planId]) || String(planId ?? '');
+}
+
+const REGULAR_SAUNA_PLAN_IDS = ['sauna_1', 'sauna_2', 'sauna_3', 'sauna_4'] as const;
+
+/**
+ * ふたみの日サウナのプラン名に枠名と時間帯を足す（2026-09-23 運営要望）。
+ * 「貸切サウナ（ふたみの日）」だけでは A〜D のどの枠か通知メールから読めなかった。
+ * 例: 貸切サウナ D（17:30-19:30）（ふたみの日）
+ *
+ * ★枠の時間帯は通常の貸切サウナ（sauna_1〜4）と同じなので、そのラベルに「（ふたみの日）」を足す。
+ *   枠の判定は slots の「時」の並びが sauna_1〜4 の hours（在庫の正本 reservationPlans.ts）と
+ *   一致するもの＝時間帯をここに二重に持たない。
+ * 一致しなければ従来の表記に倒す（メールは止めない）。
+ */
+export function futamiSaunaPlanLabel(slots: unknown): string {
+  const fallback = PLAN_LABELS.plan_sauna_futami;
+  if (!Array.isArray(slots)) return fallback;
+  const hours = slots
+    .map(slot => (typeof slot === 'string' ? Number(slot.split('|')[2]) : NaN))
+    .sort((a, b) => a - b)
+    .join(',');
+  const frame = REGULAR_SAUNA_PLAN_IDS.find(
+    id => (RESERVATION_PLAN_RULES[id].hours || []).join(',') === hours,
+  );
+  return frame ? `${PLAN_LABELS[frame]}（ふたみの日）` : fallback;
 }
 
 export function roomLabel(roomId: unknown): string {
