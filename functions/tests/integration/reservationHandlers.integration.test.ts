@@ -1151,3 +1151,42 @@ describe('サウナの予約締切（開始4時間前）', () => {
     expect(r.statusCode).toBe(201);
   });
 });
+
+// ============================================================================
+// ふたみの日サウナの通知メールに枠名と時間帯を出す（2026-09-23 運営要望・real-path）
+//
+// 「プラン：貸切サウナ（ふたみの日）」では A〜D のどの枠か読めなかった。
+// お客様宛の自動返信メールと管理者宛の予約受付通知メールの両方に、同じプラン名が渡ることを固定する。
+// ============================================================================
+describe('createReservation — ふたみの日サウナの通知メールのプラン名（2026-09-23 運営要望）', () => {
+  const mailMockFutami = jest.requireMock('../../src/lib/mail') as {
+    sendConfirmationEmail: jest.Mock;
+    sendStaffNotification: jest.Mock;
+  };
+
+  beforeEach(() => {
+    mailMockFutami.sendConfirmationEmail.mockClear();
+    mailMockFutami.sendStaffNotification.mockClear();
+  });
+
+  it('D枠の予約：自動返信と予約受付通知の両方が「貸切サウナ D（17:30-19:30）（ふたみの日）」', async () => {
+    await db.doc('config/special_days').set({ sauna_capacity_days: [OPEN_WEDNESDAY] });
+    const r = await invoke(createReservation, {
+      method: 'POST', query: {}, headers: {},
+      body: {
+        planId: 'plan_sauna_futami', roomIds: ['sauna_share'],
+        slots: fixedSlots('sauna_share', OPEN_WEDNESDAY, [17, 18, 19]),
+        startDate: OPEN_WEDNESDAY, endDate: OPEN_WEDNESDAY, nights: 0,
+        guestCount: 4,
+        customer: { name: 'サウナ 太郎', phone: '090-1111-2222', email: 'sauna@test.example' },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+    const expected = '貸切サウナ D（17:30-19:30）（ふたみの日）';
+    expect(mailMockFutami.sendConfirmationEmail).toHaveBeenCalledTimes(1);
+    expect(mailMockFutami.sendConfirmationEmail.mock.calls[0][0].planName).toBe(expected);
+    expect(mailMockFutami.sendStaffNotification).toHaveBeenCalledTimes(1);
+    expect(mailMockFutami.sendStaffNotification.mock.calls[0][0].planName).toBe(expected);
+    expect(mailMockFutami.sendStaffNotification.mock.calls[0][1]).toBe('new');
+  });
+});

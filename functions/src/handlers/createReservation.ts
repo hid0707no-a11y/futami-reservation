@@ -30,7 +30,7 @@ import {
 import { canonicalizeReservation, lodgeConflictGroups } from '../lib/reservationPlans';
 import { isSaunaLeadTimeClosed, slotHoursOnDate } from '../lib/bookingCutoff';
 import { isSaunaReservation } from '../lib/notifyRecipients';
-import { planLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
+import { planLabel, futamiSaunaPlanLabel, roomLabels, formatTennisTimeRanges } from '../lib/labels';
 import { computeServerPricing } from '../lib/pricingServer';
 import { checkIdempotency as checkIdempotencyFs, saveIdempotencyKey as saveIdempotencyKeyFs } from '../lib/idempotency';
 
@@ -443,7 +443,8 @@ export const createReservation = onRequest(
             return { id: resRef.id, displayId };
           });
           const mailData: MailData = {
-            planName: planLabel(planId), roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
+            // 2026-09-23 運営要望：プラン名に枠名と時間帯を出す（例: 貸切サウナ D（17:30-19:30）（ふたみの日））。
+            planName: futamiSaunaPlanLabel(slots), roomName: 'サンセットサウナ（ふたみの日）', startDate, endDate,
             planId, roomIds: ['sauna_share'],
             customerName: customer.name, customerKana: customer.kana || '', customerPhone: customer.phone,
             customerEmail: customer.email || '', customerAddress: formatCustomerAddress(customer),
