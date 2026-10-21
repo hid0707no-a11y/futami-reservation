@@ -28,6 +28,7 @@ export { health, listAuditLog, triggerSyncToSheets } from './handlers/admin';
 export { availability, futamiDays, businessCalendar } from './handlers/availability';
 export { listReservations, updateReservation, changeCampSites, cancelReservation } from './handlers/reservation';
 export { createReservation } from './handlers/createReservation';
+export { changeSaunaReservation } from './handlers/changeSaunaReservation';
 
 /**
  * ===== スタッフ画面 Uptime 監視（毎朝 08:30 JST）=====
