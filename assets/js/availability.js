@@ -210,6 +210,53 @@
     return (now || new Date()).getTime() > startAt.getTime() - lead * 60000;
   }
 
+  /* ================================================================
+     休館日前日の宿泊はチェックアウトが 8:00（2026-10-21 運営要望）
+     「休館日前日の宿泊の場合、翌日のチェックアウトは午前8:00になる」
+     ── これまで画面に注意書きが無く、該当する予約には職員が個別に確認メールを送っていた。
+
+     ★見るのは「チェックアウト日（開始日＋泊数）」だけ。中日に休館日は来ない
+       （連泊の途中に休館日がある予約は index.html の定休日ガードとサーバが弾く）。
+     ★対象は planType 'stay'（ふれあいの館）と 'stay_simple'（ロッジ）だけ。
+       キャンプ泊（翌13:00）は対象外（2026-10-21 社長確認）。
+     ★休館日の判定は index.html の isClosedDay（定休日＋臨時休館＋臨時営業）を受け取る。
+       ここで曜日を決め打ちしない＝臨時休館・臨時営業も同じ1本で効く。
+     ================================================================ */
+
+  var EARLY_CHECKOUT_TIME = '8:00';
+  var EARLY_CHECKOUT_PLAN_TYPES = ['stay', 'stay_simple'];
+
+  function addDaysIso(dateStr, n) {
+    var p = String(dateStr).split('-');
+    var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // 休館日前日の宿泊なら、そのチェックアウト日（'YYYY-MM-DD'）を返す。該当しなければ null。
+  // isClosedDay(dateStr) が無い・例外を投げる時は null（注意書きを出さないだけで予約は止めない）。
+  function earlyCheckoutDate(planType, startDate, nights, isClosedDay) {
+    if (EARLY_CHECKOUT_PLAN_TYPES.indexOf(planType) < 0) return null;
+    if (typeof startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
+    var n = Number(nights);
+    if (!isFinite(n) || n < 1 || Math.floor(n) !== n) return null;
+    if (typeof isClosedDay !== 'function') return null;
+    var checkout = addDaysIso(startDate, n);
+    try {
+      return isClosedDay(checkout) ? checkout : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // お客様に見せる注意書き。checkoutDate は earlyCheckoutDate の返り値。
+  function earlyCheckoutMessage(checkoutDate) {
+    var p = String(checkoutDate).split('-');
+    var md = (+p[1]) + '月' + (+p[2]) + '日';
+    return 'チェックアウト日の' + md + 'は休館日のため、チェックアウトは午前' + EARLY_CHECKOUT_TIME
+      + 'となります（通常は10:00）。ご了承のうえご予約ください。';
+  }
+
   return {
     dayAvailabilityLevel: dayAvailabilityLevel,
     levelLabel: levelLabel,
@@ -220,5 +267,8 @@
     SAUNA_SLOT_START_MIN: SAUNA_SLOT_START_MIN,
     saunaStartMinutes: saunaStartMinutes,
     isSaunaLeadTimeClosed: isSaunaLeadTimeClosed,
+    EARLY_CHECKOUT_TIME: EARLY_CHECKOUT_TIME,
+    earlyCheckoutDate: earlyCheckoutDate,
+    earlyCheckoutMessage: earlyCheckoutMessage,
   };
 });

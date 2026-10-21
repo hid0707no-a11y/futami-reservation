@@ -1184,7 +1184,7 @@ html.embed .info-section { display: none !important; }
 -->
 <script src="assets/js/pricing.js?v=20260802"></script>
 <!-- 空き状況レベル判定 純粋関数ライブラリ（2026-08-01 抽出・Jest テスト対象） -->
-<script src="assets/js/availability.js?v=20260902"></script>
+<script src="assets/js/availability.js?v=20261021"></script>
 <!-- 連絡先・キャンセル案内の正本（サーバ側は functions/src/lib/contact.ts・値を必ず揃える） -->
 <script src="assets/js/contact.js?v=20260825"></script>
 <script>
@@ -1872,6 +1872,30 @@ function planFacilityClosed(roomId, date, hours) {
   if (typeof NisshoAvailability === 'undefined' || !NisshoAvailability) return false;
   if (typeof NisshoAvailability.isPlanFacilityClosed !== 'function') return false;
   return NisshoAvailability.isPlanFacilityClosed(BUSINESS_CALENDAR.facilityClosed, roomId, date, hours);
+}
+
+// 休館日前日の宿泊はチェックアウトが 8:00（2026-10-21 運営要望）。該当すればチェックアウト日、無ければ null。
+// ★判定の中身は assets/js/availability.js（Jest テスト対象）が正本。
+// ★古いキャッシュで関数が無い時は null＝注意書きが出ないだけで、予約の流れは従来どおり。
+function earlyCheckoutDateFor(plan, startDate, nights) {
+  if (!plan || !startDate) return null;
+  if (typeof NisshoAvailability === 'undefined' || !NisshoAvailability) return null;
+  if (typeof NisshoAvailability.earlyCheckoutDate !== 'function') return null;
+  return NisshoAvailability.earlyCheckoutDate(plan.planType, startDate, nights, isClosedDay);
+}
+
+// 予約入力画面の注意書き（#early-checkout-notice）を日付・泊数に合わせて出し入れする
+function updateEarlyCheckoutNotice() {
+  const el = document.getElementById('early-checkout-notice');
+  if (!el) return;
+  const co = earlyCheckoutDateFor(state.selectedPlan, state.selectedDate, state.selectedNights);
+  if (co && typeof NisshoAvailability.earlyCheckoutMessage === 'function') {
+    el.textContent = NisshoAvailability.earlyCheckoutMessage(co);
+    el.style.display = 'block';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
 }
 
 // 特定の部屋+日付+時間スロットが空いているか
@@ -2794,6 +2818,7 @@ function showRoomBooking() {
     html += '</div></div>';
 
     html += '<div class="text-muted">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
+    html += '<div id="early-checkout-notice" class="warning-msg" style="display:none"></div>';
 
     html += '</div>'; // close .card
 
@@ -2812,6 +2837,7 @@ function showRoomBooking() {
     html += '</div></div>';
 
     html += '<div class="text-muted">チェックイン ' + plan.checkin + ' / チェックアウト ' + plan.checkout + '</div>';
+    html += '<div id="early-checkout-notice" class="warning-msg" style="display:none"></div>';
 
     // オプション
     if (plan.extras) { html += renderExtras(plan); }
@@ -3464,6 +3490,8 @@ function checkNightsAvailability() {
       wEl.style.display = 'none';
     }
   }
+
+  updateEarlyCheckoutNotice();
 }
 
 // 旧ステッパー（区画数のみ指定方式）は廃止 — 区画選択UI（toggleCampSite）に置換
@@ -3870,9 +3898,11 @@ function proceedToConfirm() {
 
   // 時間帯文字列
   let timeStr = '';
+  const earlyCheckout = earlyCheckoutDateFor(plan, state.selectedDate, state.selectedNights);
   if (pt === 'stay' || pt === 'stay_simple') {
     const checkout = addDays(state.selectedDate, state.selectedNights);
-    timeStr = dateStr + ' ' + plan.checkin + ' ~ ' + formatDate(checkout) + ' ' + plan.checkout + '（' + state.selectedNights + '泊）';
+    const checkoutTime = earlyCheckout ? NisshoAvailability.EARLY_CHECKOUT_TIME : plan.checkout;
+    timeStr = dateStr + ' ' + plan.checkin + ' ~ ' + formatDate(checkout) + ' ' + checkoutTime + '（' + state.selectedNights + '泊）';
   } else if (pt === 'camp') {
     const checkout = addDays(state.selectedDate, state.selectedNights);
     timeStr = dateStr + ' ' + plan.checkin + ' ~ ' + formatDate(checkout) + ' ' + plan.checkout + '（' + state.selectedNights + '泊）';
@@ -3925,6 +3955,9 @@ function proceedToConfirm() {
     html += '<div class="summary-row"><span class="summary-label">部屋</span><span class="summary-value">' + (room ? room.fullName : '') + '</span></div>';
   }
   html += '<div class="summary-row"><span class="summary-label">日時</span><span class="summary-value">' + timeStr + '</span></div>';
+  if (earlyCheckout && typeof NisshoAvailability.earlyCheckoutMessage === 'function') {
+    html += '<div class="warning-msg">' + NisshoAvailability.earlyCheckoutMessage(earlyCheckout) + '</div>';
+  }
 
   if (pt === 'stay') {
     const totalGuests = state.guestsAdult + state.guestsChild + state.guestsInfant;
