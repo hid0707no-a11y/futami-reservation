@@ -369,3 +369,52 @@ describe('パリティ：フロントとサーバが同じ入力で同じ判定�
     expect(serverIsFacilitySlotClosed('sauna', D, 8, cal)).toBe(false);
   });
 });
+
+describe('休館日前日の宿泊はチェックアウト 8:00（2026-10-21 運営要望）', () => {
+  // 定休日＝火曜。2026-10-27 は火曜、2026-10-26 は月曜。
+  const closedTue = (d: string): boolean => new Date(d + 'T00:00:00Z').getUTCDay() === 2;
+  const early = (pt: string, start: string, nights: number, fn: unknown = closedTue) =>
+    Availability.earlyCheckoutDate(pt, start, nights, fn);
+
+  it('月曜泊（翌日が休館日）→ チェックアウト日を返す', () => {
+    expect(early('stay', '2026-10-26', 1)).toBe('2026-10-27');
+  });
+  it('ロッジ（stay_simple）も対象', () => {
+    expect(early('stay_simple', '2026-10-26', 1)).toBe('2026-10-27');
+  });
+  it('連泊はチェックアウト日で判定（土曜から3泊→火曜アウト）', () => {
+    expect(early('stay', '2026-10-24', 3)).toBe('2026-10-27');
+    expect(early('stay', '2026-10-24', 2)).toBeNull();
+  });
+  it('翌日が営業日なら null', () => {
+    expect(early('stay', '2026-10-28', 1)).toBeNull();
+  });
+  it('キャンプ泊・日帰り・サウナは対象外', () => {
+    expect(early('camp', '2026-10-26', 1)).toBeNull();
+    expect(early('day_all', '2026-10-26', 1)).toBeNull();
+    expect(early('sauna', '2026-10-26', 1)).toBeNull();
+  });
+  it('臨時休館も渡された判定関数どおりに効く（曜日を決め打ちしない）', () => {
+    const forceClosed = (d: string): boolean => d === '2026-12-31';
+    expect(early('stay', '2026-12-30', 1, forceClosed)).toBe('2026-12-31');
+    expect(early('stay', '2026-10-26', 1, forceClosed)).toBeNull();
+  });
+  it('月末・年末をまたぐ日付計算', () => {
+    const only = (target: string) => (d: string): boolean => d === target;
+    expect(early('stay', '2026-10-31', 1, only('2026-11-01'))).toBe('2026-11-01');
+    expect(early('stay', '2026-12-31', 1, only('2027-01-01'))).toBe('2027-01-01');
+  });
+  it('壊れた入力は null（注意書きを出さないだけ・例外を投げない）', () => {
+    expect(early('stay', '', 1)).toBeNull();
+    expect(early('stay', '2026/10/26', 1)).toBeNull();
+    expect(early('stay', '2026-10-26', 0)).toBeNull();
+    expect(early('stay', '2026-10-26', 1.5)).toBeNull();
+    expect(early('stay', '2026-10-26', 1, null)).toBeNull();
+    expect(early('stay', '2026-10-26', 1, () => { throw new Error('x'); })).toBeNull();
+  });
+  it('お客様向けの文言', () => {
+    expect(Availability.EARLY_CHECKOUT_TIME).toBe('8:00');
+    expect(Availability.earlyCheckoutMessage('2026-10-27'))
+      .toBe('チェックアウト日の10月27日は休館日のため、チェックアウトは午前8:00となります（通常は10:00）。ご了承のうえご予約ください。');
+  });
+});
